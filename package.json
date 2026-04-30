@@ -1,0 +1,15 @@
+{
+	"name": "concilia",
+	"license": "MIT",
+	"scripts": {
+		"test": "node --test tests/worker/*.test.js",
+		"build": "cd client && npm ci && npm run build && mkdir -p ../server/public && cp -r dist/* ../server/public/",
+		"start": "docker compose up -d",
+		"stop": "docker compose down",
+		"restart": "docker compose restart",
+		"update": "docker compose pull && docker compose up -d",
+		"logs": "docker compose logs -f concilia",
+		"shell": "docker exec -it concilia sh",
+		"clean": "docker compose down -v"
+	}
+}

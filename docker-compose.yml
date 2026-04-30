@@ -1,0 +1,28 @@
+services:
+  concilia:
+    image: ghcr.io/s3rgiosan/concilia:latest
+    container_name: concilia
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ${RECEIPTS_PATH:?Set RECEIPTS_PATH in .env}:/receipts
+      - ${AI_GEMINI_SA_KEY:?Set AI_GEMINI_SA_KEY in .env}:/secrets/sa-key.json:ro
+      - concilia-data:/data
+    environment:
+      - TZ=${TZ:-Europe/Lisbon}
+      - DATABASE_PATH=/data/concilia.db
+      - AI_GEMINI_SA_KEY=/secrets/sa-key.json
+      - AI_GEMINI_PROJECT=${AI_GEMINI_PROJECT:-}
+      - AI_GEMINI_LOCATION=${AI_GEMINI_LOCATION:-europe-west1}
+      - AI_GEMINI_MODEL=${AI_GEMINI_MODEL:-gemini-2.5-flash}
+      - RECEIPTS_PATH=/receipts
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  concilia-data:
