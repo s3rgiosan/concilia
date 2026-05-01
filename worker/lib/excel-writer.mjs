@@ -1,90 +1,116 @@
 /**
- * Excel report writer using exceljs.
+ * Excel report writer using write-excel-file.
  *
- * Generates an .xlsx file with formatted transaction data,
- * color-coded status column, and optional unmatched receipts section.
+ * Writes a workbook with two sheets:
+ *   - "Reconciliation" — transactions with status colour, receipt names, notes
+ *   - "Unmatched Receipts" — receipts not bound to any transaction, with sum
  */
 
-import ExcelJS from 'exceljs';
+import { basename } from 'node:path';
+import writeXlsxFile from 'write-excel-file/node';
 
-const STATUS_FILLS = {
-  MATCHED: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } },
-  REVIEW: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } },
-  UNMATCHED: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } },
+// Hex backgrounds for the status column (no leading FF alpha)
+const STATUS_BG = {
+  MATCHED: '#C6EFCE',
+  REVIEW: '#FFEB9C',
+  UNMATCHED: '#FFC7CE',
 };
 
-const HEADERS = [
-  'id', 'date', 'description', 'amount', 'status',
+const TX_HEADERS = [
+  'date', 'description', 'amount', 'status',
   'receipt_file(s)', 'notes', 'receipt_amount', 'receipt_confidence', 'receipt_currency',
 ];
 
+const UNMATCHED_HEADERS = ['file', 'amount', 'confidence', 'currency', 'vendor', 'date'];
+
 /**
- * Write an Excel report from a match result object.
+ * Build a cell descriptor for write-excel-file.
+ * @param {string|number|null} value
+ * @param {object} [extra] - additional cell-style props (fontWeight, backgroundColor, type, format, etc.)
+ */
+function cell(value, extra = {}) {
+  return { value, type: String, ...extra };
+}
+
+function buildTxSheet(transactions) {
+  const headerRow = TX_HEADERS.map((h) => cell(h, { fontWeight: 'bold' }));
+  const dataRows = (transactions || []).map((tx) => {
+    const meta = tx.receipt_meta || [];
+    const fileNames = (tx.receipt_files || []).map((f) => basename(f)).join('; ');
+    const amounts = meta.map((m) => (m && m.amount_cents != null ? (m.amount_cents / 100).toFixed(2) : '')).join('; ');
+    const confidences = meta.map((m) => (m && m.confidence) || '').join('; ');
+    const currencies = meta.map((m) => (m && m.currency) || '').join('; ');
+    const statusBg = STATUS_BG[tx.status];
+    return [
+      cell(tx.date),
+      cell(tx.description),
+      cell((tx.amount_cents / 100).toFixed(2)),
+      cell(tx.status, statusBg ? { backgroundColor: statusBg } : {}),
+      cell(fileNames),
+      cell(tx.notes || ''),
+      cell(amounts),
+      cell(confidences),
+      cell(currencies),
+    ];
+  });
+  return [headerRow, ...dataRows];
+}
+
+function buildUnmatchedSheet(unmatchedReceipts) {
+  const headerRow = UNMATCHED_HEADERS.map((h) => cell(h, { fontWeight: 'bold' }));
+  const items = unmatchedReceipts || [];
+  const dataRows = items.map((r) => [
+    cell(basename(r.file || '')),
+    cell(r.amount_cents != null ? (r.amount_cents / 100).toFixed(2) : ''),
+    cell(r.confidence || ''),
+    cell(r.currency || ''),
+    cell(r.vendor || ''),
+    cell(r.date || ''),
+  ]);
+
+  // Sum row at the bottom (only over entries with a non-null amount).
+  const totalCents = items.reduce((s, r) => s + (r.amount_cents != null ? r.amount_cents : 0), 0);
+  const sumRow = [
+    cell('TOTAL', { fontWeight: 'bold' }),
+    cell((totalCents / 100).toFixed(2), { fontWeight: 'bold' }),
+    cell(''),
+    cell(''),
+    cell(''),
+    cell(''),
+  ];
+  return [headerRow, ...dataRows, sumRow];
+}
+
+function autoColumnWidths(rows, headerCount) {
+  const widths = [];
+  for (let col = 0; col < headerCount; col++) {
+    let max = 0;
+    for (const r of rows) {
+      const v = r[col]?.value;
+      const len = v == null ? 0 : String(v).length;
+      if (len > max) max = len;
+    }
+    widths.push({ width: Math.min(Math.max(max + 2, 10), 50) });
+  }
+  return widths;
+}
+
+/**
+ * Write a multi-sheet Excel report from a match result object.
  *
  * @param {object} result - Match result with transactions and unmatchedReceipts
  * @param {string} outputPath - Path to write .xlsx file
  */
 export async function writeExcelReport(result, outputPath) {
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Reconciliation');
+  const txRows = buildTxSheet(result.transactions);
+  const unmatchedRows = buildUnmatchedSheet(result.unmatchedReceipts);
 
-  // Add headers
-  const headerRow = sheet.addRow(HEADERS);
-  headerRow.font = { bold: true };
-
-  // Add transaction rows
-  for (const tx of result.transactions) {
-    const meta = (tx.receipt_meta || [])[0];
-    const row = sheet.addRow([
-      tx.id,
-      tx.date,
-      tx.description,
-      (tx.amount_cents / 100).toFixed(2),
-      tx.status,
-      (tx.receipt_files || []).join('; '),
-      tx.notes || '',
-      meta && meta.amount_cents != null ? (meta.amount_cents / 100).toFixed(2) : '',
-      meta ? meta.confidence || '' : '',
-      meta ? meta.currency || '' : '',
-    ]);
-
-    // Color the status cell
-    const statusCell = row.getCell(5);
-    const fill = STATUS_FILLS[tx.status];
-    if (fill) statusCell.fill = fill;
-  }
-
-  // Append unmatched receipts section if any
-  const unmatchedReceipts = result.unmatchedReceipts || [];
-  if (unmatchedReceipts.length > 0) {
-    sheet.addRow([]); // blank row
-
-    const labelRow = sheet.addRow(['--- UNMATCHED RECEIPTS ---']);
-    labelRow.font = { bold: true };
-
-    const subHeaderRow = sheet.addRow(['file', 'amount', 'confidence', 'currency', 'provider']);
-    subHeaderRow.font = { bold: true };
-
-    for (const r of unmatchedReceipts) {
-      sheet.addRow([
-        r.file || '',
-        r.amount_cents != null ? (r.amount_cents / 100).toFixed(2) : '',
-        r.confidence || '',
-        r.currency || '',
-        r.provider_used || '',
-      ]);
-    }
-  }
-
-  // Auto-adjust column widths
-  for (const column of sheet.columns) {
-    let maxLength = 0;
-    column.eachCell({ includeEmpty: true }, (cell) => {
-      const len = cell.value ? String(cell.value).length : 0;
-      if (len > maxLength) maxLength = len;
-    });
-    column.width = Math.min(Math.max(maxLength + 2, 10), 50);
-  }
-
-  await workbook.xlsx.writeFile(outputPath);
+  await writeXlsxFile(
+    [txRows, unmatchedRows],
+    {
+      sheets: ['Reconciliation', 'Unmatched Receipts'],
+      columns: [autoColumnWidths(txRows, TX_HEADERS.length), autoColumnWidths(unmatchedRows, UNMATCHED_HEADERS.length)],
+      filePath: outputPath,
+    },
+  );
 }

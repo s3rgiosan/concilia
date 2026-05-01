@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <title>Concilia — Setup</title>
+    <link rel="stylesheet" href="./setup.css" />
+  </head>
+  <body class="min-h-screen bg-base-200 flex items-center justify-center p-6">
+    <div class="card w-full max-w-xl bg-base-100 shadow-md">
+      <div class="card-body">
+        <!-- Step indicator -->
+        <ul class="steps mb-2">
+          <li class="step" data-step-indicator="0"></li>
+          <li class="step" data-step-indicator="1"></li>
+          <li class="step" data-step-indicator="2"></li>
+          <li class="step" data-step-indicator="3"></li>
+        </ul>
+
+        <div id="error" class="alert alert-error text-sm py-2" style="display:none"></div>
+
+        <!-- Step 0: Welcome -->
+        <section data-panel="0">
+          <h2 class="card-title">Welcome to Concilia</h2>
+          <p class="text-sm opacity-80 mt-1">
+            Concilia reconciles your bank statements with receipts using AI.
+            Before we start, we need two things:
+          </p>
+          <ul class="list-disc pl-6 text-sm opacity-90 space-y-1 mt-2">
+            <li>A folder where your receipts are organised by <span class="badge badge-ghost badge-sm font-mono">year/month</span></li>
+            <li>A Google Cloud service account key for Gemini AI</li>
+          </ul>
+          <p class="text-xs opacity-60 mt-4">This wizard takes about a minute. You can change everything later in Settings.</p>
+          <div class="card-actions justify-end mt-4">
+            <button class="btn btn-primary btn-sm" id="next-0">Get started</button>
+          </div>
+        </section>
+
+        <!-- Step 1: Receipts folder -->
+        <section data-panel="1" style="display:none">
+          <h2 class="card-title">Choose your receipts folder</h2>
+          <p class="text-sm opacity-80 mt-1">
+            Pick the root folder. Inside, Concilia expects subfolders like
+            <span class="badge badge-ghost badge-sm font-mono">2025/01/receipts/</span> containing your receipt PDFs and images.
+          </p>
+          <div class="join w-full mt-3">
+            <input type="text" id="receiptsRoot" class="input input-bordered input-sm join-item w-full font-mono text-xs" />
+            <button class="btn btn-sm btn-outline join-item" id="pick-folder">Browse…</button>
+          </div>
+          <div class="card-actions justify-between mt-4">
+            <button class="btn btn-ghost btn-sm" id="back-1">Back</button>
+            <button class="btn btn-primary btn-sm" id="next-1" disabled>Continue</button>
+          </div>
+        </section>
+
+        <!-- Step 2: SA key -->
+        <section data-panel="2" style="display:none">
+          <h2 class="card-title">Gemini service account key</h2>
+          <p class="text-sm opacity-80 mt-1">
+            Concilia uses Google Gemini (Vertex AI) to read receipts. Provide a
+            service account JSON key with access to Vertex AI in your Google Cloud project.
+          </p>
+          <div class="join w-full mt-3">
+            <input type="text" id="saKeyPath" class="input input-bordered input-sm join-item w-full font-mono text-xs" />
+            <button class="btn btn-sm btn-outline join-item" id="pick-key">Browse…</button>
+          </div>
+          <div class="card-actions justify-between mt-4">
+            <button class="btn btn-ghost btn-sm" id="back-2">Back</button>
+            <button class="btn btn-primary btn-sm" id="next-2" disabled>Continue</button>
+          </div>
+        </section>
+
+        <!-- Step 3: Gemini config -->
+        <section data-panel="3" style="display:none">
+          <h2 class="card-title">Gemini settings <span class="text-xs font-normal opacity-60">(optional)</span></h2>
+          <p class="text-sm opacity-80 mt-1">
+            Project ID is auto-detected from the key file when left empty.
+            The defaults below work for most users.
+          </p>
+          <label class="label pb-1 pt-3"><span class="label-text text-xs font-semibold">Project ID</span></label>
+          <input type="text" id="geminiProject" class="input input-bordered input-sm w-full font-mono text-xs" placeholder="auto-detected from key" />
+
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div>
+              <label class="label pb-1"><span class="label-text text-xs font-semibold">Location</span></label>
+              <input type="text" id="geminiLocation" class="input input-bordered input-sm w-full font-mono text-xs" value="europe-west1" />
+            </div>
+            <div>
+              <label class="label pb-1"><span class="label-text text-xs font-semibold">Model</span></label>
+              <input type="text" id="geminiModel" class="input input-bordered input-sm w-full font-mono text-xs" value="gemini-2.5-flash" />
+            </div>
+          </div>
+
+          <div class="card-actions justify-between mt-5">
+            <button class="btn btn-ghost btn-sm" id="back-3">Back</button>
+            <button class="btn btn-primary btn-sm" id="finish">Finish</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const state = {
+        step: 0,
+        receiptsRoot: '',
+        saKeyPath: '',
+        geminiProject: '',
+        geminiLocation: 'europe-west1',
+        geminiModel: 'gemini-2.5-flash',
+      };
+
+      function showError(msg) {
+        const el = document.getElementById('error');
+        el.textContent = msg;
+        el.style.display = msg ? 'flex' : 'none';
+      }
+
+      function render() {
+        document.querySelectorAll('[data-panel]').forEach((el) => {
+          el.style.display = Number(el.dataset.panel) === state.step ? '' : 'none';
+        });
+        document.querySelectorAll('[data-step-indicator]').forEach((el) => {
+          const s = Number(el.dataset.stepIndicator);
+          el.classList.toggle('step-primary', s <= state.step);
+        });
+        document.getElementById('next-1').disabled = !state.receiptsRoot;
+        document.getElementById('next-2').disabled = !state.saKeyPath;
+      }
+
+      async function loadExisting() {
+        if (!window.concilia) return;
+        try {
+          const cfg = await window.concilia.getConfig();
+          Object.assign(state, cfg);
+          document.getElementById('receiptsRoot').value = cfg.receiptsRoot || '';
+          document.getElementById('saKeyPath').value = cfg.saKeyPath || '';
+          document.getElementById('geminiProject').value = cfg.geminiProject || '';
+          document.getElementById('geminiLocation').value = cfg.geminiLocation || 'europe-west1';
+          document.getElementById('geminiModel').value = cfg.geminiModel || 'gemini-2.5-flash';
+        } catch { /* ignore */ }
+      }
+
+      document.getElementById('next-0').onclick = () => { state.step = 1; render(); };
+      document.getElementById('back-1').onclick = () => { state.step = 0; render(); };
+      document.getElementById('next-1').onclick = () => { state.step = 2; render(); };
+      document.getElementById('back-2').onclick = () => { state.step = 1; render(); };
+      document.getElementById('next-2').onclick = () => { state.step = 3; render(); };
+      document.getElementById('back-3').onclick = () => { state.step = 2; render(); };
+
+      document.getElementById('receiptsRoot').addEventListener('input', (e) => {
+        state.receiptsRoot = e.target.value.trim();
+        render();
+      });
+      document.getElementById('saKeyPath').addEventListener('input', (e) => {
+        state.saKeyPath = e.target.value.trim();
+        render();
+      });
+      document.getElementById('geminiProject').addEventListener('input', (e) => {
+        state.geminiProject = e.target.value.trim();
+      });
+      document.getElementById('geminiLocation').addEventListener('input', (e) => {
+        state.geminiLocation = e.target.value.trim();
+      });
+      document.getElementById('geminiModel').addEventListener('input', (e) => {
+        state.geminiModel = e.target.value.trim();
+      });
+
+      document.getElementById('pick-folder').onclick = async () => {
+        if (!window.concilia) return;
+        const p = await window.concilia.pickFolder();
+        if (p) {
+          state.receiptsRoot = p;
+          document.getElementById('receiptsRoot').value = p;
+          render();
+        }
+      };
+      document.getElementById('pick-key').onclick = async () => {
+        if (!window.concilia) return;
+        const p = await window.concilia.pickFile([{ name: 'JSON', extensions: ['json'] }]);
+        if (p) {
+          state.saKeyPath = p;
+          document.getElementById('saKeyPath').value = p;
+          render();
+        }
+      };
+
+      document.getElementById('finish').onclick = async () => {
+        if (!window.concilia) return;
+        showError('');
+        const btn = document.getElementById('finish');
+        btn.disabled = true;
+        btn.textContent = 'Starting Concilia…';
+        try {
+          await window.concilia.setConfig({
+            receiptsRoot: state.receiptsRoot,
+            saKeyPath: state.saKeyPath,
+            geminiProject: state.geminiProject,
+            geminiLocation: state.geminiLocation || 'europe-west1',
+            geminiModel: state.geminiModel || 'gemini-2.5-flash',
+          });
+          // setConfig restarts the server and reloads the window on success.
+        } catch (e) {
+          showError(e.message || 'Failed to save settings');
+          btn.disabled = false;
+          btn.textContent = 'Finish';
+        }
+      };
+
+      // Surface a restart error coming back via the URL hash (set by main.js
+      // when restartServer fails after Finish).
+      const hashMatch = location.hash.match(/error=([^&]+)/);
+      if (hashMatch) {
+        showError(decodeURIComponent(hashMatch[1]));
+        history.replaceState(null, '', location.pathname);
+      }
+
+      loadExisting().then(render);
+    </script>
+  </body>
+</html>

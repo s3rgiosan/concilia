@@ -7,11 +7,33 @@
     "delete": "Eliminar",
     "optional": "opcional",
     "low": "baixa",
+    "loading": "A carregar…",
+    "select": "Selecionar…",
     "signOut": "Sair"
   },
   "nav": {
     "matchRules": "Regras de correspondência",
-    "rules": "Regras"
+    "rules": "Regras",
+    "settings": "Definições",
+    "start": "Início",
+    "running": "A processar",
+    "results": "Resultados",
+    "review": "Revisão"
+  },
+  "settings": {
+    "title": "Definições",
+    "language": "Idioma",
+    "receiptsRoot": "Pasta de recibos",
+    "receiptsRootHint": "Pasta raiz com subpastas ano/mês.",
+    "saKey": "Chave de conta de serviço Gemini",
+    "geminiProject": "Projeto Gemini (opcional)",
+    "geminiLocation": "Localização",
+    "geminiModel": "Modelo",
+    "saved": "Definições guardadas",
+    "busy": "Reconciliação em curso. Tente novamente quando terminar.",
+    "failedToLoad": "Falha ao carregar definições",
+    "failedToSave": "Falha ao guardar",
+    "notInElectron": "As definições só podem ser editadas na aplicação desktop."
   },
   "auth": {
     "signIn": "Entrar",
@@ -104,6 +126,9 @@
   },
   "review": {
     "title": "Rever e validar",
+    "empty": "Ainda não há dados de reconciliação para este período. Execute uma reconciliação primeiro.",
+    "refreshFailed": "Não foi possível atualizar os dados de revisão: {{msg}}",
+    "draftSaveFailed": "Não foi possível guardar o rascunho: {{msg}}",
     "noTransactions": "Sem transacções.",
     "noReceipt": "Sem recibo",
     "applyChanges": "Aplicar alterações",
@@ -147,7 +172,7 @@
       "rescan": "Reanalisar com IA",
       "accept": "Aceitar",
       "reject": "Rejeitar",
-      "assign": "Atribuir",
+      "assign": "Aceitar",
       "dispute": "Contestar"
     },
     "rescanDone": "Recibo reanalisado"

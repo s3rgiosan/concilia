@@ -81,10 +81,9 @@ export function ReconcileForm({ onSubmit, onResume }: Props) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="card bg-base-100 border border-base-200 shadow-sm">
+      <div className="card bg-base-100 rounded-none">
         <div className="card-body">
-          <h2 className="card-title">{t('form.title')}</h2>
-          <p className="text-sm text-base-content/60 -mt-1">{t('form.subtitle')}</p>
+          <p className="text-sm text-base-content/60">{t('form.subtitle')}</p>
 
           <div className="space-y-6 mt-2">
             {/* Period selectors */}

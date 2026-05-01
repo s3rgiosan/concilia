@@ -70,10 +70,9 @@ export function ProgressCard({ events }: Props) {
   const progress = extractionProgress(events);
 
   return (
-    <div className="card bg-base-100 border border-base-200 shadow-sm">
+    <div className="card bg-base-100 rounded-none">
       <div className="card-body">
-        <h2 className="card-title">{t('progress.title')}</h2>
-        <ul className="space-y-3 mt-1">
+        <ul className="space-y-3">
           {steps.map((step, i) => (
             <li key={i} className="flex items-start gap-3">
               <span className="mt-0.5 flex-shrink-0">

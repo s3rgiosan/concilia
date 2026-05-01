@@ -78,31 +78,30 @@ describe('writeExcelReport', () => {
       const headers = [];
       sheet.getRow(1).eachCell((cell) => headers.push(cell.value));
       assert.deepEqual(headers, [
-        'id', 'date', 'description', 'amount', 'status',
+        'date', 'description', 'amount', 'status',
         'receipt_file(s)', 'notes', 'receipt_amount', 'receipt_confidence', 'receipt_currency',
       ]);
 
-      // Row 2: MATCHED transaction
+      // Row 2: MATCHED transaction (id column removed; receipt path → basename)
       const row2 = sheet.getRow(2);
-      assert.equal(row2.getCell(1).value, 'tx-001-2025-01-15--5000');
-      assert.equal(row2.getCell(2).value, '2025-01-15');
-      assert.equal(row2.getCell(3).value, 'COMPRA LOJA');
-      assert.equal(row2.getCell(4).value, '-50.00');
-      assert.equal(row2.getCell(5).value, 'MATCHED');
-      assert.equal(row2.getCell(6).value, '/r/a.pdf');
-      assert.equal(row2.getCell(7).value, 'amount_match');
-      assert.equal(row2.getCell(8).value, '50.00');
-      assert.equal(row2.getCell(9).value, 'high');
-      assert.equal(row2.getCell(10).value, 'EUR');
+      assert.equal(row2.getCell(1).value, '2025-01-15');
+      assert.equal(row2.getCell(2).value, 'COMPRA LOJA');
+      assert.equal(row2.getCell(3).value, '-50.00');
+      assert.equal(row2.getCell(4).value, 'MATCHED');
+      assert.equal(row2.getCell(5).value, 'a.pdf');
+      assert.equal(row2.getCell(6).value, 'amount_match');
+      assert.equal(row2.getCell(7).value, '50.00');
+      assert.equal(row2.getCell(8).value, 'high');
+      assert.equal(row2.getCell(9).value, 'EUR');
 
       // Row 3: bank fee (no receipt meta)
       const row3 = sheet.getRow(3);
-      assert.equal(row3.getCell(5).value, 'MATCHED');
-      assert.equal(row3.getCell(7).value, 'bank_fee');
+      assert.equal(row3.getCell(4).value, 'MATCHED');
+      assert.equal(row3.getCell(6).value, 'bank_fee');
 
       // Row 4: UNMATCHED
       const row4 = sheet.getRow(4);
-      assert.equal(row4.getCell(5).value, 'UNMATCHED');
+      assert.equal(row4.getCell(4).value, 'UNMATCHED');
     } finally {
       try { unlinkSync(outputPath); } catch { /* */ }
     }
@@ -128,24 +127,24 @@ describe('writeExcelReport', () => {
       await workbook.xlsx.readFile(outputPath);
       const sheet = workbook.getWorksheet('Reconciliation');
 
-      // Status column is column 5
-      const matchedFill = sheet.getRow(2).getCell(5).fill;
+      // Status column is column 4 (id removed)
+      const matchedFill = sheet.getRow(2).getCell(4).fill;
       assert.equal(matchedFill.fgColor.argb, 'FFC6EFCE', 'MATCHED should be green');
 
-      const reviewFill = sheet.getRow(3).getCell(5).fill;
+      const reviewFill = sheet.getRow(3).getCell(4).fill;
       assert.equal(reviewFill.fgColor.argb, 'FFFFEB9C', 'REVIEW should be yellow');
 
-      const unmatchedFill = sheet.getRow(4).getCell(5).fill;
+      const unmatchedFill = sheet.getRow(4).getCell(4).fill;
       assert.equal(unmatchedFill.fgColor.argb, 'FFFFC7CE', 'UNMATCHED should be red');
     } finally {
       try { unlinkSync(outputPath); } catch { /* */ }
     }
   });
 
-  it('includes unmatched receipts section with correct content', async () => {
+  it('does not include an unmatched-receipts section', async () => {
     const { writeExcelReport } = await loadExcelWriter();
     const EJ = await loadExcelJS();
-    const outputPath = join(tmpDir, `test-excel-unmatched-${Date.now()}.xlsx`);
+    const outputPath = join(tmpDir, `test-excel-no-unmatched-${Date.now()}.xlsx`);
 
     const result = {
       transactions: [
@@ -153,7 +152,6 @@ describe('writeExcelReport', () => {
       ],
       unmatchedReceipts: [
         { file: '/r/extra.pdf', amount_cents: 4707, confidence: 'high', currency: 'USD', provider_used: 'gemini' },
-        { file: '/r/unknown.jpg', amount_cents: null, confidence: null, currency: null, provider_used: 'gemini' },
       ],
     };
 
@@ -164,26 +162,8 @@ describe('writeExcelReport', () => {
       await workbook.xlsx.readFile(outputPath);
       const sheet = workbook.getWorksheet('Reconciliation');
 
-      // Row 1: headers, Row 2: transaction, Row 3: blank, Row 4: label, Row 5: sub-headers, Row 6-7: receipts
-      const labelRow = sheet.getRow(4);
-      assert.equal(labelRow.getCell(1).value, '--- UNMATCHED RECEIPTS ---');
-
-      const subHeaders = [];
-      sheet.getRow(5).eachCell((cell) => subHeaders.push(cell.value));
-      assert.deepEqual(subHeaders, ['file', 'amount', 'confidence', 'currency', 'provider']);
-
-      // First unmatched receipt
-      const receiptRow1 = sheet.getRow(6);
-      assert.equal(receiptRow1.getCell(1).value, '/r/extra.pdf');
-      assert.equal(receiptRow1.getCell(2).value, '47.07');
-      assert.equal(receiptRow1.getCell(3).value, 'high');
-      assert.equal(receiptRow1.getCell(4).value, 'USD');
-      assert.equal(receiptRow1.getCell(5).value, 'gemini');
-
-      // Second unmatched receipt (null amount)
-      const receiptRow2 = sheet.getRow(7);
-      assert.equal(receiptRow2.getCell(1).value, '/r/unknown.jpg');
-      assert.equal(receiptRow2.getCell(2).value, '');
+      // Only header + 1 transaction row should exist; no unmatched-receipts section
+      assert.equal(sheet.actualRowCount, 2);
     } finally {
       try { unlinkSync(outputPath); } catch { /* */ }
     }
@@ -203,7 +183,8 @@ describe('writeExcelReport', () => {
       await workbook.xlsx.readFile(outputPath);
       const sheet = workbook.getWorksheet('Reconciliation');
 
-      assert.equal(sheet.getRow(1).font.bold, true, 'header row should be bold');
+      // write-excel-file sets fontWeight per cell, not per row
+      assert.equal(sheet.getRow(1).getCell(1).font.bold, true, 'header cell should be bold');
     } finally {
       try { unlinkSync(outputPath); } catch { /* */ }
     }
@@ -236,7 +217,8 @@ describe('writeExcelReport', () => {
       await workbook.xlsx.readFile(outputPath);
       const sheet = workbook.getWorksheet('Reconciliation');
 
-      assert.equal(sheet.getRow(2).getCell(6).value, '/r/a.pdf; /r/b.pdf');
+      // basenames joined; column shifted left by 1 (id removed)
+      assert.equal(sheet.getRow(2).getCell(5).value, 'a.pdf; b.pdf');
     } finally {
       try { unlinkSync(outputPath); } catch { /* */ }
     }

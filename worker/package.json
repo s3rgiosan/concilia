@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "pdfjs-dist": "^4.10.38",
+    "write-excel-file": "^2.3.10"
+  },
+  "devDependencies": {
     "exceljs": "^4.4.0"
   }
 }

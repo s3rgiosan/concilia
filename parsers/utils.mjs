@@ -11,7 +11,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
  */
 export async function extractTextFromPDF(buffer) {
   const uint8Array = new Uint8Array(buffer);
-  const doc = await pdfjsLib.getDocument({ data: uint8Array }).promise;
+  const doc = await pdfjsLib.getDocument({ data: uint8Array, verbosity: 0 }).promise;
   const allLines = [];
 
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {

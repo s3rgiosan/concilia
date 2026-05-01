@@ -6,7 +6,7 @@
  */
 
 import { createSign } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { euroToCents } from './schema.mjs';
@@ -166,8 +166,11 @@ export class GeminiProvider {
     if (this._accessToken && now < this._tokenExpiry - 300000) {
       return this._accessToken;
     }
-    // File-based cache — survives across child process spawns
-    const cacheFile = join(tmpdir(), `concilia-token-${this.serviceAccount.private_key_id}.json`);
+    // File-based cache — survives across child process spawns. Sanitize the
+    // key id (hex/alnum only) to prevent path traversal via a malformed SA key.
+    const rawId = String(this.serviceAccount.private_key_id || '');
+    const safeId = rawId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128) || 'default';
+    const cacheFile = join(tmpdir(), `concilia-token-${safeId}.json`);
     try {
       const cached = JSON.parse(readFileSync(cacheFile, 'utf8'));
       if (cached.client_email === this.serviceAccount.client_email && cached.expiry > now + 300000) {
@@ -181,11 +184,22 @@ export class GeminiProvider {
     this._accessToken = await getAccessToken(jwt);
     this._tokenExpiry = now + 3600000;
     try {
-      writeFileSync(cacheFile, JSON.stringify({
-        token: this._accessToken,
-        expiry: this._tokenExpiry,
-        client_email: this.serviceAccount.client_email,
-      }), { mode: 0o600 });
+      // Open with explicit mode so the file is 0o600 from the moment it
+      // exists on disk (no chmod-after-write race window).
+      const fd = openSync(
+        cacheFile,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC,
+        0o600,
+      );
+      try {
+        writeSync(fd, JSON.stringify({
+          token: this._accessToken,
+          expiry: this._tokenExpiry,
+          client_email: this.serviceAccount.client_email,
+        }));
+      } finally {
+        closeSync(fd);
+      }
     } catch { /* non-fatal */ }
     return this._accessToken;
   }

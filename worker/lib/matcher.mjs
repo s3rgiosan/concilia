@@ -1,7 +1,8 @@
 /**
  * Transaction–receipt matching engine.
  *
- * Four-pass matching with 3-way sorting and name-based disambiguation.
+ * Five-pass matching (Pass 0 user rules + 4 algorithmic passes) with 3-way sorting,
+ * name-based disambiguation, and date-window tiebreaker.
  * When name+amount produces multiple candidates, the receipt date (extracted
  * by Gemini) breaks the tie within DATE_WINDOW_DAYS.
  *
@@ -111,11 +112,11 @@ function pickUniqueByDate(candidates, txDate, receipts) {
     .map(idx => ({ idx, days: daysBetween(txDate, receipts[idx].date) }))
     .filter(c => c.days !== null && c.days <= DATE_WINDOW_DAYS);
   if (withDate.length === 0) return null;
-  withDate.sort((a, b) => a.days - b.days);
-  if (withDate.length === 1) return [withDate[0].idx];
-  // Tie: closest day count equal between two candidates → not unique
-  if (withDate[0].days === withDate[1].days) return null;
-  return [withDate[0].idx];
+  // Find the minimum day distance and verify exactly one candidate is at it.
+  const minDays = Math.min(...withDate.map(c => c.days));
+  const closest = withDate.filter(c => c.days === minDays);
+  if (closest.length !== 1) return null;
+  return [closest[0].idx];
 }
 
 /**
@@ -209,16 +210,18 @@ export function matchTransactions(transactions, receipts, rules = []) {
   const matchedReceiptFiles = [];
   const reviewReceiptFiles = [];
 
-  // Initialize all transactions
-  const result = transactions.map(tx => ({
-    ...tx, receipt_files: [], receipt_meta: [], notes: '',
-    status: isBankFee(tx.description) ? 'MATCHED' : 'UNMATCHED',
-  }));
-
-  // Mark bank fees
-  for (const out of result) {
-    if (out.status === 'MATCHED') out.notes = 'bank_fee';
-  }
+  // Initialize all transactions; flag bank fees as MATCHED with notes set
+  // in a single pass so an out invariant is never observed mid-state.
+  const result = transactions.map(tx => {
+    const isFee = isBankFee(tx.description);
+    return {
+      ...tx,
+      receipt_files: [],
+      receipt_meta: [],
+      notes: isFee ? 'bank_fee' : '',
+      status: isFee ? 'MATCHED' : 'UNMATCHED',
+    };
+  });
 
   // Pass 0: custom rules (highest priority, before all other passes)
   if (rules.length > 0) {

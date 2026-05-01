@@ -80,7 +80,6 @@ function amountMismatch(receiptCents: number | null, txAbsCents: number): boolea
   return Math.abs(receiptCents - txAbsCents) > 5;
 }
 
-const MONTH_KEYS = ['', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
 const FILTER_KEYS: FilterStatus[] = ['all', 'review', 'unmatched', 'matched'];
 
@@ -88,6 +87,10 @@ export function ReviewScreen({ year, month }: Props) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  // Tracks whether the user has interacted; avoids the first-mount race where
+  // an empty `changes` map gets PUT and overwrites a freshly-restored draft.
+  const [dirty, setDirty] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
   const [changes, setChanges] = useState<Map<string, TransactionChange>>(new Map());
   const [applying, setApplying] = useState(false);
@@ -106,15 +109,52 @@ export function ReviewScreen({ year, month }: Props) {
   const noReceiptLabel = (notes: string) => buildNoReceiptLabel(notes, t);
 
   useEffect(() => {
-    fetch(`/api/review/${year}/${month}`)
-      .then((res) => {
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/review/${year}/${month}`).then((res) => {
+        if (res.status === 404) { setNotFound(true); return null; }
         if (!res.ok) throw new Error(`Failed to load review data: ${res.status}`);
         return res.json();
+      }),
+      fetch(`/api/draft/${year}/${month}`).then((res) => res.ok ? res.json() : {}).catch(() => ({})),
+    ])
+      .then(([d, draft]: [ReviewData | null, Record<string, TransactionChange>]) => {
+        if (cancelled) return;
+        if (d) setData(d);
+        if (draft && typeof draft === 'object') {
+          const restored = new Map<string, TransactionChange>();
+          for (const [k, v] of Object.entries(draft)) restored.set(k, v as TransactionChange);
+          if (restored.size > 0) setChanges(restored);
+        }
       })
-      .then((d: ReviewData) => setData(d))
-      .catch((err) => setFetchError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!cancelled) setFetchError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [year, month]);
+
+  // Debounced auto-save of pending changes so they survive app close / reload.
+  // Only saves AFTER the user has interacted (dirty), so the initial empty
+  // changes Map doesn't clobber a just-restored draft on first mount.
+  useEffect(() => {
+    if (loading || notFound || fetchError || !dirty) return;
+    const timer = setTimeout(() => {
+      const body = Object.fromEntries(changes);
+      fetch(`/api/draft/${year}/${month}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        })
+        .catch((e) => {
+          // Surface persistent failures so the user knows their progress isn't
+          // being saved. Toast component dedupes identical messages.
+          showToast(t('review.draftSaveFailed', 'Could not save draft: {{msg}}', { msg: (e as Error).message }), 'error');
+        });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [changes, year, month, loading, notFound, fetchError, dirty, showToast, t]);
 
   const effectiveTransactions = useMemo<TransactionResult[]>(() => {
     if (!data) return [];
@@ -126,13 +166,16 @@ export function ReviewScreen({ year, month }: Props) {
 
   const claimedReceiptFiles = useMemo<Set<string>>(() => {
     const claimed = new Set<string>();
-    for (const change of changes.values()) {
-      if (change.status === 'MATCHED' && !NO_RECEIPT_NOTES.has(change.notes)) {
-        for (const m of change.receipt_meta) claimed.add(m.file);
+    // Include receipts from ANY currently-MATCHED transaction (initial server
+    // state + user changes). Otherwise an UNMATCHED tx's suggested-receipt
+    // pool can include receipts already bound to a MATCHED tx.
+    for (const tx of effectiveTransactions) {
+      if (tx.status === 'MATCHED' && !NO_RECEIPT_NOTES.has(tx.notes)) {
+        for (const m of (tx.receipt_meta || [])) claimed.add(m.file);
       }
     }
     return claimed;
-  }, [changes]);
+  }, [effectiveTransactions]);
 
   const effectiveUnmatchedPool = useMemo<ReceiptMeta[]>(() => {
     if (!data) return [];
@@ -171,12 +214,17 @@ export function ReviewScreen({ year, month }: Props) {
 
   function applyChange(txId: string, change: TransactionChange) {
     setChanges((prev) => new Map(prev).set(txId, change));
+    setDirty(true);
   }
 
-  function confirmMatch(txId: string) {
+  function confirmMatch(txId: string, receipt?: ReceiptMeta) {
     const tx = effectiveTransactions.find((t) => t.id === txId);
     if (!tx) return;
-    applyChange(txId, { status: 'MATCHED', receipt_meta: tx.receipt_meta, receipt_files: tx.receipt_files, notes: tx.notes || 'amount_match' });
+    // Bind only the clicked receipt when specified, leaving other candidates
+    // free for sibling transactions in the same ambiguous-match group.
+    const meta = receipt ? [receipt] : tx.receipt_meta;
+    const files = meta.map((m) => m.file);
+    applyChange(txId, { status: 'MATCHED', receipt_meta: meta, receipt_files: files, notes: tx.notes || 'amount_match' });
   }
 
   function rejectMatch(txId: string) {
@@ -256,11 +304,12 @@ export function ReviewScreen({ year, month }: Props) {
       const result = await res.json();
       setUpdatedReportUrl(result.reportUrl);
       setChanges(new Map());
+      setDirty(false);
       showToast(t('review.changesApplied'), 'success');
       fetch(`/api/review/${year}/${month}`)
-        .then((r) => r.ok ? r.json() : null)
+        .then((r) => r.ok ? r.json() : Promise.reject(new Error(`Refresh failed: ${r.status}`)))
         .then((fresh) => { if (fresh) setData(fresh); })
-        .catch(() => {});
+        .catch((e) => showToast(t('review.refreshFailed', 'Could not refresh review data: {{msg}}', { msg: (e as Error).message }), 'error'));
     } catch (err) {
       showToast((err as Error).message, 'error');
     } finally {
@@ -299,7 +348,7 @@ export function ReviewScreen({ year, month }: Props) {
             <div className="flex items-center gap-1 flex-shrink-0">
               {action === 'review' && (
                 <>
-                  <button type="button" onClick={() => { confirmMatch(tx.id); setPreview(null); }} className="btn btn-primary btn-xs btn-circle" title={t('review.actions.accept')}><Check className="w-3 h-3" /></button>
+                  <button type="button" onClick={() => { confirmMatch(tx.id, receipt ?? undefined); setPreview(null); }} className="btn btn-primary btn-xs btn-circle" title={t('review.actions.accept')}><Check className="w-3 h-3" /></button>
                   <button type="button" onClick={() => { rejectMatch(tx.id); setPreview(null); }} className="btn btn-error btn-xs btn-circle" title={t('review.actions.reject')}><X className="w-3 h-3" /></button>
                 </>
               )}
@@ -317,8 +366,6 @@ export function ReviewScreen({ year, month }: Props) {
     return <SidePanel url={preview.url} filename={preview.filename} onClose={() => setPreview(null)} header={header} />;
   }
 
-  const periodLabel = `${t(`form.months.${MONTH_KEYS[parseInt(month, 10)]}`)} ${year}`;
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -327,9 +374,21 @@ export function ReviewScreen({ year, month }: Props) {
     );
   }
 
+  if (notFound) {
+    return (
+      <div className="card bg-base-100 rounded-none">
+        <div className="card-body">
+          <div className="py-8 text-center text-sm text-base-content/70">
+            {t('review.empty')}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (fetchError) {
     return (
-      <div className="card bg-base-100 border border-error/50 shadow-sm">
+      <div className="card bg-base-100 rounded-none">
         <div className="card-body">
           <div role="alert" className="alert alert-error">
             <span className="text-sm">{fetchError}</span>
@@ -341,16 +400,10 @@ export function ReviewScreen({ year, month }: Props) {
 
   return (
     <>
-      <div className="card bg-base-100 border border-base-200 shadow-sm">
+      <div className="card bg-base-100 rounded-none">
         <div className="card-body">
-          {/* Header */}
-          <div>
-            <h2 className="card-title">{t('review.title')}</h2>
-            <p className="text-sm text-base-content/60">{periodLabel}</p>
-          </div>
-
           {/* Filter tabs */}
-          <div role="tablist" className="tabs tabs-boxed w-fit mt-2">
+          <div role="tablist" className="tabs tabs-boxed w-fit">
             {FILTER_KEYS.map((key) => (
               <button
                 key={key}
@@ -368,19 +421,24 @@ export function ReviewScreen({ year, month }: Props) {
           </div>
 
           {/* Transaction list */}
-          <div className="space-y-3 mt-1">
+          <div className="space-y-3 mt-4">
             {visibleTransactions.length === 0 && (
               <p className="text-sm text-base-content/60 py-4 text-center">{t('review.noTransactions')}</p>
             )}
 
             {visibleTransactions.map((tx) => (
-              <div key={tx.id} className="rounded-lg border border-base-200 bg-base-100">
+              <details
+                key={tx.id}
+                open={tx.status !== 'MATCHED'}
+                className="collapse collapse-arrow rounded-lg border border-base-200 bg-base-100"
+              >
                 {/* Transaction header */}
-                <div className="flex items-center justify-between px-4 py-3">
+                <summary className="collapse-title !min-h-0 !py-3 !pr-12 !flex items-center justify-between gap-4 cursor-pointer marker:content-none [&::-webkit-details-marker]:hidden">
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-sm text-base-content/60 whitespace-nowrap">{tx.date}</span>
                     {tx.status === 'REVIEW' && <span className="badge badge-warning">{t('review.filters.review')}</span>}
                     {tx.status === 'UNMATCHED' && <span className="badge badge-error">{t('review.filters.unmatched')}</span>}
+                    {tx.status === 'MATCHED' && <span className="badge badge-success">{t('review.filters.matched')}</span>}
                     <span className="text-sm font-medium text-base-content truncate">{tx.description}</span>
                   </div>
                   <div className="flex items-center gap-2 ml-4 flex-shrink-0">
@@ -388,17 +446,17 @@ export function ReviewScreen({ year, month }: Props) {
                       {formatCents(tx.amount_cents)}
                     </span>
                   </div>
-                </div>
+                </summary>
 
                 {/* Receipt / action area */}
-                <div className="border-t border-base-200 px-4 py-3 bg-base-200/30">
-                  <div className="overflow-y-auto max-h-52 divide-y divide-base-200 rounded-lg border border-base-200">
+                <div className="collapse-content !p-0">
+                  <div className="border-t border-base-200 overflow-y-auto max-h-52 divide-y divide-base-200">
 
                     {/* REVIEW: one row per candidate receipt (excluding receipts claimed by another tx) */}
                     {tx.status === 'REVIEW' && tx.receipt_meta.filter((m) => !claimedReceiptFiles.has(m.file)).map((m) => {
                       const mismatch = amountMismatch(m.amount_cents, tx.abs_cents);
                       return (
-                        <div key={m.file} className="flex items-center gap-3 px-3 py-2 bg-base-100 hover:bg-base-200/40">
+                        <div key={m.file} className="flex items-center gap-3 px-4 py-2 bg-base-100 hover:bg-base-200/40">
                           <div className="flex-1 min-w-0">
                             <span className="text-sm text-base-content truncate block">{m.vendor ?? fileBasename(m.file)}</span>
                             <div className="flex items-center gap-2 text-xs text-base-content/50">
@@ -419,7 +477,7 @@ export function ReviewScreen({ year, month }: Props) {
                           <button type="button" onClick={() => rescanReceipt(m.file)} disabled={rescanning.has(m.file)} className="btn btn-outline btn-xs btn-circle flex-shrink-0" title={t('review.actions.rescan')}>
                             <RefreshCw className={`w-3 h-3 ${rescanning.has(m.file) ? 'animate-spin' : ''}`} />
                           </button>
-                          <button type="button" onClick={() => confirmMatch(tx.id)} className="btn btn-primary btn-xs btn-circle flex-shrink-0" title={t('review.actions.accept')}>
+                          <button type="button" onClick={() => confirmMatch(tx.id, m)} className="btn btn-primary btn-xs btn-circle flex-shrink-0" title={t('review.actions.accept')}>
                             <Check className="w-3 h-3" />
                           </button>
                           <button type="button" onClick={() => rejectMatch(tx.id)} className="btn btn-error btn-xs btn-circle flex-shrink-0" title={t('review.actions.reject')}>
@@ -440,7 +498,7 @@ export function ReviewScreen({ year, month }: Props) {
                       .map((r) => {
                         const mismatch = amountMismatch(r.amount_cents, tx.abs_cents);
                         return (
-                          <div key={r.file} className="flex items-center gap-3 px-3 py-2 bg-base-100 hover:bg-base-200/40">
+                          <div key={r.file} className="flex items-center gap-3 px-4 py-2 bg-base-100 hover:bg-base-200/40">
                             <div className="flex-1 min-w-0">
                               <span className="text-sm text-base-content truncate block">{r.vendor ?? fileBasename(r.file)}</span>
                               <div className="flex items-center gap-2 text-xs text-base-content/50">
@@ -471,7 +529,7 @@ export function ReviewScreen({ year, month }: Props) {
                     {tx.status === 'MATCHED' && !NO_RECEIPT_NOTES.has(tx.notes) && tx.receipt_meta.map((m) => {
                       const mismatch = amountMismatch(m.amount_cents, tx.abs_cents);
                       return (
-                        <div key={m.file} className="flex items-center gap-3 px-3 py-2 bg-base-100 hover:bg-base-200/40">
+                        <div key={m.file} className="flex items-center gap-3 px-4 py-2 bg-base-100 hover:bg-base-200/40">
                           <div className="flex-1 min-w-0">
                             <span className="text-sm text-base-content truncate block">{m.vendor ?? fileBasename(m.file)}</span>
                             <div className="flex items-center gap-2 text-xs text-base-content/50">
@@ -501,7 +559,7 @@ export function ReviewScreen({ year, month }: Props) {
 
                     {/* MATCHED: no-receipt category — single label row */}
                     {tx.status === 'MATCHED' && NO_RECEIPT_NOTES.has(tx.notes) && (
-                      <div className="flex items-center gap-3 px-3 py-2 bg-base-100 hover:bg-base-200/40">
+                      <div className="flex items-center gap-3 px-4 py-2 bg-base-100 hover:bg-base-200/40">
                         <div className="flex-1 min-w-0">
                           <span className="text-sm text-base-content truncate block">{noReceiptLabel(tx.notes)}</span>
                         </div>
@@ -513,7 +571,7 @@ export function ReviewScreen({ year, month }: Props) {
 
                     {/* MATCHED: no receipt at all */}
                     {tx.status === 'MATCHED' && !NO_RECEIPT_NOTES.has(tx.notes) && tx.receipt_meta.length === 0 && (
-                      <div className="flex items-center gap-3 px-3 py-2 bg-base-100 hover:bg-base-200/40">
+                      <div className="flex items-center gap-3 px-4 py-2 bg-base-100 hover:bg-base-200/40">
                         <div className="flex-1 min-w-0">
                           <span className="text-sm text-base-content/60 truncate block">{t('review.noReceipt')}</span>
                         </div>
@@ -527,13 +585,13 @@ export function ReviewScreen({ year, month }: Props) {
 
                   {/* UNMATCHED: no-receipt select below the pool list */}
                   {tx.status === 'UNMATCHED' && (
-                    <div className="mt-2">
+                    <div className="border-t border-base-200 px-4 pt-3 pb-3">
                       <select
                         value=""
                         onChange={(e) => { if (e.target.value) markAsNoReceipt(tx.id, e.target.value as NoReceiptCategory); }}
                         className="select select-bordered select-sm text-base-content/60"
                       >
-                        <option value="" disabled>{t('review.other')}</option>
+                        <option value="" disabled>{t('common.select', 'Select…')}</option>
                         {NO_RECEIPT_CATEGORY_KEYS.map((key) => (
                           <option key={key} value={key}>{t(NO_RECEIPT_LABEL_KEYS[key])}</option>
                         ))}
@@ -541,7 +599,7 @@ export function ReviewScreen({ year, month }: Props) {
                     </div>
                   )}
                 </div>
-              </div>
+              </details>
             ))}
           </div>
 

@@ -7,7 +7,7 @@
  * Output: JSON match result on stdout
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { matchTransactions } from '../lib/matcher.mjs';
 
 const args = process.argv.slice(2);
@@ -20,10 +20,16 @@ if (!txPath || !rcptPath) {
 
 const rulesPath = args[2] || null;
 
+function readJsonOrEmpty(path) {
+  if (!path) return [];
+  try { return JSON.parse(readFileSync(path, 'utf8')); }
+  catch { return []; }
+}
+
 try {
   const transactions = JSON.parse(readFileSync(txPath, 'utf8'));
   const receipts = JSON.parse(readFileSync(rcptPath, 'utf8'));
-  const rules = rulesPath && existsSync(rulesPath) ? JSON.parse(readFileSync(rulesPath, 'utf8')) : [];
+  const rules = readJsonOrEmpty(rulesPath);
 
   const result = matchTransactions(transactions, receipts, rules);
   process.stdout.write(JSON.stringify(result));

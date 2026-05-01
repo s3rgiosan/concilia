@@ -1,13 +1,11 @@
-import { Scale, LogOut, Settings, User, ChevronDown } from 'lucide-react';
+import { Settings, SlidersHorizontal } from 'lucide-react';
 import { ReconcileForm } from './components/ReconcileForm';
 import { ProgressCard } from './components/ProgressCard';
 import { ResultsCard } from './components/ResultsCard';
 import { ReviewScreen } from './components/ReviewScreen';
 import { RulesPanel } from './components/RulesPanel';
-import { AuthScreen } from './components/AuthScreen';
-import { ProfileScreen } from './components/ProfileScreen';
+import { SettingsModal } from './components/SettingsModal';
 import { ToastProvider } from './components/ui/Toast';
-import { AuthProvider, useAuth } from './context/AuthContext';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -33,22 +31,19 @@ export interface Summary {
   matchRate: number;
 }
 
-type Phase = 'form' | 'running' | 'done' | 'error' | 'review' | 'profile';
+type Phase = 'form' | 'running' | 'done' | 'error' | 'review';
 
 function AppContent() {
-  const { user, loading, logout } = useAuth();
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>('form');
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [events, setEvents] = useState<ProgressEvent[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [reportUrl, setReportUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [year, setYear] = useState('');
   const [month, setMonth] = useState('');
-
-  if (loading) return null;
-  if (!user) return <AuthScreen />;
 
   function handleStart(formData: FormData) {
     setPhase('running');
@@ -124,76 +119,80 @@ function AppContent() {
     setMonth('');
   }
 
+  const breadcrumbLabel: Record<Phase, string> = {
+    form: t('nav.start', 'Start'),
+    running: t('nav.running', 'Processing'),
+    done: t('nav.results', 'Results'),
+    error: t('nav.results', 'Results'),
+    review: t('nav.review', 'Review'),
+  };
+
+  const periodLabel = (year && month)
+    ? `${t(`form.months.${month}`)} ${year}`
+    : '';
+
   return (
     <div className="min-h-screen bg-base-100">
       <header className="bg-base-100 border-b border-base-200">
-        <div className={`${phase === 'review' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto px-4 py-4 flex items-center justify-between`}>
-          <a
-            href="/"
-            onClick={(e) => { e.preventDefault(); if (phase !== 'running') handleReset(); }}
-            className="flex items-center gap-3 hover:opacity-70 transition-opacity"
-            aria-label="Concilia home"
-          >
-            <Scale className="w-6 h-6 text-primary" />
-            <span className="text-lg font-semibold text-base-content">Concilia</span>
-          </a>
+        <div className="max-w-6xl mx-auto px-8 py-3 flex items-center justify-end">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setRulesOpen(true)}
               className="btn btn-ghost btn-sm gap-1.5"
             >
-              <Settings className="w-4 h-4" />
+              <SlidersHorizontal className="w-4 h-4" />
               <span className="hidden sm:inline">{t('nav.rules')}</span>
             </button>
-            <div className="dropdown dropdown-end">
-              <div tabIndex={0} role="button" className="btn btn-ghost btn-sm gap-1.5">
-                <User className="w-4 h-4" />
-                <span className="hidden sm:inline">{user.displayName ?? user.username}</span>
-                <ChevronDown className="w-4 h-4" />
-              </div>
-              <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow border border-base-200 mt-1">
-                <li>
-                  <button type="button" onClick={() => { setPhase('profile'); (document.activeElement as HTMLElement)?.blur(); }}>
-                    <User className="w-4 h-4" />
-                    {t('profile.title')}
-                  </button>
-                </li>
-                <div className="divider my-0" />
-                <li>
-                  <button type="button" onClick={logout} className="text-error">
-                    <LogOut className="w-4 h-4" />
-                    {t('common.signOut')}
-                  </button>
-                </li>
-              </ul>
-            </div>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="btn btn-ghost btn-sm gap-1.5"
+              aria-label="Settings"
+            >
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('nav.settings', 'Settings')}</span>
+            </button>
           </div>
         </div>
       </header>
 
-      {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}
+      <nav className="border-b border-base-200">
+        <div className="max-w-6xl mx-auto px-8 py-2 text-sm breadcrumbs">
+          <ul>
+            <li>
+              <button
+                type="button"
+                onClick={() => { if (phase !== 'running') handleReset(); }}
+                className="hover:underline"
+                disabled={phase === 'running'}
+              >
+                {t('nav.start', 'Start')}
+              </button>
+            </li>
+            {phase !== 'form' && <li>{breadcrumbLabel[phase]}</li>}
+            {phase === 'review' && periodLabel && <li>{periodLabel}</li>}
+          </ul>
+        </div>
+      </nav>
 
-      <main className={`${phase === 'review' ? 'max-w-6xl' : 'max-w-4xl'} mx-auto px-4 py-8 space-y-6`}>
+      {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      <main className="max-w-6xl mx-auto pb-8 space-y-6">
         {phase === 'form' && <ReconcileForm onSubmit={handleStart} onResume={handleResume} />}
         {phase === 'running' && <ProgressCard events={events} />}
         {(phase === 'done' || phase === 'error') && (
-          <>
-            <ProgressCard events={events} />
-            <ResultsCard
-              summary={summary}
-              reportUrl={reportUrl}
-              error={errorMessage}
-              onReset={handleReset}
-              onReview={() => setPhase('review')}
-            />
-          </>
+          <ResultsCard
+            summary={summary}
+            reportUrl={reportUrl}
+            error={errorMessage}
+            onReset={handleReset}
+            onReview={() => setPhase('review')}
+          />
         )}
         {phase === 'review' && (
           <ReviewScreen year={year} month={month} />
-        )}
-        {phase === 'profile' && (
-          <ProfileScreen />
         )}
       </main>
     </div>
@@ -202,10 +201,8 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <AppContent />
-      </ToastProvider>
-    </AuthProvider>
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 }

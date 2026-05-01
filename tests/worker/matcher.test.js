@@ -363,11 +363,11 @@ describe('matchTransactions', () => {
     it('EUR receipt matched in pass 2, non-EUR left for FX', async () => {
       const { matchTransactions } = await load();
       const eurReceipt = { file: '/r/eur.pdf', amount_cents: 1700, confidence: 'high', provider_used: 'gemini', currency: 'EUR' };
-      const usdReceipt = { file: '/r/DigitalOcean.pdf', amount_cents: 1700, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
+      const usdReceipt = { file: '/r/CloudCo.pdf', amount_cents: 1700, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
       const result = matchTransactions(
         [
           tx('tx-001', '2024-12-15', 'SOME PURCHASE', -1700),   // matches EUR in pass 2
-          tx('tx-002', '2024-12-16', 'DIGITALOCEAN', -1600),    // should FX match USD in pass 3
+          tx('tx-002', '2024-12-16', 'CLOUDCO', -1600),    // should FX match USD in pass 3
         ],
         [usdReceipt, eurReceipt],
       );
@@ -380,17 +380,17 @@ describe('matchTransactions', () => {
     it('disambiguates FX candidates by filename', async () => {
       const { matchTransactions } = await load();
       // Two non-EUR receipts within ±10%, but only one matches by name
-      const r1 = { file: '/r/DigitalOcean Invoice.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
+      const r1 = { file: '/r/CloudCo Invoice.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
       const r2 = { file: '/r/some-other.pdf', amount_cents: 4500, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4312)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4312)],
         [r1, r2],
       );
       const t = result.transactions[0];
       assert.equal(t.status, 'REVIEW');
-      // Should narrow to just the DigitalOcean receipt
+      // Should narrow to just the CloudCo receipt
       assert.equal(t.receipt_files.length, 1);
-      assert.deepEqual(t.receipt_files, ['/r/DigitalOcean Invoice.pdf']);
+      assert.deepEqual(t.receipt_files, ['/r/CloudCo Invoice.pdf']);
       assert.match(t.notes, /fx_match.*USD/);
     });
   });
@@ -399,9 +399,9 @@ describe('matchTransactions', () => {
     it('matches USD receipt to EUR transaction within ±10% as REVIEW when name overlaps', async () => {
       const { matchTransactions } = await load();
       // Transaction: €43.12 EUR, Receipt: $47.07 USD (~9% difference), vendor matches description
-      const r = { file: '/r/invoice.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD', vendor: 'DigitalOcean' };
+      const r = { file: '/r/invoice.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD', vendor: 'CloudCo' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4312)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4312)],
         [r],
       );
       const t = result.transactions[0];
@@ -413,12 +413,12 @@ describe('matchTransactions', () => {
     it('does not FX match when no name overlap — receipt stays unmatched', async () => {
       const { matchTransactions } = await load();
       // Receipt vendor/filename has no relation to transaction description
-      const r = { file: '/r/spinupwp-invoice.pdf', amount_cents: 1700, confidence: 'high', provider_used: 'gemini', currency: 'USD', vendor: 'SpinupWP' };
+      const r = { file: '/r/hostprovider-invoice.pdf', amount_cents: 1700, confidence: 'high', provider_used: 'gemini', currency: 'USD', vendor: 'HostProvider' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'JORGE ALVES', -1650)],
+        [tx('tx-001', '2024-12-15', 'JANE DOE', -1650)],
         [r],
       );
-      // No name overlap: spinupwp ≠ jorge alves → stays UNMATCHED
+      // No name overlap: hostprovider ≠ jane doe → stays UNMATCHED
       assert.equal(result.transactions[0].status, 'UNMATCHED');
       assert.equal(result.receiptsByStatus.unmatched.length, 1);
     });
@@ -487,10 +487,10 @@ describe('matchTransactions', () => {
     it('shows multiple FX candidates in notes when both have name overlap', async () => {
       const { matchTransactions } = await load();
       // Both receipts have vendor matching the transaction description
-      const r1 = { file: '/r/a.pdf', amount_cents: 5200, confidence: 'high', provider_used: 'gemini', currency: 'USD', vendor: 'Amazon' };
-      const r2 = { file: '/r/b.pdf', amount_cents: 5300, confidence: 'high', provider_used: 'gemini', currency: 'GBP', vendor: 'Amazon' };
+      const r1 = { file: '/r/a.pdf', amount_cents: 5200, confidence: 'high', provider_used: 'gemini', currency: 'USD', vendor: 'ShopCo' };
+      const r2 = { file: '/r/b.pdf', amount_cents: 5300, confidence: 'high', provider_used: 'gemini', currency: 'GBP', vendor: 'ShopCo' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'AMAZON PURCHASE', -5000)],
+        [tx('tx-001', '2024-12-15', 'SHOPCO PURCHASE', -5000)],
         [r1, r2],
       );
       const t = result.transactions[0];
@@ -501,12 +501,12 @@ describe('matchTransactions', () => {
 
     it('FX matched receipts go to review bucket', async () => {
       const { matchTransactions } = await load();
-      const r = { file: '/r/DigitalOcean.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
+      const r = { file: '/r/CloudCo.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4312)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4312)],
         [r],
       );
-      assert.ok(result.receiptsByStatus.review.includes('/r/DigitalOcean.pdf'));
+      assert.ok(result.receiptsByStatus.review.includes('/r/CloudCo.pdf'));
       assert.equal(result.receiptsByStatus.matched.length, 0);
       assert.equal(result.receiptsByStatus.unmatched.length, 0);
     });
@@ -515,10 +515,10 @@ describe('matchTransactions', () => {
   describe('filename matching (pass 3)', () => {
     it('matches receipt filename to transaction description', async () => {
       const { matchTransactions } = await load();
-      // Transaction "DIGITALOCEAN" matches filename "DigitalOcean Invoice 2025 Oct.pdf"
-      const r = { file: '/r/DigitalOcean Invoice 2025 Oct (14377852-530612035).pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
+      // Transaction "CLOUDCO" matches filename "CloudCo Invoice 2025 Oct.pdf"
+      const r = { file: '/r/CloudCo Invoice 2025 Oct.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4086)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4086)],
         [r],
       );
       const t = result.transactions[0];
@@ -539,9 +539,9 @@ describe('matchTransactions', () => {
 
     it('prefers name+amount match over filename-only match', async () => {
       const { matchTransactions } = await load();
-      const r = { file: '/r/DigitalOcean.pdf', amount_cents: 4086, confidence: 'high', provider_used: 'gemini', currency: 'EUR' };
+      const r = { file: '/r/CloudCo.pdf', amount_cents: 4086, confidence: 'high', provider_used: 'gemini', currency: 'EUR' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4086)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4086)],
         [r],
       );
       // Matched in pass 1 (name + amount) not pass 4 (filename only)
@@ -552,11 +552,11 @@ describe('matchTransactions', () => {
     it('does not filename-match consumed receipts', async () => {
       const { matchTransactions } = await load();
       // EUR receipt consumed by amount in pass 2, then unavailable for filename match
-      const r = { file: '/r/DigitalOcean.pdf', amount_cents: 4086, confidence: 'high', provider_used: 'gemini', currency: 'EUR' };
+      const r = { file: '/r/CloudCo.pdf', amount_cents: 4086, confidence: 'high', provider_used: 'gemini', currency: 'EUR' };
       const result = matchTransactions(
         [
           tx('tx-001', '2024-12-15', 'COMPRA QUALQUER', -4086),
-          tx('tx-002', '2024-12-16', 'DIGITALOCEAN', -9999),
+          tx('tx-002', '2024-12-16', 'CLOUDCO', -9999),
         ],
         [r],
       );
@@ -566,21 +566,21 @@ describe('matchTransactions', () => {
 
     it('filename match receipts go to review bucket', async () => {
       const { matchTransactions } = await load();
-      const r = { file: '/r/DigitalOcean Invoice.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
+      const r = { file: '/r/CloudCo Invoice.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4086)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4086)],
         [r],
       );
-      assert.ok(result.receiptsByStatus.review.includes('/r/DigitalOcean Invoice.pdf'));
+      assert.ok(result.receiptsByStatus.review.includes('/r/CloudCo Invoice.pdf'));
     });
 
     it('filename matches receipt outside FX tolerance', async () => {
       const { matchTransactions } = await load();
       // Receipt $47.07 USD, transaction €40.86 — 15% difference, outside FX ±10%
       // But filename matches transaction description
-      const r = { file: '/r/DigitalOcean Invoice 2025 Oct.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
+      const r = { file: '/r/CloudCo Invoice 2025 Oct.pdf', amount_cents: 4707, confidence: 'high', provider_used: 'gemini', currency: 'USD' };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4086)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4086)],
         [r],
       );
       const t = result.transactions[0];
@@ -591,9 +591,9 @@ describe('matchTransactions', () => {
     it('filename matches receipt with null amount', async () => {
       const { matchTransactions } = await load();
       // Receipt extraction failed (null amount), but filename matches
-      const r = { file: '/r/DigitalOcean Invoice.pdf', amount_cents: null, confidence: null, provider_used: 'gemini', currency: null };
+      const r = { file: '/r/CloudCo Invoice.pdf', amount_cents: null, confidence: null, provider_used: 'gemini', currency: null };
       const result = matchTransactions(
-        [tx('tx-001', '2024-12-15', 'DIGITALOCEAN', -4086)],
+        [tx('tx-001', '2024-12-15', 'CLOUDCO', -4086)],
         [r],
       );
       const t = result.transactions[0];

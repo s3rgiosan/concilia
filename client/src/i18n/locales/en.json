@@ -7,11 +7,33 @@
     "delete": "Delete",
     "optional": "optional",
     "low": "low",
+    "loading": "Loading…",
+    "select": "Select…",
     "signOut": "Sign out"
   },
   "nav": {
     "matchRules": "Match rules",
-    "rules": "Rules"
+    "rules": "Rules",
+    "settings": "Settings",
+    "start": "Start",
+    "running": "Processing",
+    "results": "Results",
+    "review": "Review"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "receiptsRoot": "Receipts folder",
+    "receiptsRootHint": "Root folder containing year/month subfolders.",
+    "saKey": "Gemini service account key",
+    "geminiProject": "Gemini project (optional)",
+    "geminiLocation": "Location",
+    "geminiModel": "Model",
+    "saved": "Settings saved",
+    "busy": "Reconciliation in progress. Try again when it finishes.",
+    "failedToLoad": "Failed to load settings",
+    "failedToSave": "Failed to save",
+    "notInElectron": "Settings are only editable in the desktop app."
   },
   "auth": {
     "signIn": "Sign in",
@@ -104,6 +126,9 @@
   },
   "review": {
     "title": "Review & Validate",
+    "empty": "No reconciliation data for this period yet. Run a reconciliation first.",
+    "refreshFailed": "Could not refresh review data: {{msg}}",
+    "draftSaveFailed": "Could not save draft: {{msg}}",
     "noTransactions": "No transactions.",
     "noReceipt": "No receipt",
     "applyChanges": "Apply Changes",
@@ -144,10 +169,10 @@
     },
     "actions": {
       "preview": "Preview",
-      "rescan": "Rescan with AI",
+      "rescan": "Rescan",
       "accept": "Accept",
       "reject": "Reject",
-      "assign": "Assign",
+      "assign": "Accept",
       "dispute": "Dispute"
     },
     "rescanDone": "Receipt rescanned"

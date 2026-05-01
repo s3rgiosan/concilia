@@ -30,21 +30,21 @@ if (!existsSync(pdfPath)) {
   process.exit(1);
 }
 
-// Locate parsers/parse.mjs relative to this script
-// In Docker: /parsers/parse.mjs; locally: ../../parsers/parse.mjs
-const dockerPath = '/parsers/parse.mjs';
-const localPath = resolve(__dirname, '..', '..', 'parsers', 'parse.mjs');
-const parserScript = existsSync(dockerPath) ? dockerPath : localPath;
-
+// Locate parsers/parse.mjs relative to this script.
+const parserScript = resolve(__dirname, '..', '..', 'parsers', 'parse.mjs');
 if (!existsSync(parserScript)) {
-  console.error(`Parser script not found at ${dockerPath} or ${localPath}`);
+  console.error(`Parser script not found at ${parserScript}`);
   process.exit(1);
 }
 
+const NODE_BIN = process.env.NODE_BIN || process.execPath;
+const NODE_ENV_EXTRA = process.env.NODE_BIN ? { ELECTRON_RUN_AS_NODE: '1' } : {};
+
 try {
-  const output = execFileSync('node', [parserScript, bank, pdfPath], {
+  const output = execFileSync(NODE_BIN, [parserScript, bank, pdfPath], {
     encoding: 'utf8',
     timeout: 30000,
+    env: { ...process.env, ...NODE_ENV_EXTRA },
   });
 
   const raw = JSON.parse(output);

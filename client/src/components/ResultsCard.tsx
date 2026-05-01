@@ -14,7 +14,7 @@ export function ResultsCard({ summary, reportUrl, error, onReset, onReview }: Pr
   const { t } = useTranslation();
   if (error) {
     return (
-      <div className="card bg-base-100 border border-error/50 shadow-sm">
+      <div className="card bg-base-100 rounded-none">
         <div className="card-body">
           <div role="alert" className="alert alert-error">
             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
@@ -37,16 +37,11 @@ export function ResultsCard({ summary, reportUrl, error, onReset, onReview }: Pr
   if (!summary) return null;
 
   return (
-    <div className="card bg-base-100 border border-base-200 shadow-sm">
+    <div className="card bg-base-100 rounded-none">
       <div className="card-body">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="card-title">{t('results.title')}</h2>
-            <p className="text-sm text-base-content/60 -mt-1">
-              {t('results.subtitle', { totalTransactions: summary.totalTransactions, totalReceipts: summary.totalReceipts })}
-            </p>
-          </div>
-        </div>
+        <p className="text-sm text-base-content/60">
+          {t('results.subtitle', { totalTransactions: summary.totalTransactions, totalReceipts: summary.totalReceipts })}
+        </p>
 
         <div className="stats stats-horizontal shadow-none border border-base-200 rounded-box w-full mt-2">
           <div className="stat">
