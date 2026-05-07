@@ -667,7 +667,7 @@ export function ReviewScreen({ year, month }: Props) {
                 value={nameFilter}
                 onChange={(e) => setNameFilter(e.target.value)}
                 placeholder={t('review.nameFilter.placeholder')}
-                className="input input-sm input-bordered w-full pl-9 pr-9"
+                className="input input-bordered w-full pl-9 pr-9 !h-8 !min-h-[2rem] text-sm"
               />
               {nameFilter && (
                 <button
