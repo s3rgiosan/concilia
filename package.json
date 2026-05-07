@@ -1,0 +1,114 @@
+{
+  "name": "concilia",
+  "version": "1.0.0",
+  "description": "Bank statement reconciliation desktop app",
+  "author": "Sérgio Santos",
+  "license": "GPL-3.0-or-later",
+  "main": "electron/main.js",
+  "scripts": {
+    "test": "node --test tests/worker/*.test.js",
+    "install:all": "npm install && for d in server worker parsers electron/setup-css; do (cd \"$d\" && npm install) || exit 1; done",
+    "install:all:prod": "npm install && (cd server && npm install --omit=dev) && (cd worker && npm install --omit=dev) && (cd parsers && npm install --omit=dev) && (cd electron/setup-css && npm install)",
+    "build:client": "cd client && npm install && npm run build && mkdir -p ../server/public && rm -rf ../server/public/* && cp -r dist/* ../server/public/",
+    "build:setup-css": "cd electron/setup-css && npm run build",
+    "build:assets": "npm run build:client && npm run build:setup-css",
+    "bundle:poppler": "./scripts/bundle-poppler.sh",
+    "generate:icon": "./scripts/generate-icon.sh",
+    "dev": "electron .",
+    "dist": "npm run build:assets && npm run bundle:poppler && electron-builder --mac --arm64 --publish=never",
+    "build": "npm run install:all:prod && npm run dist"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "electron-store": "^7.0.3"
+  },
+  "build": {
+    "appId": "com.s3rgiosan.concilia",
+    "productName": "Concilia",
+    "copyright": "Copyright © 2026 Sérgio Santos",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist-electron"
+    },
+    "asar": true,
+    "files": [
+      "electron/**/*",
+      "!electron/setup-css/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".",
+        "to": "app",
+        "filter": [
+          "server/**/*",
+          "worker/**/*",
+          "parsers/**/*",
+          "!**/node_modules/.cache/**",
+          "!**/node_modules/.bin/**",
+          "!**/.git/**",
+          "!**/.github/**",
+          "!**/*.test.js",
+          "!**/tests/**",
+          "!**/test/**",
+          "!**/*.md",
+          "!**/*.markdown",
+          "!**/CHANGELOG*",
+          "!**/CHANGES*",
+          "!**/HISTORY*",
+          "!**/LICENSE*",
+          "!**/LICENCE*",
+          "!**/COPYING*",
+          "!**/AUTHORS*",
+          "!**/CONTRIBUTORS*",
+          "!**/CONTRIBUTING*",
+          "!**/.npmignore",
+          "!**/.gitignore",
+          "!**/.editorconfig",
+          "!**/.eslintrc*",
+          "!**/.prettierrc*",
+          "!**/.babelrc*",
+          "!**/tsconfig*.json",
+          "!**/package-lock.json",
+          "!**/yarn.lock",
+          "!**/pnpm-lock.yaml",
+          "!**/*.ts",
+          "!**/*.flow",
+          "!**/*.map",
+          "!**/.DS_Store"
+        ]
+      },
+      {
+        "from": "build/poppler",
+        "to": "poppler",
+        "filter": [
+          "bin/**",
+          "lib/**"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "electronLanguages": [
+      "en"
+    ]
+  }
+}
