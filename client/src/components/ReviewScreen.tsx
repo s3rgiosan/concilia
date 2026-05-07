@@ -660,14 +660,14 @@ export function ReviewScreen({ year, month }: Props) {
               ))}
             </div>
 
-            <div className="relative flex-1 min-w-[12rem] max-w-xs">
+            <div className="relative flex-1 min-w-[12rem]">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50 pointer-events-none" />
               <input
                 type="text"
                 value={nameFilter}
                 onChange={(e) => setNameFilter(e.target.value)}
                 placeholder={t('review.nameFilter.placeholder')}
-                className="input input-bordered w-full pl-9 pr-9 !h-8 !min-h-[2rem] text-sm"
+                className="input input-bordered w-full pl-9 pr-9 !h-10 !min-h-[2.5rem] text-sm"
               />
               {nameFilter && (
                 <button
@@ -685,11 +685,11 @@ export function ReviewScreen({ year, month }: Props) {
               type="button"
               onClick={toggleExpandAll}
               disabled={visibleTransactions.length === 0}
-              className="btn btn-sm btn-ghost gap-2"
+              className="btn btn-sm btn-ghost gap-2 ml-auto !h-10 !min-h-[2.5rem]"
             >
               {allVisibleExpanded
-                ? <><ChevronsDownUp className="w-4 h-4" />{t('review.collapseAll')}</>
-                : <><ChevronsUpDown className="w-4 h-4" />{t('review.expandAll')}</>}
+                ? <><ChevronsDownUp className="w-4 h-4" />{t('review.collapse')}</>
+                : <><ChevronsUpDown className="w-4 h-4" />{t('review.expand')}</>}
             </button>
           </div>
 

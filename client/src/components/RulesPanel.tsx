@@ -24,7 +24,16 @@ export function RulesPanel({ onClose }: Props) {
   const { showToast } = useToast();
   const { t } = useTranslation();
 
+  const inElectron = typeof window !== 'undefined' && !!window.concilia;
+
   useEffect(() => {
+    // The /api/rules endpoint is hosted by the Express server inside Electron.
+    // The Vite dev server has no backend, so skip the fetch and render the
+    // panel in read-only mode with a banner instead of throwing a toast.
+    if (!inElectron) {
+      setLoading(false);
+      return;
+    }
     fetch('/api/rules')
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: Rule[]) => setRules(data))
@@ -75,6 +84,12 @@ export function RulesPanel({ onClose }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {!inElectron && (
+            <div className="alert alert-warning text-sm">
+              {t('rules.notInElectron', 'Rules are only editable in the desktop app.')}
+            </div>
+          )}
+
           <p className="text-xs text-base-content/60">
             {t('rules.description')}
           </p>
@@ -106,6 +121,7 @@ export function RulesPanel({ onClose }: Props) {
                   <button
                     type="button"
                     onClick={() => removeRule(rule.id)}
+                    disabled={!inElectron}
                     className="btn btn-outline btn-xs btn-circle flex-shrink-0"
                     aria-label={t('rules.deleteRule')}
                   >
@@ -128,6 +144,7 @@ export function RulesPanel({ onClose }: Props) {
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') addRule(); }}
+                  disabled={!inElectron}
                   className="input input-bordered input-sm flex-1 min-w-0"
                 />
               </div>
@@ -139,6 +156,7 @@ export function RulesPanel({ onClose }: Props) {
                   value={newVendor}
                   onChange={(e) => setNewVendor(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') addRule(); }}
+                  disabled={!inElectron}
                   className="input input-bordered input-sm flex-1 min-w-0"
                 />
               </div>
@@ -146,7 +164,7 @@ export function RulesPanel({ onClose }: Props) {
             <button
               type="button"
               onClick={addRule}
-              disabled={!newVendor.trim() || !newDesc.trim()}
+              disabled={!inElectron || !newVendor.trim() || !newDesc.trim()}
               className="btn btn-secondary btn-sm gap-1.5 !text-white"
             >
               <Plus className="w-4 h-4" />
@@ -159,7 +177,7 @@ export function RulesPanel({ onClose }: Props) {
           <button
             type="button"
             onClick={save}
-            disabled={!dirty || saving}
+            disabled={!inElectron || !dirty || saving}
             className="btn btn-primary btn-sm gap-1.5 !text-white"
           >
             {saving ? <span className="loading loading-spinner loading-xs" /> : <Save className="w-4 h-4" />}

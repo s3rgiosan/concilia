@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-07
+
+### Changed
+
+- Review screen toolbar: name filter now expands to fill the available space, and the Expand/Collapse toggle is right-aligned at the end of the row. Both controls and the filter pills now share the same 40 px row height.
+- Expand/Collapse toggle labels shortened from "Expand all" / "Collapse all" to "Expand" / "Collapse".
+- Rules panel: when the renderer is not running inside Electron (e.g. via `cd client && npm run dev`), the panel now skips the `/api/rules` fetch, disables every interactive control, and shows a banner — same pattern as the Settings drawer — instead of throwing a "Failed to load rules" toast.
+
 ## [1.0.0] - 2026-05-07
 
 Initial release.
