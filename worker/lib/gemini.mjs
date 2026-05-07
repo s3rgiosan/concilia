@@ -6,7 +6,7 @@
  */
 
 import { createSign } from 'node:crypto';
-import { readFileSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs';
+import { readFileSync, openSync, writeSync, closeSync, renameSync, unlinkSync, constants as fsConstants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { euroToCents } from './schema.mjs';
@@ -183,11 +183,16 @@ export class GeminiProvider {
     const jwt = createSignedJwt(this.serviceAccount);
     this._accessToken = await getAccessToken(jwt);
     this._tokenExpiry = now + 3600000;
+    // Atomic write: write to a per-pid temp file first, then rename onto the
+    // shared cache path. Without this, two child processes that both miss the
+    // cache and call _getToken() in parallel would race on the final write
+    // (last writer wins, possibly with a torn JSON read in between).
+    const tmpPath = `${cacheFile}.${process.pid}.tmp`;
     try {
       // Open with explicit mode so the file is 0o600 from the moment it
       // exists on disk (no chmod-after-write race window).
       const fd = openSync(
-        cacheFile,
+        tmpPath,
         fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC,
         0o600,
       );
@@ -200,7 +205,10 @@ export class GeminiProvider {
       } finally {
         closeSync(fd);
       }
-    } catch { /* non-fatal */ }
+      renameSync(tmpPath, cacheFile);
+    } catch {
+      try { unlinkSync(tmpPath); } catch { /* ignore */ }
+    }
     return this._accessToken;
   }
 

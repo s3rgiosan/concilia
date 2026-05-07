@@ -120,7 +120,7 @@ function formatNotes(notes, dict) {
 
   if (notes === 'name_amount_match') return n.nameAmountMatch;
   if (notes === 'name_amount_date_match') return n.nameAmountDateMatch;
-  if (notes === 'amount_match' || notes.startsWith('amount_match')) return n.amountMatch;
+  if (notes === 'amount_match') return n.amountMatch;
   if (notes.startsWith('fx_match')) {
     const detail = notes.match(/\(([^)]+)\)/)?.[1] ?? '';
     return n.fxMatch(detail);

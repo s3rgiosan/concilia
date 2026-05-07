@@ -58,20 +58,6 @@ function extractWords(text) {
     .filter(w => w.length >= FILENAME_MIN_WORD_LEN && !STOP_WORDS.has(w));
 }
 
-/**
- * Check if a transaction description and receipt share significant words.
- * Checks both the filename and the vendor name extracted by Gemini.
- */
-function hasNameOverlap(description, receipt) {
-  const txWords = extractWords(description);
-  if (txWords.length === 0) return false;
-  const filename = receipt.file.split('/').pop();
-  const fileWords = extractWords(filename);
-  const vendorWords = extractWords(receipt.vendor);
-  const allReceiptWords = [...fileWords, ...vendorWords];
-  return txWords.some(w => allReceiptWords.some(rw => rw.includes(w) || w.includes(rw)));
-}
-
 function isEur(receipt) {
   return !receipt.currency || receipt.currency === 'EUR';
 }
@@ -157,6 +143,30 @@ export function matchTransactions(transactions, receipts, rules = []) {
     if (!isEur(receipts[i])) hasFxReceipt = true;
   }
 
+  // Pre-compute word lists once per receipt and per transaction so the
+  // (tx × receipt) hot path of hasNameOverlap doesn't re-tokenize the same
+  // strings on every call.
+  const receiptWordsByIdx = new Array(receipts.length);
+  for (let i = 0; i < receipts.length; i++) {
+    const filename = receipts[i].file ? receipts[i].file.split('/').pop() : '';
+    receiptWordsByIdx[i] = [...extractWords(filename), ...extractWords(receipts[i].vendor)];
+  }
+  const txWordsCache = new Map();
+  function txWords(description) {
+    let words = txWordsCache.get(description);
+    if (!words) {
+      words = extractWords(description);
+      txWordsCache.set(description, words);
+    }
+    return words;
+  }
+  function overlapCached(description, idx) {
+    const tw = txWords(description);
+    if (tw.length === 0) return false;
+    const rw = receiptWordsByIdx[idx];
+    return tw.some(w => rw.some(r => r.includes(w) || w.includes(r)));
+  }
+
   function findAmountCandidates(absCents, filter) {
     const indices = amountIndex.get(absCents);
     if (!indices) return [];
@@ -184,7 +194,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
 
   function preferNameOverlap(candidates, description) {
     if (candidates.length <= 1) return candidates;
-    const named = candidates.filter(idx => hasNameOverlap(description, receipts[idx]));
+    const named = candidates.filter(idx => overlapCached(description, idx));
     return named.length > 0 ? named : candidates;
   }
 
@@ -254,7 +264,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
     if (out.status !== 'UNMATCHED') continue;
 
     const candidates = findAmountCandidates(out.abs_cents, r => isEur(r))
-      .filter(idx => hasNameOverlap(out.description, receipts[idx]));
+      .filter(idx => overlapCached(out.description, idx));
 
     if (candidates.length === 1) {
       matchSingle(out, candidates[0], 'name_amount_match');
@@ -301,7 +311,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
     const fxCandidates = findFxCandidates(out.abs_cents);
     if (fxCandidates.length === 0) continue;
 
-    const namedCandidates = fxCandidates.filter(idx => hasNameOverlap(out.description, receipts[idx]));
+    const namedCandidates = fxCandidates.filter(idx => overlapCached(out.description, idx));
     if (namedCandidates.length === 0) continue;
 
     const sorted = sortByDateProximity(namedCandidates, out.date, receipts);
@@ -324,8 +334,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
   for (const out of result) {
     if (out.status !== 'UNMATCHED') continue;
 
-    const txWords = extractWords(out.description);
-    if (txWords.length === 0) continue;
+    if (txWords(out.description).length === 0) continue;
 
     const candidates = [];
     for (let i = 0; i < receipts.length; i++) {
@@ -334,7 +343,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
       if (receipts[i].currency === 'EUR' && receipts[i].amount_cents !== null) {
         if (receipts[i].amount_cents !== out.abs_cents) continue;
       }
-      if (hasNameOverlap(out.description, receipts[i])) {
+      if (overlapCached(out.description, i)) {
         candidates.push(i);
       }
     }
