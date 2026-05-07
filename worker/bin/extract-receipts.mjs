@@ -3,10 +3,14 @@
 /**
  * Extract metadata from all receipt files in a list.
  *
- * Usage: node extract-receipts.mjs <file-list-path> --sa-key PATH [--project ID] [--location REGION] [--model MODEL]
+ * Usage: node extract-receipts.mjs <file-list-path> [--project ID] [--location REGION] [--model MODEL] [--cache PATH] [--force]
  *
  * Input: text file with one receipt path per line
  * Output: JSON array of receipt metadata on stdout
+ *
+ * Auth: AI_GEMINI_SA_KEY env var must point at the service-account JSON key.
+ * The path is forwarded to receipt-meta.mjs via the env so it does not appear
+ * in `ps -ef` output.
  */
 
 import { execFile } from 'node:child_process';
@@ -23,12 +27,10 @@ const NODE_BIN = process.env.NODE_BIN || process.execPath;
 const NODE_ENV_EXTRA = process.env.NODE_BIN ? { ELECTRON_RUN_AS_NODE: '1' } : {};
 
 function parseArgs(argv) {
-  const args = { fileList: null, saKey: null, project: null, location: null, model: null, cache: null, force: false };
+  const args = { fileList: null, project: null, location: null, model: null, cache: null, force: false };
   let i = 0;
   while (i < argv.length) {
-    if (argv[i] === '--sa-key' && argv[i + 1]) {
-      args.saKey = argv[++i];
-    } else if (argv[i] === '--project' && argv[i + 1]) {
+    if (argv[i] === '--project' && argv[i + 1]) {
       args.project = argv[++i];
     } else if (argv[i] === '--location' && argv[i + 1]) {
       args.location = argv[++i];
@@ -48,8 +50,12 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv.slice(2));
 
-if (!args.fileList || !args.saKey) {
-  console.error('Usage: node extract-receipts.mjs <file-list-path> --sa-key PATH [--project ID] [--location REGION] [--model MODEL] [--cache PATH] [--force]');
+if (!args.fileList) {
+  console.error('Usage: node extract-receipts.mjs <file-list-path> [--project ID] [--location REGION] [--model MODEL] [--cache PATH] [--force]');
+  process.exit(1);
+}
+if (!process.env.AI_GEMINI_SA_KEY) {
+  console.error('Error: AI_GEMINI_SA_KEY env var is required (path to service-account JSON key)');
   process.exit(1);
 }
 
@@ -78,7 +84,7 @@ async function extractOne(f) {
     console.error(`[extract-receipts] cache hit: ${f}`);
     return cacheMap.get(f);
   }
-  const cmdArgs = [receiptMetaScript, f, '--sa-key', args.saKey];
+  const cmdArgs = [receiptMetaScript, f];
   if (args.model) cmdArgs.push('--model', args.model);
   if (args.project) cmdArgs.push('--project', args.project);
   if (args.location) cmdArgs.push('--location', args.location);

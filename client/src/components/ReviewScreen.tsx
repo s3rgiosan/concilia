@@ -86,7 +86,7 @@ function buildMatchReasonLabel(notes: string, t: TFunction): string {
   if (notes === 'bank_fee') return t('review.matchReason.bankFeeAuto');
   if (notes === 'name_amount_match') return t('review.matchReason.nameAmountMatch');
   if (notes === 'name_amount_date_match') return t('review.matchReason.nameAmountDateMatch');
-  if (notes === 'amount_match' || notes.startsWith('amount_match')) return t('review.matchReason.amountMatch');
+  if (notes === 'amount_match') return t('review.matchReason.amountMatch');
   if (notes.startsWith('fx_match')) {
     const cur = notes.match(/\(([^)]+)/)?.[1] ?? '';
     return t('review.matchReason.fxMatch', { detail: cur });

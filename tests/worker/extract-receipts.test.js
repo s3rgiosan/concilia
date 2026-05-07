@@ -18,14 +18,16 @@ describe('extract-receipts CLI', () => {
     );
   });
 
-  it('exits with error when --sa-key not provided', () => {
+  it('exits with error when AI_GEMINI_SA_KEY env var is not set', () => {
     const tmpFile = '/tmp/test-extract-receipts-list.txt';
     writeFileSync(tmpFile, '/some/receipt.pdf\n');
     try {
+      const env = { ...process.env };
+      delete env.AI_GEMINI_SA_KEY;
       assert.throws(
-        () => execFileSync('node', [scriptPath, tmpFile], { encoding: 'utf8', stdio: 'pipe' }),
+        () => execFileSync('node', [scriptPath, tmpFile], { encoding: 'utf8', stdio: 'pipe', env }),
         (err) => {
-          assert.match(err.stderr, /Usage:/);
+          assert.match(err.stderr, /AI_GEMINI_SA_KEY env var is required/i);
           assert.equal(err.status, 1);
           return true;
         },
@@ -39,9 +41,10 @@ describe('extract-receipts CLI', () => {
     const tmpList = '/tmp/test-extract-receipts-empty.txt';
     writeFileSync(tmpList, '');
     try {
-      const out = execFileSync('node', [scriptPath, tmpList, '--sa-key', '/tmp/fake.json'], {
+      const out = execFileSync('node', [scriptPath, tmpList], {
         encoding: 'utf8',
         stdio: 'pipe',
+        env: { ...process.env, AI_GEMINI_SA_KEY: '/tmp/fake.json' },
       });
       assert.deepEqual(JSON.parse(out), []);
     } finally {
@@ -63,11 +66,11 @@ describe('extract-receipts CLI', () => {
     writeFileSync(tmpList, '/receipts/2025/01/amazon.pdf\n');
     writeFileSync(tmpCache, JSON.stringify([cachedEntry]));
     try {
-      // --sa-key points to nonexistent file — proves Gemini is never called
+      // SA key points to nonexistent file — proves Gemini is never called.
       const out = execFileSync(
         'node',
-        [scriptPath, tmpList, '--sa-key', '/tmp/nonexistent-key.json', '--cache', tmpCache],
-        { encoding: 'utf8', stdio: 'pipe' },
+        [scriptPath, tmpList, '--cache', tmpCache],
+        { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, AI_GEMINI_SA_KEY: '/tmp/nonexistent-key.json' } },
       );
       assert.deepEqual(JSON.parse(out), [cachedEntry]);
     } finally {
@@ -93,8 +96,8 @@ describe('extract-receipts CLI', () => {
       // With --force, cache is bypassed → receipt-meta.mjs is called → file not found → error entry
       const result = spawnSync(
         'node',
-        [scriptPath, tmpList, '--sa-key', '/tmp/nonexistent-key.json', '--cache', tmpCache, '--force'],
-        { encoding: 'utf8' },
+        [scriptPath, tmpList, '--cache', tmpCache, '--force'],
+        { encoding: 'utf8', env: { ...process.env, AI_GEMINI_SA_KEY: '/tmp/nonexistent-key.json' } },
       );
       const receipts = JSON.parse(result.stdout);
       assert.equal(receipts.length, 1);
@@ -123,8 +126,8 @@ describe('extract-receipts CLI', () => {
       // low-confidence entry not cached → receipt-meta.mjs called → file not found → error entry
       const result = spawnSync(
         'node',
-        [scriptPath, tmpList, '--sa-key', '/tmp/nonexistent-key.json', '--cache', tmpCache],
-        { encoding: 'utf8' },
+        [scriptPath, tmpList, '--cache', tmpCache],
+        { encoding: 'utf8', env: { ...process.env, AI_GEMINI_SA_KEY: '/tmp/nonexistent-key.json' } },
       );
       const receipts = JSON.parse(result.stdout);
       assert.equal(receipts.length, 1);

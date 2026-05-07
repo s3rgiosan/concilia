@@ -88,6 +88,17 @@ function isInsideDir(target, dirPath) {
   return target === dirPath || target.startsWith(dirPath + PATH_SEP);
 }
 
+// Map an absolute receipt file path to the relative `<year>/<month>/<rest>`
+// fragment used by the /api/receipt/* route. Returns the trimmed relative path
+// (no leading slash) so callers can prepend their own URL prefix.
+function receiptRelativePath(absPath) {
+  const stripped = absPath.startsWith(RECEIPTS_BASE)
+    ? absPath.slice(RECEIPTS_BASE.length).replace(/^\//, '')
+    : absPath.replace(/^\//, '');
+  const m = ('/' + stripped).match(/\/(\d{4})\/(0[1-9]|1[0-2])\/(.+)$/);
+  return m ? `${m[1]}/${m[2]}/${m[3]}` : stripped;
+}
+
 async function resetPeriod(periodPath, docsPath) {
   const receiptsPath = join(periodPath, 'receipts');
   let workCount = 0;
@@ -304,6 +315,10 @@ app.post('/api/reconcile', (req, res, next) => {
 
   let clientClosed = false;
   req.on('close', () => { clientClosed = true; });
+  // 31-min ceiling: matches the inner reconcile timeout plus a small grace
+  // window. Without this, a stuck socket holds the period lock indefinitely.
+  req.setTimeout(31 * 60 * 1000);
+  res.setTimeout(31 * 60 * 1000);
 
   function emit(event) {
     console.log('[sse]', event.step || '?');
@@ -339,13 +354,7 @@ app.get('/api/review/:year/:month', (req, res) => {
     const matchResult = JSON.parse(readFileSync(matchResultPath, 'utf8'));
 
     function enrichMeta(meta) {
-      const stripped = meta.file.startsWith(RECEIPTS_BASE)
-        ? meta.file.slice(RECEIPTS_BASE.length).replace(/^\//, '')
-        : meta.file.replace(/^\//, '');
-      // Look for the FIRST /YYYY/MM/ segment within the relative portion
-      const m = ('/' + stripped).match(/\/(\d{4})\/(0[1-9]|1[0-2])\/(.+)$/);
-      const relativePath = m ? `${m[1]}/${m[2]}/${m[3]}` : stripped;
-      return { ...meta, receiptUrl: `/api/receipt/${relativePath}` };
+      return { ...meta, receiptUrl: `/api/receipt/${receiptRelativePath(meta.file)}` };
     }
 
     const transactions = matchResult.transactions.map((tx) => ({
@@ -536,6 +545,9 @@ app.post('/api/scan-receipts/:year/:month', async (req, res) => {
 
   let clientClosed = false;
   req.on('close', () => { clientClosed = true; });
+  // Same 31-min cap as /api/reconcile.
+  req.setTimeout(31 * 60 * 1000);
+  res.setTimeout(31 * 60 * 1000);
 
   function emit(event) {
     console.log('[sse]', event.step || '?');
@@ -628,20 +640,24 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
   const matchResultPath = join(docsPath, 'match-result.json');
 
   const absFile = file.startsWith('/') ? file : join(periodPath, file);
-  if (!existsSync(absFile)) {
-    res.status(404).json({ error: 'file not found' });
-    return;
-  }
-  // Resolve symlinks before sandbox check so a symlink inside `periodPath`
-  // pointing outside cannot escape.
-  let realFile;
-  try { realFile = realpathSync(absFile); }
-  catch { res.status(400).json({ error: 'file resolution failed' }); return; }
+  // Sandbox check first — without this, a renderer could probe arbitrary
+  // filesystem paths via the 404-vs-400 timing of this endpoint.
   let realPeriod;
   try { realPeriod = realpathSync(periodPath); }
   catch { realPeriod = periodPath; }
+  // For the source-side check we need to reject paths that are clearly outside
+  // the period directory before we even touch the filesystem.
+  // (existsSync below is run only after the sandbox guard passes.)
+  let realFile;
+  try {
+    realFile = existsSync(absFile) ? realpathSync(absFile) : absFile;
+  } catch { realFile = absFile; }
   if (!isInsideDir(realFile, realPeriod)) {
     res.status(400).json({ error: 'file outside period scope' });
+    return;
+  }
+  if (!existsSync(absFile)) {
+    res.status(404).json({ error: 'file not found' });
     return;
   }
   if (rescanLocks.has(realFile)) {
@@ -649,18 +665,19 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
     return;
   }
 
-  const SA_KEY = process.env.AI_GEMINI_SA_KEY || '';
   const PROJECT = process.env.AI_GEMINI_PROJECT || '';
   const LOCATION = process.env.AI_GEMINI_LOCATION || 'europe-west1';
   const MODEL = process.env.AI_GEMINI_MODEL || 'gemini-2.5-flash';
-  if (!SA_KEY) {
+  if (!process.env.AI_GEMINI_SA_KEY) {
     res.status(500).json({ error: 'AI_GEMINI_SA_KEY not configured' });
     return;
   }
 
   rescanLocks.add(realFile);
   try {
-    const cmdArgs = [join(WORKER_BIN, 'receipt-meta.mjs'), absFile, '--sa-key', SA_KEY, '--location', LOCATION, '--model', MODEL];
+    // SA key path is forwarded to the child via the env so it does not appear
+    // in `ps -ef` output.
+    const cmdArgs = [join(WORKER_BIN, 'receipt-meta.mjs'), absFile, '--location', LOCATION, '--model', MODEL];
     if (PROJECT) cmdArgs.push('--project', PROJECT);
     const { stdout } = await execFileAsync(NODE_BIN, cmdArgs, { timeout: 180000, env: { ...process.env, ...NODE_ENV_EXTRA } });
     const newMeta = JSON.parse(stdout);
@@ -683,12 +700,7 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
       writeAtomic(matchResultPath, JSON.stringify(mr, null, 2));
     }
 
-    const stripped = absFile.startsWith(RECEIPTS_BASE)
-      ? absFile.slice(RECEIPTS_BASE.length).replace(/^\//, '')
-      : absFile.replace(/^\//, '');
-    const m = ('/' + stripped).match(/\/(\d{4})\/(0[1-9]|1[0-2])\/(.+)$/);
-    const relativePath = m ? `${m[1]}/${m[2]}/${m[3]}` : stripped;
-    res.json({ ...newMeta, receiptUrl: `/api/receipt/${relativePath}` });
+    res.json({ ...newMeta, receiptUrl: `/api/receipt/${receiptRelativePath(absFile)}` });
   } catch (err) {
     console.error('[rescan-receipt]', err);
     res.status(500).json({ error: err.message });

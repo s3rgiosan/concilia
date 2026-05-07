@@ -3,9 +3,11 @@
 /**
  * Extract metadata from a single receipt file using Google Gemini AI (Vertex AI).
  *
- * Usage: node receipt-meta.mjs <file-path> --sa-key PATH [--project ID] [--location REGION] [--model MODEL]
+ * Usage: node receipt-meta.mjs <file-path> [--project ID] [--location REGION] [--model MODEL]
  *
  * Output: JSON { file, amount_cents, confidence, currency, vendor, date, provider_used }
+ *
+ * Auth: AI_GEMINI_SA_KEY env var must point at the service-account JSON key.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -14,12 +16,10 @@ import { extractPdfText } from '../lib/pdf-text.mjs';
 import { renderPdfPageToPng } from '../lib/pdf-render.mjs';
 
 function parseArgs(argv) {
-  const args = { file: null, saKey: null, project: null, location: null, model: null };
+  const args = { file: null, project: null, location: null, model: null };
   let i = 0;
   while (i < argv.length) {
-    if (argv[i] === '--sa-key' && argv[i + 1]) {
-      args.saKey = argv[++i];
-    } else if (argv[i] === '--project' && argv[i + 1]) {
+    if (argv[i] === '--project' && argv[i + 1]) {
       args.project = argv[++i];
     } else if (argv[i] === '--location' && argv[i + 1]) {
       args.location = argv[++i];
@@ -36,7 +36,7 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 
 if (!args.file) {
-  console.error('Usage: node receipt-meta.mjs <file-path> --sa-key PATH [--project ID] [--location REGION] [--model MODEL]');
+  console.error('Usage: node receipt-meta.mjs <file-path> [--project ID] [--location REGION] [--model MODEL]');
   process.exit(1);
 }
 
@@ -45,9 +45,9 @@ if (!existsSync(args.file)) {
   process.exit(1);
 }
 
-const saKeyPath = args.saKey || process.env.AI_GEMINI_SA_KEY;
+const saKeyPath = process.env.AI_GEMINI_SA_KEY;
 if (!saKeyPath) {
-  console.error('Error: --sa-key is required (or set AI_GEMINI_SA_KEY env var)');
+  console.error('Error: AI_GEMINI_SA_KEY env var is required (path to service-account JSON key)');
   process.exit(1);
 }
 
@@ -59,7 +59,7 @@ if (!existsSync(saKeyPath)) {
 const serviceAccount = JSON.parse(readFileSync(saKeyPath, 'utf8'));
 const project = args.project || process.env.AI_GEMINI_PROJECT || serviceAccount.project_id;
 const location = args.location || process.env.AI_GEMINI_LOCATION || 'europe-west1';
-const model = args.model || process.env.AI_GEMINI_MODEL;
+const model = args.model || process.env.AI_GEMINI_MODEL || undefined;
 
 const provider = new GeminiProvider({
   serviceAccount,

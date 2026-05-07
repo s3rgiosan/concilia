@@ -42,7 +42,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_BIN = process.env.WORKER_DIR || join(__dirname, '..', 'worker', 'bin');
 const RECEIPTS_BASE = process.env.RECEIPTS_PATH;
 if (!RECEIPTS_BASE) throw new Error('RECEIPTS_PATH is not configured');
-const SA_KEY = process.env.AI_GEMINI_SA_KEY || '';
 const PROJECT = process.env.AI_GEMINI_PROJECT || '';
 const LOCATION = process.env.AI_GEMINI_LOCATION || 'europe-west1';
 const MODEL = process.env.AI_GEMINI_MODEL || 'gemini-2.5-flash';
@@ -77,7 +76,7 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
   emit({ step: 'extracting', current: 0, total: receiptFiles.length });
 
   const receiptsJsonPath = join(docsPath, 'receipts.json');
-  const extractArgs = [join(WORKER_BIN, 'extract-receipts.mjs'), receiptListPath, '--sa-key', SA_KEY, '--cache', receiptsJsonPath];
+  const extractArgs = [join(WORKER_BIN, 'extract-receipts.mjs'), receiptListPath, '--cache', receiptsJsonPath];
   if (forceReanalyze) extractArgs.push('--force');
   if (MODEL) extractArgs.push('--model', MODEL);
   if (PROJECT) extractArgs.push('--project', PROJECT);
