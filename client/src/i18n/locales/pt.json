@@ -122,7 +122,8 @@
     "placeholderTransaction": "ex. paddle",
     "placeholderReceipt": "ex. fastmail",
     "failedToLoad": "Erro ao carregar regras",
-    "saved": "Regras guardadas"
+    "saved": "Regras guardadas",
+    "notInElectron": "As regras só podem ser editadas na aplicação desktop."
   },
   "review": {
     "title": "Rever e validar",
@@ -166,8 +167,8 @@
       "placeholder": "Filtrar por nome…",
       "clear": "Limpar filtro"
     },
-    "expandAll": "Expandir tudo",
-    "collapseAll": "Recolher tudo",
+    "expand": "Expandir",
+    "collapse": "Recolher",
     "amountKind": {
       "income": "Receita",
       "expense": "Despesa"

@@ -122,7 +122,8 @@
     "placeholderTransaction": "e.g. paddle",
     "placeholderReceipt": "e.g. fastmail",
     "failedToLoad": "Failed to load rules",
-    "saved": "Rules saved"
+    "saved": "Rules saved",
+    "notInElectron": "Rules are only editable in the desktop app."
   },
   "review": {
     "title": "Review & Validate",
@@ -166,8 +167,8 @@
       "placeholder": "Filter by name…",
       "clear": "Clear filter"
     },
-    "expandAll": "Expand all",
-    "collapseAll": "Collapse all",
+    "expand": "Expand",
+    "collapse": "Collapse",
     "amountKind": {
       "income": "Income",
       "expense": "Expense"
