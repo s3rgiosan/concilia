@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Save, ScanLine, Lock, AlertTriangle, Search, X, ChevronsDownUp, ChevronsUpDown, ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import type { ReviewData, TransactionResult, ReceiptMeta } from '../types';
 import type { ProgressEvent } from '../App';
@@ -141,6 +142,10 @@ export function ReviewScreen({ year, month }: Props) {
   const [scanBanner, setScanBanner] = useState<DroppedDecision[] | null>(null);
   const [finalizeModalOpen, setFinalizeModalOpen] = useState(false);
   const [finalizeConsent, setFinalizeConsent] = useState(false);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setToolbarSlot(document.getElementById('review-toolbar-slot'));
+  }, []);
   const scanAbortRef = useRef<AbortController | null>(null);
   const [preview, setPreview] = useState<{
     url: string;
@@ -639,10 +644,8 @@ export function ReviewScreen({ year, month }: Props) {
 
   return (
     <>
-      <div className="card bg-base-100 rounded-none">
-        <div className="card-body">
-          {/* Filter tabs + name filter + expand toggle */}
-          <div className="flex flex-wrap items-center gap-3">
+      {toolbarSlot && createPortal(
+          <div className="max-w-6xl mx-auto px-8 py-2 flex flex-col lg:flex-row lg:items-center gap-3">
             <div role="tablist" className="tabs tabs-boxed w-fit">
               {FILTER_KEYS.map((key) => (
                 <button
@@ -660,41 +663,46 @@ export function ReviewScreen({ year, month }: Props) {
               ))}
             </div>
 
-            <div className="relative flex-1 min-w-[12rem]">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50 pointer-events-none" />
-              <input
-                type="text"
-                value={nameFilter}
-                onChange={(e) => setNameFilter(e.target.value)}
-                placeholder={t('review.nameFilter.placeholder')}
-                className="input input-bordered w-full pl-9 pr-9 !h-10 !min-h-[2.5rem] text-sm"
-              />
-              {nameFilter && (
-                <button
-                  type="button"
-                  onClick={() => setNameFilter('')}
-                  aria-label={t('review.nameFilter.clear')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-base-200"
-                >
-                  <X className="w-3.5 h-3.5 text-base-content/60" />
-                </button>
-              )}
+            <div className="flex items-center gap-3 lg:flex-1">
+              <div className="relative flex-1 min-w-[12rem]">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50 pointer-events-none" />
+                <input
+                  type="text"
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                  placeholder={t('review.nameFilter.placeholder')}
+                  className="input input-bordered w-full pl-9 pr-9 !h-10 !min-h-[2.5rem] text-sm"
+                />
+                {nameFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setNameFilter('')}
+                    aria-label={t('review.nameFilter.clear')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-base-200"
+                  >
+                    <X className="w-3.5 h-3.5 text-base-content/60" />
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={toggleExpandAll}
+                disabled={visibleTransactions.length === 0}
+                className="btn btn-sm btn-ghost gap-2 ml-auto !h-10 !min-h-[2.5rem]"
+              >
+                {allVisibleExpanded
+                  ? <><ChevronsDownUp className="w-4 h-4" />{t('review.collapse')}</>
+                  : <><ChevronsUpDown className="w-4 h-4" />{t('review.expand')}</>}
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={toggleExpandAll}
-              disabled={visibleTransactions.length === 0}
-              className="btn btn-sm btn-ghost gap-2 ml-auto !h-10 !min-h-[2.5rem]"
-            >
-              {allVisibleExpanded
-                ? <><ChevronsDownUp className="w-4 h-4" />{t('review.collapse')}</>
-                : <><ChevronsUpDown className="w-4 h-4" />{t('review.expand')}</>}
-            </button>
-          </div>
-
+          </div>,
+          toolbarSlot,
+      )}
+      <div className="card bg-base-100 rounded-none !overflow-visible">
+        <div className="card-body !pb-0 !gap-8">
           {/* Transaction list */}
-          <div className="space-y-3 mt-4">
+          <div className="space-y-3">
             {visibleTransactions.length === 0 && (
               <p className="text-sm text-base-content/60 py-4 text-center">{t('review.noTransactions')}</p>
             )}
@@ -862,7 +870,7 @@ export function ReviewScreen({ year, month }: Props) {
           )}
 
           {/* Footer */}
-          <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-base-200 mt-2">
+          <div className="sticky bottom-0 z-20 bg-base-100 -mx-8 px-8 pt-4 pb-4 border-t border-base-200 mt-2 flex flex-wrap items-center gap-3">
             <button
               className="btn btn-secondary btn-sm !text-white"
               onClick={saveChanges}

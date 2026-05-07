@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Changed
+
+- Review screen: header (top action row + breadcrumb) is now sticky to the top of the viewport, and the action button row at the bottom of the Review screen is sticky to the bottom — both stay visible while the transaction list scrolls.
+- Review screen toolbar (filter pills, name filter, Expand/Collapse toggle) is now hosted inside the sticky header instead of inside the card body, so filtering and expanding stay one click away while scrolling.
+- Below 1024 px viewports, the toolbar wraps onto two rows: pills on row 1, name filter + Expand/Collapse on row 2.
+
 ## [1.0.1] - 2026-05-07
 
 ### Changed
