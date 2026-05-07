@@ -1,0 +1,6 @@
+{
+  "name": "concilia-parsers",
+  "private": true,
+  "type": "module",
+  "dependencies": {}
+}

@@ -1,0 +1,11 @@
+{
+  "name": "concilia-server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "express": "^4.21.0",
+    "helmet": "^8.0.0",
+    "multer": "^2.0.0"
+  }
+}

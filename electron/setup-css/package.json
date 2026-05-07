@@ -1,0 +1,12 @@
+{
+  "name": "concilia-setup-css",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tailwindcss -c tailwind.config.cjs -i input.css -o ../setup.css --minify"
+  },
+  "devDependencies": {
+    "daisyui": "^4.12.24",
+    "tailwindcss": "^3.4.0"
+  }
+}

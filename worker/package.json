@@ -1,0 +1,11 @@
+{
+  "name": "concilia-worker",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "write-excel-file": "^2.3.10"
+  },
+  "devDependencies": {
+    "exceljs": "^4.4.0"
+  }
+}
