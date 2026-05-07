@@ -133,6 +133,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-base-100">
+      <div className="sticky top-0 z-40">
       <header className="bg-base-100 border-b border-base-200">
         <div className="max-w-6xl mx-auto px-8 py-3 flex items-center justify-end">
           <div className="flex items-center gap-2">
@@ -157,7 +158,7 @@ function AppContent() {
         </div>
       </header>
 
-      <nav className="border-b border-base-200">
+      <nav className="bg-base-100 border-b border-base-200">
         <div className="max-w-6xl mx-auto px-8 py-2 text-sm breadcrumbs">
           <ul>
             <li>
@@ -175,11 +176,13 @@ function AppContent() {
           </ul>
         </div>
       </nav>
+      <div id="review-toolbar-slot" className="empty:hidden bg-base-100 border-b border-base-200" />
+      </div>
 
       {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
 
-      <main className="max-w-6xl mx-auto pb-8 space-y-6">
+      <main className="max-w-6xl mx-auto space-y-6">
         {phase === 'form' && <ReconcileForm onSubmit={handleStart} onResume={handleResume} />}
         {phase === 'running' && <ProgressCard events={events} />}
         {(phase === 'done' || phase === 'error') && (
