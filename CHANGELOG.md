@@ -4,11 +4,18 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Added
+
+- Excel report restructured into five sheets in this order: `Totals`, `Validated`, `Matched`, `Review`, `Unmatched` (PT: `Totais`, `Validados`, `Associados`, `Revisão`, `Sem Associação`). The previous single-sheet `Reconciled` is renamed to `Validated`.
+- Excel `Totals` sheet: two rows — `Transactions without receipt` (signed sum of MATCHED transactions tagged `No receipt`) and `Unmatched receipts` (sum of receipt amounts that didn't get matched to any transaction). Structured so additional totals can be appended later.
+- Excel `Matched` / `Review` / `Unmatched` sheets: one row per receipt with file, vendor, date, amount, currency, confidence; matched/review rows also carry the parent transaction's date, description and amount. Bank-fee / no-receipt-category transactions are excluded from `Matched`.
+
 ### Changed
 
 - Review screen: header (top action row + breadcrumb) is now sticky to the top of the viewport, and the action button row at the bottom of the Review screen is sticky to the bottom — both stay visible while the transaction list scrolls.
 - Review screen toolbar (filter pills, name filter, Expand/Collapse toggle) is now hosted inside the sticky header instead of inside the card body, so filtering and expanding stay one click away while scrolling.
 - Below 1024 px viewports, the toolbar wraps onto two rows: pills on row 1, name filter + Expand/Collapse on row 2.
+- Renamed the internal `other` no-receipt category key to `no_receipt` (UI label "No receipt" / "Sem recibo" unchanged). Any pre-existing `notes: "other"` values from prior sessions render as the raw string in the report — no migration shim, per the project's no-back-compat rule.
 
 ## [1.0.1] - 2026-05-07
 

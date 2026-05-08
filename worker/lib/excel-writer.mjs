@@ -1,10 +1,14 @@
 /**
  * Excel report writer using write-excel-file.
  *
- * Writes a single-sheet workbook:
- *   - "Reconciled" — transactions with status colour, receipt names, notes
+ * Writes a multi-sheet workbook:
+ *   - "Totals"     — aggregate totals (e.g. signed sum of "no receipt"-tagged matched txs)
+ *   - "Validated"  — full transaction list with status colour, receipt names, notes
+ *   - "Matched"    — one row per receipt attached to MATCHED transactions
+ *   - "Review"     — one row per receipt attached to REVIEW transactions
+ *   - "Unmatched"  — one row per unmatched receipt
  *
- * Sheet name + column headers are localized via the `lang` option ("en" | "pt").
+ * Sheet names + column headers are localized via the `lang` option ("en" | "pt").
  */
 
 import { basename } from 'node:path';
@@ -19,7 +23,28 @@ const STATUS_BG = {
 
 const TRANSLATIONS = {
   en: {
-    sheetReconciled: 'Reconciled',
+    sheetValidated: 'Validated',
+    sheetTotals: 'Totals',
+    sheetMatched: 'Matched',
+    sheetReview: 'Review',
+    sheetUnmatched: 'Unmatched',
+    totals: {
+      label: 'Label',
+      amount: 'Amount',
+      txWithoutReceipt: 'Transactions without receipt',
+      unmatchedReceipts: 'Unmatched receipts',
+    },
+    receipt: {
+      file: 'File',
+      vendor: 'Vendor',
+      date: 'Date',
+      amount: 'Amount',
+      currency: 'Currency',
+      confidence: 'Confidence',
+      txDate: 'Transaction Date',
+      txDescription: 'Transaction Description',
+      txAmount: 'Transaction Amount',
+    },
     tx: {
       date: 'Date',
       description: 'Description',
@@ -52,12 +77,33 @@ const TRANSLATIONS = {
         salary: 'Salary',
         transfer: 'Transfer',
         refund: 'Refund',
-        other: 'No receipt',
+        no_receipt: 'No receipt',
       },
     },
   },
   pt: {
-    sheetReconciled: 'Reconciliados',
+    sheetValidated: 'Validados',
+    sheetTotals: 'Totais',
+    sheetMatched: 'Associados',
+    sheetReview: 'Revisão',
+    sheetUnmatched: 'Sem Associação',
+    totals: {
+      label: 'Categoria',
+      amount: 'Valor',
+      txWithoutReceipt: 'Transações sem recibo',
+      unmatchedReceipts: 'Recibos sem associação',
+    },
+    receipt: {
+      file: 'Ficheiro',
+      vendor: 'Fornecedor',
+      date: 'Data',
+      amount: 'Valor',
+      currency: 'Moeda',
+      confidence: 'Confiança',
+      txDate: 'Data da Transação',
+      txDescription: 'Descrição da Transação',
+      txAmount: 'Valor da Transação',
+    },
     tx: {
       date: 'Data',
       description: 'Descrição',
@@ -90,13 +136,13 @@ const TRANSLATIONS = {
         salary: 'Salário',
         transfer: 'Transferência',
         refund: 'Reembolso',
-        other: 'Sem recibo',
+        no_receipt: 'Sem recibo',
       },
     },
   },
 };
 
-const NO_RECEIPT_KEYS = new Set(['bank_fee', 'salary', 'transfer', 'refund', 'other']);
+const NO_RECEIPT_KEYS = new Set(['bank_fee', 'salary', 'transfer', 'refund', 'no_receipt']);
 
 function formatConfidence(value, dict) {
   if (!value) return '';
@@ -205,6 +251,88 @@ function buildTxSheet(transactions, dict) {
   return [headerRow, ...dataRows];
 }
 
+function buildTotalsSheet(transactions, unmatchedReceipts, dict) {
+  const headers = [dict.totals.label, dict.totals.amount];
+  const headerRow = headers.map((h) => cell(h, { fontWeight: 'bold' }));
+
+  const txWithoutReceiptCents = (transactions || [])
+    .filter((t) => t.status === 'MATCHED' && t.notes === 'no_receipt')
+    .reduce((acc, t) => acc + (t.amount_cents || 0), 0);
+  const unmatchedReceiptsCents = (unmatchedReceipts || [])
+    .reduce((acc, r) => acc + (r.amount_cents || 0), 0);
+
+  const rows = [
+    [cell(dict.totals.txWithoutReceipt), moneyCell(txWithoutReceiptCents)],
+    [cell(dict.totals.unmatchedReceipts), moneyCell(unmatchedReceiptsCents)],
+  ];
+  return [headerRow, ...rows];
+}
+
+/**
+ * Build a sheet listing receipts associated with transactions of a given status
+ * (MATCHED or REVIEW). One row per receipt; each row carries its parent tx info.
+ */
+function buildTxReceiptSheet(transactions, status, dict) {
+  const headers = [
+    dict.receipt.file,
+    dict.receipt.vendor,
+    dict.receipt.date,
+    dict.receipt.amount,
+    dict.receipt.currency,
+    dict.receipt.confidence,
+    dict.receipt.txDate,
+    dict.receipt.txDescription,
+    dict.receipt.txAmount,
+  ];
+  const headerRow = headers.map((h) => cell(h, { fontWeight: 'bold' }));
+  const dataRows = [];
+  for (const tx of transactions || []) {
+    if (tx.status !== status) continue;
+    if (status === 'MATCHED' && NO_RECEIPT_KEYS.has(tx.notes)) continue;
+    const meta = tx.receipt_meta || [];
+    if (meta.length === 0) continue;
+    for (const m of meta) {
+      dataRows.push([
+        cell(basename(m.file || '')),
+        cell(m.vendor || ''),
+        cell(m.date || ''),
+        moneyCell(m.amount_cents),
+        cell(m.currency || ''),
+        cell(formatConfidence(m.confidence, dict)),
+        cell(tx.date || ''),
+        cell(tx.description || ''),
+        moneyCell(tx.amount_cents),
+      ]);
+    }
+  }
+  return [headerRow, ...dataRows];
+}
+
+/**
+ * Build a sheet listing receipts that did not match any transaction.
+ * Source: result.unmatchedReceipts.
+ */
+function buildUnmatchedReceiptSheet(unmatchedReceipts, dict) {
+  const headers = [
+    dict.receipt.file,
+    dict.receipt.vendor,
+    dict.receipt.date,
+    dict.receipt.amount,
+    dict.receipt.currency,
+    dict.receipt.confidence,
+  ];
+  const headerRow = headers.map((h) => cell(h, { fontWeight: 'bold' }));
+  const dataRows = (unmatchedReceipts || []).map((m) => [
+    cell(basename(m.file || '')),
+    cell(m.vendor || ''),
+    cell(m.date || ''),
+    moneyCell(m.amount_cents),
+    cell(m.currency || ''),
+    cell(formatConfidence(m.confidence, dict)),
+  ]);
+  return [headerRow, ...dataRows];
+}
+
 function autoColumnWidths(rows, headerCount) {
   const widths = [];
   for (let col = 0; col < headerCount; col++) {
@@ -229,12 +357,28 @@ function autoColumnWidths(rows, headerCount) {
 export async function writeExcelReport(result, outputPath, opts = {}) {
   const dict = getDict(opts.lang);
   const txRows = buildTxSheet(result.transactions, dict);
+  const totalsRows = buildTotalsSheet(result.transactions, result.unmatchedReceipts, dict);
+  const matchedRows = buildTxReceiptSheet(result.transactions, 'MATCHED', dict);
+  const reviewRows = buildTxReceiptSheet(result.transactions, 'REVIEW', dict);
+  const unmatchedRows = buildUnmatchedReceiptSheet(result.unmatchedReceipts, dict);
 
   await writeXlsxFile(
-    txRows,
+    [totalsRows, txRows, matchedRows, reviewRows, unmatchedRows],
     {
-      sheet: dict.sheetReconciled,
-      columns: autoColumnWidths(txRows, 9),
+      sheets: [
+        dict.sheetTotals,
+        dict.sheetValidated,
+        dict.sheetMatched,
+        dict.sheetReview,
+        dict.sheetUnmatched,
+      ],
+      columns: [
+        autoColumnWidths(totalsRows, 2),
+        autoColumnWidths(txRows, 9),
+        autoColumnWidths(matchedRows, 9),
+        autoColumnWidths(reviewRows, 9),
+        autoColumnWidths(unmatchedRows, 6),
+      ],
       filePath: outputPath,
     },
   );
