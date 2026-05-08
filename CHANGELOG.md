@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-08
+
 ### Added
 
 - Excel report restructured into five sheets in this order: `Totals`, `Validated`, `Matched`, `Review`, `Unmatched` (PT: `Totais`, `Validados`, `Associados`, `Revisão`, `Sem Associação`). The previous single-sheet `Reconciled` is renamed to `Validated`.
