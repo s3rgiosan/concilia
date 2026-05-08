@@ -197,7 +197,7 @@
       "salary": "Salary",
       "transfer": "Transfer",
       "refund": "Refund",
-      "other": "No receipt"
+      "noReceipt": "No receipt"
     },
     "actions": {
       "preview": "Preview",

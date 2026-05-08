@@ -65,7 +65,7 @@ function TxAmount({ cents }: { cents: number }) {
   );
 }
 
-const NO_RECEIPT_CATEGORY_KEYS = ['bank_fee', 'salary', 'transfer', 'refund', 'other'] as const;
+const NO_RECEIPT_CATEGORY_KEYS = ['bank_fee', 'salary', 'transfer', 'refund', 'no_receipt'] as const;
 type NoReceiptCategory = typeof NO_RECEIPT_CATEGORY_KEYS[number];
 const NO_RECEIPT_NOTES = new Set<string>(NO_RECEIPT_CATEGORY_KEYS);
 
@@ -74,7 +74,7 @@ const NO_RECEIPT_LABEL_KEYS: Record<NoReceiptCategory, string> = {
   salary: 'review.noReceiptCategories.salary',
   transfer: 'review.noReceiptCategories.transfer',
   refund: 'review.noReceiptCategories.refund',
-  other: 'review.noReceiptCategories.other',
+  no_receipt: 'review.noReceiptCategories.noReceipt',
 };
 
 function buildNoReceiptLabel(notes: string, t: TFunction): string {

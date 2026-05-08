@@ -71,8 +71,8 @@ describe('writeExcelReport', () => {
 
       const workbook = new EJ.Workbook();
       await workbook.xlsx.readFile(outputPath);
-      const sheet = workbook.getWorksheet('Reconciled');
-      assert.ok(sheet, 'Reconciled worksheet should exist');
+      const sheet = workbook.getWorksheet('Validated');
+      assert.ok(sheet, 'Validated worksheet should exist');
 
       // Row 1: headers (English defaults; Notes moved to end)
       const headers = [];
@@ -126,7 +126,7 @@ describe('writeExcelReport', () => {
 
       const workbook = new EJ.Workbook();
       await workbook.xlsx.readFile(outputPath);
-      const sheet = workbook.getWorksheet('Reconciled');
+      const sheet = workbook.getWorksheet('Validated');
 
       // Status column is column 4 (id removed)
       const matchedFill = sheet.getRow(2).getCell(4).fill;
@@ -161,7 +161,7 @@ describe('writeExcelReport', () => {
 
       const workbook = new EJ.Workbook();
       await workbook.xlsx.readFile(outputPath);
-      const sheet = workbook.getWorksheet('Reconciled');
+      const sheet = workbook.getWorksheet('Validated');
 
       // Only header + 1 transaction row should exist; no unmatched-receipts section
       assert.equal(sheet.actualRowCount, 2);
@@ -182,10 +182,180 @@ describe('writeExcelReport', () => {
 
       const workbook = new EJ.Workbook();
       await workbook.xlsx.readFile(outputPath);
-      const sheet = workbook.getWorksheet('Reconciled');
+      const sheet = workbook.getWorksheet('Validated');
 
       // write-excel-file sets fontWeight per cell, not per row
       assert.equal(sheet.getRow(1).getCell(1).font.bold, true, 'header cell should be bold');
+    } finally {
+      try { unlinkSync(outputPath); } catch { /* */ }
+    }
+  });
+
+  it('writes Totals sheet with no-receipt total', async () => {
+    const { writeExcelReport } = await loadExcelWriter();
+    const EJ = await loadExcelJS();
+    const outputPath = join(tmpDir, `test-excel-totals-${Date.now()}.xlsx`);
+
+    const result = {
+      transactions: [
+        { id: 't1', date: '2025-01-01', description: 'EXAMPLE A', amount_cents: -5000, abs_cents: 5000, status: 'MATCHED', receipt_files: [], receipt_meta: [], notes: 'no_receipt' },
+        { id: 't2', date: '2025-01-02', description: 'EXAMPLE B', amount_cents: -3000, abs_cents: 3000, status: 'MATCHED', receipt_files: [], receipt_meta: [], notes: 'no_receipt' },
+        { id: 't3', date: '2025-01-03', description: 'EXAMPLE C', amount_cents: -1000, abs_cents: 1000, status: 'MATCHED', receipt_files: [], receipt_meta: [], notes: 'bank_fee' },
+        { id: 't4', date: '2025-01-04', description: 'EXAMPLE D', amount_cents: -2500, abs_cents: 2500, status: 'MATCHED', receipt_files: ['/r/d.pdf'], receipt_meta: [{ file: '/r/d.pdf', amount_cents: 2500, confidence: 'high', currency: 'EUR', provider_used: 'gemini' }], notes: 'amount_match' },
+        { id: 't5', date: '2025-01-05', description: 'EXAMPLE E', amount_cents: -7500, abs_cents: 7500, status: 'UNMATCHED', receipt_files: [], receipt_meta: [], notes: '' },
+      ],
+      unmatchedReceipts: [
+        { file: '/r/u1.pdf', vendor: 'EXAMPLE V1', date: '2025-01-06', amount_cents: 1000, confidence: 'high', currency: 'EUR', provider_used: 'gemini' },
+        { file: '/r/u2.pdf', vendor: 'EXAMPLE V2', date: '2025-01-07', amount_cents: 2500, confidence: 'high', currency: 'EUR', provider_used: 'gemini' },
+      ],
+    };
+
+    try {
+      await writeExcelReport(result, outputPath);
+
+      const workbook = new EJ.Workbook();
+      await workbook.xlsx.readFile(outputPath);
+
+      const totals = workbook.getWorksheet('Totals');
+      assert.ok(totals, 'Totals worksheet should exist');
+
+      // Header row
+      assert.equal(totals.getRow(1).getCell(1).value, 'Label');
+      assert.equal(totals.getRow(1).getCell(2).value, 'Amount');
+
+      // Row 2: tx without receipt total = -50 + -30 = -80
+      assert.equal(totals.getRow(2).getCell(1).value, 'Transactions without receipt');
+      assert.equal(totals.getRow(2).getCell(2).value, -80);
+      // Row 3: unmatched receipts total = 10 + 25 = 35
+      assert.equal(totals.getRow(3).getCell(1).value, 'Unmatched receipts');
+      assert.equal(totals.getRow(3).getCell(2).value, 35);
+    } finally {
+      try { unlinkSync(outputPath); } catch { /* */ }
+    }
+  });
+
+  it('localizes Totals sheet to pt', async () => {
+    const { writeExcelReport } = await loadExcelWriter();
+    const EJ = await loadExcelJS();
+    const outputPath = join(tmpDir, `test-excel-totals-pt-${Date.now()}.xlsx`);
+
+    const result = {
+      transactions: [
+        { id: 't1', date: '2025-01-01', description: 'EXAMPLE', amount_cents: -10000, abs_cents: 10000, status: 'MATCHED', receipt_files: [], receipt_meta: [], notes: 'no_receipt' },
+      ],
+      unmatchedReceipts: [
+        { file: '/r/u1.pdf', vendor: 'EXAMPLE V1', date: '2025-01-02', amount_cents: 2500, confidence: 'high', currency: 'EUR', provider_used: 'gemini' },
+      ],
+    };
+
+    try {
+      await writeExcelReport(result, outputPath, { lang: 'pt' });
+
+      const workbook = new EJ.Workbook();
+      await workbook.xlsx.readFile(outputPath);
+
+      const totals = workbook.getWorksheet('Totais');
+      assert.ok(totals, 'Totais worksheet should exist');
+      assert.equal(totals.getRow(1).getCell(1).value, 'Categoria');
+      assert.equal(totals.getRow(1).getCell(2).value, 'Valor');
+      assert.equal(totals.getRow(2).getCell(1).value, 'Transações sem recibo');
+      assert.equal(totals.getRow(2).getCell(2).value, -100);
+      assert.equal(totals.getRow(3).getCell(1).value, 'Recibos sem associação');
+      assert.equal(totals.getRow(3).getCell(2).value, 25);
+    } finally {
+      try { unlinkSync(outputPath); } catch { /* */ }
+    }
+  });
+
+  it('writes Matched / Review / Unmatched receipt sheets', async () => {
+    const { writeExcelReport } = await loadExcelWriter();
+    const EJ = await loadExcelJS();
+    const outputPath = join(tmpDir, `test-excel-receipt-tabs-${Date.now()}.xlsx`);
+
+    const result = {
+      transactions: [
+        {
+          id: 't1', date: '2025-01-01', description: 'EXAMPLE A',
+          amount_cents: -5000, abs_cents: 5000, status: 'MATCHED',
+          receipt_files: ['/r/a.pdf'],
+          receipt_meta: [{ file: '/r/a.pdf', vendor: 'ACME', date: '2025-01-01', amount_cents: 5000, confidence: 'high', currency: 'EUR', provider_used: 'gemini' }],
+          notes: 'amount_match',
+        },
+        {
+          id: 't2', date: '2025-01-02', description: 'EXAMPLE B',
+          amount_cents: -2000, abs_cents: 2000, status: 'MATCHED',
+          receipt_files: [], receipt_meta: [], notes: 'bank_fee',
+        },
+        {
+          id: 't3', date: '2025-01-03', description: 'EXAMPLE C',
+          amount_cents: -3000, abs_cents: 3000, status: 'REVIEW',
+          receipt_files: ['/r/c.pdf'],
+          receipt_meta: [{ file: '/r/c.pdf', vendor: 'WIDGET', date: '2025-01-02', amount_cents: 3000, confidence: 'high', currency: 'EUR', provider_used: 'gemini' }],
+          notes: '2 receipts match amount',
+        },
+        {
+          id: 't4', date: '2025-01-04', description: 'EXAMPLE D',
+          amount_cents: -7500, abs_cents: 7500, status: 'UNMATCHED',
+          receipt_files: [], receipt_meta: [], notes: '',
+        },
+      ],
+      unmatchedReceipts: [
+        { file: '/r/u1.pdf', vendor: 'EXAMPLE VENDOR', date: '2025-01-05', amount_cents: 1234, confidence: 'high', currency: 'USD', provider_used: 'gemini' },
+      ],
+    };
+
+    try {
+      await writeExcelReport(result, outputPath);
+
+      const workbook = new EJ.Workbook();
+      await workbook.xlsx.readFile(outputPath);
+
+      const matched = workbook.getWorksheet('Matched');
+      assert.ok(matched, 'Matched sheet should exist');
+      assert.equal(matched.getRow(1).getCell(1).value, 'File');
+      // Only t1 has receipt_meta; t2 (bank_fee) excluded.
+      assert.equal(matched.actualRowCount, 2);
+      assert.equal(matched.getRow(2).getCell(1).value, 'a.pdf');
+      assert.equal(matched.getRow(2).getCell(2).value, 'ACME');
+      assert.equal(matched.getRow(2).getCell(4).value, 50);
+      assert.equal(matched.getRow(2).getCell(8).value, 'EXAMPLE A');
+
+      const review = workbook.getWorksheet('Review');
+      assert.ok(review, 'Review sheet should exist');
+      assert.equal(review.actualRowCount, 2);
+      assert.equal(review.getRow(2).getCell(1).value, 'c.pdf');
+      assert.equal(review.getRow(2).getCell(2).value, 'WIDGET');
+      assert.equal(review.getRow(2).getCell(8).value, 'EXAMPLE C');
+
+      const unmatched = workbook.getWorksheet('Unmatched');
+      assert.ok(unmatched, 'Unmatched sheet should exist');
+      assert.equal(unmatched.getRow(1).getCell(1).value, 'File');
+      assert.equal(unmatched.actualRowCount, 2);
+      assert.equal(unmatched.getRow(2).getCell(1).value, 'u1.pdf');
+      assert.equal(unmatched.getRow(2).getCell(2).value, 'EXAMPLE VENDOR');
+      assert.equal(unmatched.getRow(2).getCell(4).value, 12.34);
+      assert.equal(unmatched.getRow(2).getCell(5).value, 'USD');
+    } finally {
+      try { unlinkSync(outputPath); } catch { /* */ }
+    }
+  });
+
+  it('localizes Matched / Review / Unmatched sheet names to pt', async () => {
+    const { writeExcelReport } = await loadExcelWriter();
+    const EJ = await loadExcelJS();
+    const outputPath = join(tmpDir, `test-excel-receipt-tabs-pt-${Date.now()}.xlsx`);
+
+    const result = { transactions: [], unmatchedReceipts: [] };
+
+    try {
+      await writeExcelReport(result, outputPath, { lang: 'pt' });
+
+      const workbook = new EJ.Workbook();
+      await workbook.xlsx.readFile(outputPath);
+
+      assert.ok(workbook.getWorksheet('Associados'), 'Associados sheet should exist');
+      assert.ok(workbook.getWorksheet('Revisão'), 'Revisão sheet should exist');
+      assert.ok(workbook.getWorksheet('Sem Associação'), 'Sem Associação sheet should exist');
     } finally {
       try { unlinkSync(outputPath); } catch { /* */ }
     }
@@ -216,7 +386,7 @@ describe('writeExcelReport', () => {
 
       const workbook = new EJ.Workbook();
       await workbook.xlsx.readFile(outputPath);
-      const sheet = workbook.getWorksheet('Reconciled');
+      const sheet = workbook.getWorksheet('Validated');
 
       // basenames joined; column shifted left by 1 (id removed)
       assert.equal(sheet.getRow(2).getCell(5).value, 'a.pdf; b.pdf');

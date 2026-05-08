@@ -197,7 +197,7 @@
       "salary": "Salário",
       "transfer": "Transferência",
       "refund": "Reembolso",
-      "other": "Sem recibo"
+      "noReceipt": "Sem recibo"
     },
     "actions": {
       "preview": "Pré-visualizar",
