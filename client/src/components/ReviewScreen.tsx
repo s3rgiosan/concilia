@@ -407,6 +407,39 @@ export function ReviewScreen({ year, month }: Props) {
     }
   }
 
+  async function rescanReimbursement(file: string) {
+    if (rescanning.has(file)) return;
+    setRescanning((prev) => new Set(prev).add(file));
+    try {
+      const res = await fetch(`/api/rescan-reimbursement/${year}/${month}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Server error: ${res.status}`);
+      }
+      const newMeta: ReceiptMeta = await res.json();
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          reimbursements: (prev.reimbursements || []).map((m) => m.file === file ? newMeta : m),
+        };
+      });
+      showToast(t('review.reimbursements.rescanDone'), 'success');
+    } catch (err) {
+      showToast(t('review.reimbursements.rescanFailed', { msg: (err as Error).message }), 'error');
+    } finally {
+      setRescanning((prev) => {
+        const next = new Set(prev);
+        next.delete(file);
+        return next;
+      });
+    }
+  }
+
   async function saveChanges() {
     if (!data) return;
     setSaving(true);
@@ -852,6 +885,61 @@ export function ReviewScreen({ year, month }: Props) {
               </details>
             ))}
           </div>
+
+          {/* Reimbursements (read-only) — receipts paid personally on company VAT */}
+          {data?.reimbursements && data.reimbursements.length > 0 && (() => {
+            const reimbs = data.reimbursements!;
+            const totalCents = reimbs.reduce((acc, r) => acc + (r.amount_cents || 0), 0);
+            return (
+              <details className="mt-4 border border-base-200 rounded-lg" open>
+                <summary className="cursor-pointer select-none px-4 py-3 flex items-center justify-between gap-3">
+                  <span className="font-semibold text-base-content">
+                    {t('review.reimbursements.title')} ({reimbs.length})
+                  </span>
+                  <span className="text-sm font-semibold text-base-content/80 whitespace-nowrap">
+                    {t('review.reimbursements.total')}: {formatCents(totalCents, 'EUR')}
+                  </span>
+                </summary>
+                <div className="px-4 pb-3 pt-1 text-xs text-base-content/60">
+                  {t('review.reimbursements.subtitle')}
+                </div>
+                <div className="divide-y divide-base-200 border-t border-base-200">
+                  {reimbs.map((r) => (
+                    <div key={r.file} className="flex items-center gap-3 px-4 py-2 bg-base-100 hover:bg-base-200/40">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-base-content truncate block">
+                          {r.vendor ?? fileBasename(r.file)}
+                        </span>
+                        <div className="flex items-center gap-2 text-xs text-base-content/50">
+                          {r.vendor && <span className="truncate">{fileBasename(r.file)}</span>}
+                          <span>{r.date ?? t('review.dateUnknown')}</span>
+                        </div>
+                      </div>
+                      {r.amount_cents !== null && (
+                        <span className="text-sm font-semibold whitespace-nowrap">
+                          {formatCents(r.amount_cents, r.currency)}
+                        </span>
+                      )}
+                      <a
+                        href={r.receiptUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-ghost btn-xs"
+                        title={t('review.actions.preview')}
+                      >
+                        {t('review.actions.preview')}
+                      </a>
+                      <RescanButton
+                        onClick={() => rescanReimbursement(r.file)}
+                        disabled={rescanning.has(r.file)}
+                        spinning={rescanning.has(r.file)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </details>
+            );
+          })()}
 
           {/* Scan-dropped banner */}
           {scanBanner && scanBanner.length > 0 && (

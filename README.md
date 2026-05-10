@@ -10,9 +10,10 @@ A bank statement reconciliation desktop app for macOS that matches transactions 
 - **Receipt extraction**: Google Gemini via Vertex AI extracts amount, currency, vendor, and issue date from receipts; service-account auth, low-confidence results retried up to 3×
 - **Five-pass matching**: User rules → name+amount (EUR exact cents) → amount-only (EUR exact cents) → FX (±10%) → filename, with date-window tiebreaker
 - **3-way sorting**: Receipts auto-moved into `_matched/`, `_review/`, `_unmatched/` on Finalize
+- **Reimbursements**: Drop receipts paid personally on the company's VAT into `<year>/<month>/reimbursements/` — Concilia extracts them via the same Gemini pipeline (no matching attempted) and adds a dedicated sheet plus a totals row to the Excel report. Read-only in the UI with per-file rescan.
 - **Review screen**: Inspect matches, accept/reject candidates, manually assign receipts, rescan a single receipt with Gemini. Filter the list by name, expand/collapse all rows in one click, and tell income from expense at a glance via a directional arrow (green ↗ income, red ↘ expense).
 - **Pause / resume**: In-progress review decisions auto-saved (debounced) and restored on next launch
-- **Excel export**: Single `Reconciled` sheet with color-coded status; sheet name + column headers localized per app language
+- **Excel export**: Multi-sheet workbook (`Totals`, `Validated`, `Matched`, `Review`, `Unmatched`, plus `Reimbursements` when present); status colour-coded; sheet names + column headers localized per app language
 - **User-defined rules**: Bind receipt vendor substrings to transaction description substrings (Pass 0)
 - **Per-receipt cache**: High-confidence extractions cached across runs to avoid duplicate Gemini calls
 
@@ -187,14 +188,16 @@ Folder layout after processing:
 ```text
 <receiptsRoot>/2024/12/
 ├── receipts/
-│   ├── _matched/      ← Matched receipts (send to accountant)
-│   ├── _review/       ← Ambiguous matches (needs manual review)
-│   ├── _unmatched/    ← Unmatched receipts
+│   ├── _matched/         ← Matched receipts (send to accountant)
+│   ├── _review/          ← Ambiguous matches (needs manual review)
+│   ├── _unmatched/       ← Unmatched receipts
 │   └── (any new receipts dropped here for the next run)
-└── docs/              ← Reports and data
+├── reimbursements/        ← Receipts paid personally on company VAT (optional)
+└── docs/                  ← Reports and data
     ├── report.xlsx
     ├── transactions.json
     ├── receipts.json
+    ├── reimbursements.json (when reimbursements/ has files)
     └── match-result.json
 ```
 
@@ -236,6 +239,7 @@ The Express server listens only on `127.0.0.1` (single-user, no auth).
 | PUT | /api/draft/:year/:month | Auto-save draft (debounced from client) |
 | DELETE | /api/draft/:year/:month | Discard draft |
 | POST | /api/rescan-receipt/:year/:month | Re-run Gemini extraction on a single receipt |
+| POST | /api/rescan-reimbursement/:year/:month | Re-run Gemini extraction on a single reimbursement receipt |
 
 ### Rules
 
@@ -248,21 +252,27 @@ The Express server listens only on `127.0.0.1` (single-user, no auth).
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | /api/receipt/:year/:month/* | Stream a receipt file (sandboxed under `receipts/`) |
+| GET | /api/receipt/:year/:month/* | Stream a receipt file (sandboxed under `receipts/` or `reimbursements/`) |
 | GET | /report/:year/:month/report.xlsx | Download Excel report |
 
 ## Excel output
 
-Single sheet — `Reconciled` (sheet name + headers localized per app language). One row per transaction:
+Multi-sheet workbook (sheet names + headers localized per app language):
 
-| date | description | amount | status | receipt_file(s) | notes | receipt_amount | receipt_confidence | receipt_currency |
+- **`Totals`** — aggregate rows: signed sum of MATCHED transactions tagged "no receipt", sum of unmatched receipt amounts, and (when present) sum of reimbursements.
+- **`Validated`** — one row per transaction with status colour, receipt names, amounts, confidence, currency, notes. Status column colour-coded: green (MATCHED), amber (REVIEW), red (UNMATCHED).
+- **`Matched`** / **`Review`** — one row per receipt attached to MATCHED / REVIEW transactions, carrying the parent transaction's date/description/amount.
+- **`Unmatched`** — one row per receipt that didn't match any transaction.
+- **`Reimbursements`** — one row per receipt under `reimbursements/`, plus a TOTAL row. Sheet appears only when reimbursements exist; it is independent of the matcher.
+
+Validated sheet (excerpt):
+
+| date | description | amount | status | receipt_file(s) | receipt_amount | receipt_confidence | receipt_currency | notes |
 |---|---|---|---|---|---|---|---|---|
-| 2024-12-15 | COMPRA SHOPCO | -45.99 | MATCHED | receipt.pdf | name_amount_match | 45.99 | high | EUR |
+| 2024-12-15 | COMPRA SHOPCO | -45.99 | MATCHED | receipt.pdf | 45.99 | high | EUR | name_amount_match |
 | 2024-12-16 | RESTAURANTE X | -23.50 | UNMATCHED | | | | | |
-| 2024-12-17 | COMPRA Y | -50.00 | REVIEW | a.pdf; b.pdf | 2 receipts match amount | 50.00; 50.00 | high; high | EUR; EUR |
-| 2024-12-18 | COMISSÃO | -2.50 | MATCHED | | bank_fee | | | |
-
-Status column is color-coded: green (MATCHED), amber (REVIEW), red (UNMATCHED). Unmatched receipts are not duplicated into a separate sheet — they live in the Review screen until you Accept / Assign or Finalize.
+| 2024-12-17 | COMPRA Y | -50.00 | REVIEW | a.pdf; b.pdf | 50.00; 50.00 | high; high | EUR; EUR | 2 receipts match amount |
+| 2024-12-18 | COMISSÃO | -2.50 | MATCHED | | | | | bank_fee |
 
 ## Matching
 

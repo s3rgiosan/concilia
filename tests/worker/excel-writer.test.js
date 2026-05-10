@@ -361,6 +361,93 @@ describe('writeExcelReport', () => {
     }
   });
 
+  it('writes Reimbursements sheet with TOTAL row and totals line', async () => {
+    const { writeExcelReport } = await loadExcelWriter();
+    const EJ = await loadExcelJS();
+    const outputPath = join(tmpDir, `test-excel-reimbursements-${Date.now()}.xlsx`);
+
+    const result = {
+      transactions: [],
+      unmatchedReceipts: [],
+      reimbursements: [
+        { file: '/r/r1.pdf', vendor: 'EXAMPLE V1', date: '2025-01-10', amount_cents: 1500, confidence: 'high', currency: 'EUR', provider_used: 'gemini' },
+        { file: '/r/r2.pdf', vendor: 'EXAMPLE V2', date: '2025-01-11', amount_cents: 2500, confidence: 'high', currency: 'EUR', provider_used: 'gemini' },
+      ],
+    };
+
+    try {
+      await writeExcelReport(result, outputPath);
+
+      const workbook = new EJ.Workbook();
+      await workbook.xlsx.readFile(outputPath);
+
+      const reimb = workbook.getWorksheet('Reimbursements');
+      assert.ok(reimb, 'Reimbursements sheet should exist');
+      assert.equal(reimb.getRow(1).getCell(1).value, 'File');
+      assert.equal(reimb.getRow(2).getCell(1).value, 'r1.pdf');
+      assert.equal(reimb.getRow(2).getCell(2).value, 'EXAMPLE V1');
+      assert.equal(reimb.getRow(2).getCell(4).value, 15);
+      assert.equal(reimb.getRow(3).getCell(4).value, 25);
+      // TOTAL row
+      assert.equal(reimb.getRow(4).getCell(1).value, 'TOTAL');
+      assert.equal(reimb.getRow(4).getCell(4).value, 40);
+
+      // Totals sheet should now include the reimbursements line
+      const totals = workbook.getWorksheet('Totals');
+      assert.equal(totals.getRow(4).getCell(1).value, 'Reimbursements (paid personally)');
+      assert.equal(totals.getRow(4).getCell(2).value, 40);
+    } finally {
+      try { unlinkSync(outputPath); } catch { /* */ }
+    }
+  });
+
+  it('omits Reimbursements sheet when none provided', async () => {
+    const { writeExcelReport } = await loadExcelWriter();
+    const EJ = await loadExcelJS();
+    const outputPath = join(tmpDir, `test-excel-no-reimbursements-${Date.now()}.xlsx`);
+
+    const result = { transactions: [], unmatchedReceipts: [] };
+
+    try {
+      await writeExcelReport(result, outputPath);
+      const workbook = new EJ.Workbook();
+      await workbook.xlsx.readFile(outputPath);
+      assert.equal(workbook.getWorksheet('Reimbursements'), undefined);
+      assert.equal(workbook.getWorksheet('Reembolsos'), undefined);
+    } finally {
+      try { unlinkSync(outputPath); } catch { /* */ }
+    }
+  });
+
+  it('localizes Reimbursements sheet to pt', async () => {
+    const { writeExcelReport } = await loadExcelWriter();
+    const EJ = await loadExcelJS();
+    const outputPath = join(tmpDir, `test-excel-reimbursements-pt-${Date.now()}.xlsx`);
+
+    const result = {
+      transactions: [],
+      unmatchedReceipts: [],
+      reimbursements: [
+        { file: '/r/r1.pdf', vendor: 'EXAMPLE', date: '2025-01-10', amount_cents: 1000, confidence: 'high', currency: 'EUR', provider_used: 'gemini' },
+      ],
+    };
+
+    try {
+      await writeExcelReport(result, outputPath, { lang: 'pt' });
+      const workbook = new EJ.Workbook();
+      await workbook.xlsx.readFile(outputPath);
+      const reimb = workbook.getWorksheet('Reembolsos');
+      assert.ok(reimb, 'Reembolsos sheet should exist');
+      assert.equal(reimb.getRow(1).getCell(1).value, 'Ficheiro');
+
+      const totals = workbook.getWorksheet('Totais');
+      assert.equal(totals.getRow(4).getCell(1).value, 'Reembolsos (pagos pessoalmente)');
+      assert.equal(totals.getRow(4).getCell(2).value, 10);
+    } finally {
+      try { unlinkSync(outputPath); } catch { /* */ }
+    }
+  });
+
   it('handles multiple receipt files joined by semicolon', async () => {
     const { writeExcelReport } = await loadExcelWriter();
     const EJ = await loadExcelJS();

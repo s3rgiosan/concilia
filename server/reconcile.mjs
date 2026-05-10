@@ -53,38 +53,34 @@ if (!NODE_BIN) {
 const NODE_ENV_EXTRA = { ELECTRON_RUN_AS_NODE: '1' };
 
 /**
- * Run the extract-receipts → match → write-match-result pipeline.
- * Used by both the full reconcile flow and the standalone scan-receipts flow.
+ * Spawn extract-receipts.mjs against a list of files using the given cache file.
+ * Streams stderr to drive a progress emitter and returns the parsed metadata array.
  *
  * @param {object} opts
- * @param {string} opts.docsPath - period docs/ directory
- * @param {string[]} opts.receiptFiles - absolute paths to receipt files
- * @param {(event: object) => void} opts.emit - SSE-style progress emitter
- * @param {boolean} [opts.forceReanalyze] - bypass cache when extracting
+ * @param {string} opts.docsPath - period docs/ dir (used as scratch root for the file list)
+ * @param {string[]} opts.files - absolute paths to receipt files
+ * @param {string} opts.cachePath - JSON cache path passed via --cache
+ * @param {string} opts.listFileName - filename for the per-file list (e.g. 'receipt-files.txt')
+ * @param {string} opts.progressStep - SSE step name for progress events
+ * @param {(event: object) => void} opts.emit
+ * @param {boolean} [opts.forceReanalyze]
  * @param {string[]} opts.tempFiles - cleanup queue (mutated)
- * @returns {Promise<{ receipts: object[], matchResult: object, matchResultPath: string }>}
  */
-export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceReanalyze = false, tempFiles }) {
-  const transactionsPath = join(docsPath, 'transactions.json');
-  if (!existsSync(transactionsPath)) {
-    throw new Error('No prior transactions found for this period');
-  }
+export async function extractToCache({ docsPath, files, cachePath, listFileName, progressStep, emit, forceReanalyze = false, tempFiles }) {
+  const listPath = join(docsPath, listFileName);
+  writeAtomic(listPath, files.join('\n'));
 
-  const receiptListPath = join(docsPath, 'receipt-files.txt');
-  writeAtomic(receiptListPath, receiptFiles.join('\n'));
+  emit({ step: progressStep, current: 0, total: files.length });
 
-  emit({ step: 'extracting', current: 0, total: receiptFiles.length });
-
-  const receiptsJsonPath = join(docsPath, 'receipts.json');
-  const extractArgs = [join(WORKER_BIN, 'extract-receipts.mjs'), receiptListPath, '--cache', receiptsJsonPath];
+  const extractArgs = [join(WORKER_BIN, 'extract-receipts.mjs'), listPath, '--cache', cachePath];
   if (forceReanalyze) extractArgs.push('--force');
   if (MODEL) extractArgs.push('--model', MODEL);
   if (PROJECT) extractArgs.push('--project', PROJECT);
   if (LOCATION) extractArgs.push('--location', LOCATION);
 
-  const stdoutTmpPath = join(tmpdir(), `concilia-extract-${process.pid}-${Date.now()}.json`);
+  const stdoutTmpPath = join(tmpdir(), `concilia-extract-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`);
   tempFiles.push(stdoutTmpPath);
-  const receipts = await new Promise((resolve, reject) => {
+  const results = await new Promise((resolve, reject) => {
     const stdoutStream = createWriteStream(stdoutTmpPath);
     const proc = spawn(NODE_BIN, extractArgs, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...NODE_ENV_EXTRA } });
     let stderr = '';
@@ -96,7 +92,6 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
     proc.stderr.pipe(process.stderr, { end: false });
     proc.stderr.on('data', (d) => {
       if (stderr.length + d.length <= MAX_STDERR) stderr += d;
-      // Buffer partial lines across chunks.
       lineBuf += d.toString();
       const newlineIdx = lineBuf.lastIndexOf('\n');
       if (newlineIdx === -1) return;
@@ -105,8 +100,8 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
       for (const line of complete.split('\n')) {
         const isDone = line.includes('[extract-receipts] done:') || line.includes('[extract-receipts] cache hit:');
         if (isDone) {
-          extractedCount = Math.min(extractedCount + 1, receiptFiles.length);
-          emit({ step: 'extracting', current: extractedCount, total: receiptFiles.length });
+          extractedCount = Math.min(extractedCount + 1, files.length);
+          emit({ step: progressStep, current: extractedCount, total: files.length });
         }
       }
     });
@@ -129,7 +124,39 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
     proc.on('error', reject);
   });
 
-  writeAtomic(receiptsJsonPath, JSON.stringify(receipts, null, 2));
+  writeAtomic(cachePath, JSON.stringify(results, null, 2));
+  return results;
+}
+
+/**
+ * Run the extract-receipts → match → write-match-result pipeline.
+ * Used by both the full reconcile flow and the standalone scan-receipts flow.
+ *
+ * @param {object} opts
+ * @param {string} opts.docsPath - period docs/ directory
+ * @param {string[]} opts.receiptFiles - absolute paths to receipt files
+ * @param {(event: object) => void} opts.emit - SSE-style progress emitter
+ * @param {boolean} [opts.forceReanalyze] - bypass cache when extracting
+ * @param {string[]} opts.tempFiles - cleanup queue (mutated)
+ * @returns {Promise<{ receipts: object[], matchResult: object, matchResultPath: string }>}
+ */
+export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceReanalyze = false, tempFiles }) {
+  const transactionsPath = join(docsPath, 'transactions.json');
+  if (!existsSync(transactionsPath)) {
+    throw new Error('No prior transactions found for this period');
+  }
+
+  const receiptsJsonPath = join(docsPath, 'receipts.json');
+  const receipts = await extractToCache({
+    docsPath,
+    files: receiptFiles,
+    cachePath: receiptsJsonPath,
+    listFileName: 'receipt-files.txt',
+    progressStep: 'extracting',
+    emit,
+    forceReanalyze,
+    tempFiles,
+  });
 
   emit({ step: 'matching' });
   const rulesPath = process.env.RULES_PATH;
@@ -148,6 +175,50 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
   writeAtomic(matchResultPath, JSON.stringify(matchResult, null, 2));
 
   return { receipts, matchResult, matchResultPath };
+}
+
+/**
+ * Walk the period's reimbursements/ folder and extract metadata for any files
+ * found. Writes <docs>/reimbursements.json. No-op (writes empty array) when the
+ * folder is missing or empty so the report endpoint can rely on a stable shape.
+ *
+ * Reimbursements are receipts paid personally on the company's VAT — they have
+ * no matching bank transaction, so the matcher is bypassed entirely.
+ *
+ * @param {object} opts
+ * @param {string} opts.periodPath - <RECEIPTS_BASE>/<year>/<month>
+ * @param {string} opts.docsPath
+ * @param {(event: object) => void} opts.emit
+ * @param {boolean} [opts.forceReanalyze]
+ * @param {string[]} opts.tempFiles
+ * @returns {Promise<{ reimbursements: object[], reimbursementsPath: string }>}
+ */
+export async function runReimbursements({ periodPath, docsPath, emit, forceReanalyze = false, tempFiles }) {
+  const reimbursementsPath = join(periodPath, 'reimbursements');
+  const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
+  const files = findReceipts(reimbursementsPath);
+
+  emit({ step: 'reimbursements_found', count: files.length });
+
+  if (files.length === 0) {
+    // Keep the artifact in sync — drop a stale file if the folder has been emptied.
+    if (existsSync(reimbursementsJsonPath)) {
+      writeAtomic(reimbursementsJsonPath, JSON.stringify([], null, 2));
+    }
+    return { reimbursements: [], reimbursementsPath: reimbursementsJsonPath };
+  }
+
+  const reimbursements = await extractToCache({
+    docsPath,
+    files,
+    cachePath: reimbursementsJsonPath,
+    listFileName: 'reimbursement-files.txt',
+    progressStep: 'extracting_reimbursements',
+    emit,
+    forceReanalyze,
+    tempFiles,
+  });
+  return { reimbursements, reimbursementsPath: reimbursementsJsonPath };
 }
 
 /**
@@ -256,14 +327,16 @@ export async function reconcile({ statements, year, month, emit, forceReanalyze 
     tempFiles,
   });
 
+  // Pass 4b: extract reimbursements (independent of matcher; report-only)
+  await runReimbursements({ periodPath: receiptMonthPath, docsPath, emit, forceReanalyze, tempFiles });
+
   // Pass 5: export report
   emit({ step: 'exporting' });
   const reportPath = join(docsPath, 'report.xlsx');
-  await execFileAsync(
-    NODE_BIN,
-    [join(WORKER_BIN, 'export-xlsx.mjs'), matchResultPath, reportPath, '--lang', language],
-    { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } },
-  );
+  const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
+  const exportArgs = [join(WORKER_BIN, 'export-xlsx.mjs'), matchResultPath, reportPath, '--lang', language];
+  if (existsSync(reimbursementsJsonPath)) exportArgs.push('--reimbursements', reimbursementsJsonPath);
+  await execFileAsync(NODE_BIN, exportArgs, { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } });
 
   // Files are NOT moved here — deferred to POST /api/review when user confirms
   const summary = buildSummary(matchResult, receipts.length);

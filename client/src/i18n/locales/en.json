@@ -207,7 +207,15 @@
       "assign": "Accept",
       "dispute": "Dispute"
     },
-    "rescanDone": "Receipt rescanned"
+    "rescanDone": "Receipt rescanned",
+    "reimbursements": {
+      "title": "Reimbursements",
+      "subtitle": "Receipts paid personally on company VAT — read-only.",
+      "total": "Total",
+      "empty": "No reimbursement receipts for this period.",
+      "rescanDone": "Reimbursement rescanned",
+      "rescanFailed": "Could not rescan reimbursement: {{msg}}"
+    }
   },
   "preview": {
     "unavailable": "Preview not available for this file type.",

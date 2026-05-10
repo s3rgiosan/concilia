@@ -24,4 +24,5 @@ export interface TransactionResult {
 export interface ReviewData {
   transactions: TransactionResult[];
   unmatchedReceipts: ReceiptMeta[];
+  reimbursements?: ReceiptMeta[];
 }
