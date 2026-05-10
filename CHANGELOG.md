@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-10
+
+### Added
+
+- Reimbursements folder: drop receipts paid personally on the company's VAT into `<RECEIPTS_PATH>/<year>/<month>/reimbursements/` and Concilia extracts them via the existing Gemini pipeline. Not run through the matcher (no transaction to match against).
+- Excel report: new `Reimbursements` sheet (PT: `Reembolsos`) — one row per file with vendor, date, amount, currency, confidence, plus a TOTAL row. Sheet appears only when reimbursements exist.
+- Excel `Totals` sheet: extra row `Reimbursements (paid personally)` (PT: `Reembolsos (pagos pessoalmente)`) summing all reimbursement amounts. Appears only when reimbursements exist.
+- Review screen: read-only collapsible Reimbursements section listing each file with vendor/date/amount, open-in-tab preview link, and per-file rescan button. No Accept/Reject/Assign — files stay in place on Finalize.
+- `POST /api/rescan-reimbursement/:year/:month` mirroring `/api/rescan-receipt`. Sandboxed to `<period>/reimbursements/`. Patches `docs/reimbursements.json` only (no matcher state).
+- `extract-receipts` cache file `docs/reimbursements.json` (same shape as `receipts.json`, only `confidence: 'high'` cached).
+- `worker/bin/export-xlsx.mjs --reimbursements <path>` CLI flag — server passes it on every export call (reconcile, Finalize, report download).
+
+### Changed
+
+- Existing **Scan receipts** button now also scans the reimbursements folder. PT label changed from "Verificar recibos" to "Examinar recibos".
+- `GET /api/review/:year/:month` response includes a `reimbursements` array (each entry enriched with `receiptUrl`).
+- `GET /api/receipt/:year/:month/*` sandbox broadened to also serve files under `reimbursements/` (in addition to `receipts/`).
+- `server/reconcile.mjs`: extracted shared `extractToCache()` helper from `runExtractAndMatch`; new `runReimbursements()` runs the parallel mini-pipeline.
+
 ## [1.1.0] - 2026-05-08
 
 ### Added

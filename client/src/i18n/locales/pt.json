@@ -133,7 +133,7 @@
     "noTransactions": "Sem transacções.",
     "noReceipt": "Sem recibo",
     "save": "Guardar",
-    "scan": "Verificar recibos",
+    "scan": "Examinar recibos",
     "downloadReport": "Descarregar relatório",
     "finalize": "Finalizar",
     "changesSaved": "Alterações guardadas",
@@ -207,7 +207,15 @@
       "assign": "Aceitar",
       "dispute": "Contestar"
     },
-    "rescanDone": "Recibo reanalisado"
+    "rescanDone": "Recibo reanalisado",
+    "reimbursements": {
+      "title": "Reembolsos",
+      "subtitle": "Recibos pagos pessoalmente no IVA da empresa — apenas leitura.",
+      "total": "Total",
+      "empty": "Sem recibos de reembolso neste período.",
+      "rescanDone": "Reembolso reanalisado",
+      "rescanFailed": "Falha ao reanalisar reembolso: {{msg}}"
+    }
   },
   "preview": {
     "unavailable": "Pré-visualização indisponível para este tipo de ficheiro.",

@@ -8,7 +8,7 @@ import { sep as PATH_SEP } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { reconcile, runExtractAndMatch, buildSummary, findReceipts } from './reconcile.mjs';
+import { reconcile, runExtractAndMatch, runReimbursements, buildSummary, findReceipts } from './reconcile.mjs';
 import { writeAtomic } from './utils.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -364,7 +364,18 @@ app.get('/api/review/:year/:month', (req, res) => {
 
     const unmatchedReceipts = (matchResult.unmatchedReceipts || []).map(enrichMeta);
 
-    res.json({ transactions, unmatchedReceipts });
+    const reimbursementsJsonPath = join(RECEIPTS_BASE, year, month, 'docs', 'reimbursements.json');
+    let reimbursements = [];
+    if (existsSync(reimbursementsJsonPath)) {
+      try {
+        const arr = JSON.parse(readFileSync(reimbursementsJsonPath, 'utf8'));
+        reimbursements = (Array.isArray(arr) ? arr : []).map(enrichMeta);
+      } catch (err) {
+        console.error('[review GET] reimbursements parse failed:', err.message);
+      }
+    }
+
+    res.json({ transactions, unmatchedReceipts, reimbursements });
   } catch (err) {
     console.error('[review GET]', err);
     res.status(500).json({ error: err.message });
@@ -485,8 +496,11 @@ app.post('/api/review/:year/:month', express.json({ limit: '10mb' }), async (req
       { transactions: cleanTransactions, receiptsByStatus, unmatchedReceipts: cleanUnmatched },
       null, 2,
     ));
+    const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
+    const finalizeExportArgs = [join(WORKER_BIN, 'export-xlsx.mjs'), matchResultTmp, reportTmp, '--lang', reviewLang];
+    if (existsSync(reimbursementsJsonPath)) finalizeExportArgs.push('--reimbursements', reimbursementsJsonPath);
     try {
-      await execFileAsync(NODE_BIN, [join(WORKER_BIN, 'export-xlsx.mjs'), matchResultTmp, reportTmp, '--lang', reviewLang], { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } });
+      await execFileAsync(NODE_BIN, finalizeExportArgs, { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } });
     } catch (err) {
       try { unlinkSync(matchResultTmp); } catch { /* ignore */ }
       try { unlinkSync(reportTmp); } catch { /* ignore */ }
@@ -567,6 +581,9 @@ app.post('/api/scan-receipts/:year/:month', async (req, res) => {
       emit,
       tempFiles,
     });
+
+    // Reimbursements are extracted separately (no matcher involvement).
+    await runReimbursements({ periodPath, docsPath, emit, tempFiles });
 
     // Reconcile review-draft.json: drop entries whose receipt files no longer
     // exist. Keep all other decisions verbatim.
@@ -709,6 +726,77 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
   }
 });
 
+// POST /api/rescan-reimbursement/:year/:month — re-run Gemini extraction on a
+// single reimbursement file. Patches reimbursements.json only (no matcher).
+app.post('/api/rescan-reimbursement/:year/:month', express.json(), async (req, res) => {
+  const { year, month } = req.params;
+  if (!/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
+    res.status(400).json({ error: 'Invalid year/month' });
+    return;
+  }
+  const { file } = req.body || {};
+  if (!file || typeof file !== 'string') {
+    res.status(400).json({ error: 'file is required' });
+    return;
+  }
+  const periodPath = join(RECEIPTS_BASE, year, month);
+  const reimbursementsBase = join(periodPath, 'reimbursements');
+  const docsPath = join(periodPath, 'docs');
+  const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
+
+  const absFile = file.startsWith('/') ? file : join(periodPath, file);
+  let realReimb;
+  try { realReimb = realpathSync(reimbursementsBase); }
+  catch { realReimb = reimbursementsBase; }
+  let realFile;
+  try { realFile = existsSync(absFile) ? realpathSync(absFile) : absFile; }
+  catch { realFile = absFile; }
+  if (!isInsideDir(realFile, realReimb)) {
+    res.status(400).json({ error: 'file outside reimbursements scope' });
+    return;
+  }
+  if (!existsSync(absFile)) {
+    res.status(404).json({ error: 'file not found' });
+    return;
+  }
+  if (rescanLocks.has(realFile)) {
+    res.status(409).json({ error: 'rescan already in progress for this file' });
+    return;
+  }
+
+  const PROJECT = process.env.AI_GEMINI_PROJECT || '';
+  const LOCATION = process.env.AI_GEMINI_LOCATION || 'europe-west1';
+  const MODEL = process.env.AI_GEMINI_MODEL || 'gemini-2.5-flash';
+  if (!process.env.AI_GEMINI_SA_KEY) {
+    res.status(500).json({ error: 'AI_GEMINI_SA_KEY not configured' });
+    return;
+  }
+
+  rescanLocks.add(realFile);
+  try {
+    const cmdArgs = [join(WORKER_BIN, 'receipt-meta.mjs'), absFile, '--location', LOCATION, '--model', MODEL];
+    if (PROJECT) cmdArgs.push('--project', PROJECT);
+    const { stdout } = await execFileAsync(NODE_BIN, cmdArgs, { timeout: 180000, env: { ...process.env, ...NODE_ENV_EXTRA } });
+    const newMeta = JSON.parse(stdout);
+
+    if (existsSync(reimbursementsJsonPath)) {
+      const arr = JSON.parse(readFileSync(reimbursementsJsonPath, 'utf8'));
+      const idx = arr.findIndex((r) => r.file === absFile);
+      if (idx >= 0) arr[idx] = newMeta; else arr.push(newMeta);
+      writeAtomic(reimbursementsJsonPath, JSON.stringify(arr, null, 2));
+    } else {
+      writeAtomic(reimbursementsJsonPath, JSON.stringify([newMeta], null, 2));
+    }
+
+    res.json({ ...newMeta, receiptUrl: `/api/receipt/${receiptRelativePath(absFile)}` });
+  } catch (err) {
+    console.error('[rescan-reimbursement]', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    rescanLocks.delete(realFile);
+  }
+});
+
 // GET /api/receipt/:year/:month/* — stream a receipt file. App is single-user
 // and server binds to 127.0.0.1 only (no LAN exposure, no auth). Path traversal
 // is blocked by resolving the request through realpathSync and asserting the
@@ -732,8 +820,8 @@ app.get('/api/receipt/:year/:month/*', (req, res) => {
     return;
   }
   const rel = filePath.slice(periodBase.length + 1);
-  // Only files under the receipts/ subtree may be served
-  if (!rel.startsWith('receipts/')) {
+  // Only files under receipts/ or reimbursements/ subtrees may be served.
+  if (!rel.startsWith('receipts/') && !rel.startsWith('reimbursements/')) {
     res.status(403).send('Forbidden');
     return;
   }
@@ -815,10 +903,13 @@ app.get('/report/:year/:month/report.xlsx', async (req, res) => {
     }
   }
 
+  const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
+  const reportExportArgs = [join(WORKER_BIN, 'export-xlsx.mjs'), sourcePath, reportPath, '--lang', lang];
+  if (existsSync(reimbursementsJsonPath)) reportExportArgs.push('--reimbursements', reimbursementsJsonPath);
   try {
     await execFileAsync(
       NODE_BIN,
-      [join(WORKER_BIN, 'export-xlsx.mjs'), sourcePath, reportPath, '--lang', lang],
+      reportExportArgs,
       { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } },
     );
   } catch (err) {

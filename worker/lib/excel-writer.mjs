@@ -2,11 +2,13 @@
  * Excel report writer using write-excel-file.
  *
  * Writes a multi-sheet workbook:
- *   - "Totals"     — aggregate totals (e.g. signed sum of "no receipt"-tagged matched txs)
- *   - "Validated"  — full transaction list with status colour, receipt names, notes
- *   - "Matched"    — one row per receipt attached to MATCHED transactions
- *   - "Review"     — one row per receipt attached to REVIEW transactions
- *   - "Unmatched"  — one row per unmatched receipt
+ *   - "Totals"        — aggregate totals (e.g. signed sum of "no receipt"-tagged matched txs)
+ *   - "Validated"     — full transaction list with status colour, receipt names, notes
+ *   - "Matched"       — one row per receipt attached to MATCHED transactions
+ *   - "Review"        — one row per receipt attached to REVIEW transactions
+ *   - "Unmatched"     — one row per unmatched receipt
+ *   - "Reimbursements" — one row per receipt paid personally on company VAT (read-only,
+ *                        no matcher involvement); appended only when present
  *
  * Sheet names + column headers are localized via the `lang` option ("en" | "pt").
  */
@@ -28,11 +30,16 @@ const TRANSLATIONS = {
     sheetMatched: 'Matched',
     sheetReview: 'Review',
     sheetUnmatched: 'Unmatched',
+    sheetReimbursements: 'Reimbursements',
     totals: {
       label: 'Label',
       amount: 'Amount',
       txWithoutReceipt: 'Transactions without receipt',
       unmatchedReceipts: 'Unmatched receipts',
+      reimbursements: 'Reimbursements (paid personally)',
+    },
+    reimbursements: {
+      total: 'TOTAL',
     },
     receipt: {
       file: 'File',
@@ -87,11 +94,16 @@ const TRANSLATIONS = {
     sheetMatched: 'Associados',
     sheetReview: 'Revisão',
     sheetUnmatched: 'Sem Associação',
+    sheetReimbursements: 'Reembolsos',
     totals: {
       label: 'Categoria',
       amount: 'Valor',
       txWithoutReceipt: 'Transações sem recibo',
       unmatchedReceipts: 'Recibos sem associação',
+      reimbursements: 'Reembolsos (pagos pessoalmente)',
+    },
+    reimbursements: {
+      total: 'TOTAL',
     },
     receipt: {
       file: 'Ficheiro',
@@ -251,7 +263,7 @@ function buildTxSheet(transactions, dict) {
   return [headerRow, ...dataRows];
 }
 
-function buildTotalsSheet(transactions, unmatchedReceipts, dict) {
+function buildTotalsSheet(transactions, unmatchedReceipts, reimbursements, dict) {
   const headers = [dict.totals.label, dict.totals.amount];
   const headerRow = headers.map((h) => cell(h, { fontWeight: 'bold' }));
 
@@ -260,12 +272,53 @@ function buildTotalsSheet(transactions, unmatchedReceipts, dict) {
     .reduce((acc, t) => acc + (t.amount_cents || 0), 0);
   const unmatchedReceiptsCents = (unmatchedReceipts || [])
     .reduce((acc, r) => acc + (r.amount_cents || 0), 0);
+  const reimbursementsCents = (reimbursements || [])
+    .reduce((acc, r) => acc + (r.amount_cents || 0), 0);
 
   const rows = [
     [cell(dict.totals.txWithoutReceipt), moneyCell(txWithoutReceiptCents)],
     [cell(dict.totals.unmatchedReceipts), moneyCell(unmatchedReceiptsCents)],
   ];
+  if ((reimbursements || []).length > 0) {
+    rows.push([cell(dict.totals.reimbursements), moneyCell(reimbursementsCents)]);
+  }
   return [headerRow, ...rows];
+}
+
+/**
+ * Build a sheet listing reimbursement receipts (company-VAT, paid personally).
+ * Shape mirrors the Unmatched sheet, plus a TOTAL row at the bottom summing
+ * `amount_cents`. Column widths must match the header count (6).
+ */
+function buildReimbursementsSheet(reimbursements, dict) {
+  const headers = [
+    dict.receipt.file,
+    dict.receipt.vendor,
+    dict.receipt.date,
+    dict.receipt.amount,
+    dict.receipt.currency,
+    dict.receipt.confidence,
+  ];
+  const headerRow = headers.map((h) => cell(h, { fontWeight: 'bold' }));
+  const dataRows = (reimbursements || []).map((m) => [
+    cell(basename(m.file || '')),
+    cell(m.vendor || ''),
+    cell(m.date || ''),
+    moneyCell(m.amount_cents),
+    cell(m.currency || ''),
+    cell(formatConfidence(m.confidence, dict)),
+  ]);
+  if (dataRows.length === 0) return [headerRow];
+  const totalCents = (reimbursements || []).reduce((acc, r) => acc + (r.amount_cents || 0), 0);
+  const totalRow = [
+    cell(dict.reimbursements.total, { fontWeight: 'bold' }),
+    cell(''),
+    cell(''),
+    moneyCell(totalCents, { fontWeight: 'bold' }),
+    cell(''),
+    cell(''),
+  ];
+  return [headerRow, ...dataRows, totalRow];
 }
 
 /**
@@ -356,30 +409,37 @@ function autoColumnWidths(rows, headerCount) {
  */
 export async function writeExcelReport(result, outputPath, opts = {}) {
   const dict = getDict(opts.lang);
+  const reimbursements = result.reimbursements || [];
+  const hasReimbursements = reimbursements.length > 0;
+
   const txRows = buildTxSheet(result.transactions, dict);
-  const totalsRows = buildTotalsSheet(result.transactions, result.unmatchedReceipts, dict);
+  const totalsRows = buildTotalsSheet(result.transactions, result.unmatchedReceipts, reimbursements, dict);
   const matchedRows = buildTxReceiptSheet(result.transactions, 'MATCHED', dict);
   const reviewRows = buildTxReceiptSheet(result.transactions, 'REVIEW', dict);
   const unmatchedRows = buildUnmatchedReceiptSheet(result.unmatchedReceipts, dict);
 
-  await writeXlsxFile(
-    [totalsRows, txRows, matchedRows, reviewRows, unmatchedRows],
-    {
-      sheets: [
-        dict.sheetTotals,
-        dict.sheetValidated,
-        dict.sheetMatched,
-        dict.sheetReview,
-        dict.sheetUnmatched,
-      ],
-      columns: [
-        autoColumnWidths(totalsRows, 2),
-        autoColumnWidths(txRows, 9),
-        autoColumnWidths(matchedRows, 9),
-        autoColumnWidths(reviewRows, 9),
-        autoColumnWidths(unmatchedRows, 6),
-      ],
-      filePath: outputPath,
-    },
-  );
+  const data = [totalsRows, txRows, matchedRows, reviewRows, unmatchedRows];
+  const sheets = [
+    dict.sheetTotals,
+    dict.sheetValidated,
+    dict.sheetMatched,
+    dict.sheetReview,
+    dict.sheetUnmatched,
+  ];
+  const columns = [
+    autoColumnWidths(totalsRows, 2),
+    autoColumnWidths(txRows, 9),
+    autoColumnWidths(matchedRows, 9),
+    autoColumnWidths(reviewRows, 9),
+    autoColumnWidths(unmatchedRows, 6),
+  ];
+
+  if (hasReimbursements) {
+    const reimbRows = buildReimbursementsSheet(reimbursements, dict);
+    data.push(reimbRows);
+    sheets.push(dict.sheetReimbursements);
+    columns.push(autoColumnWidths(reimbRows, 6));
+  }
+
+  await writeXlsxFile(data, { sheets, columns, filePath: outputPath });
 }
