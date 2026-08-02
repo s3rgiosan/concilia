@@ -5,6 +5,7 @@ import { ResultsCard } from './components/ResultsCard';
 import { ReviewScreen } from './components/ReviewScreen';
 import { RulesPanel } from './components/RulesPanel';
 import { SettingsModal } from './components/SettingsModal';
+import { UpdateBanner } from './components/UpdateBanner';
 import { ToastProvider } from './components/ui/Toast';
 import { pumpSSE } from './lib/sse';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -128,6 +129,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-base-100">
       <div className="sticky top-0 z-40">
+      <UpdateBanner />
       <header className="bg-base-100 border-b border-base-200">
         <div className="max-w-6xl mx-auto px-8 py-3 flex items-center justify-end">
           <div className="flex items-center gap-2">

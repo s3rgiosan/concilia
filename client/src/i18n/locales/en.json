@@ -9,7 +9,8 @@
     "low": "low",
     "loading": "Loading…",
     "select": "Select…",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "dismiss": "Dismiss"
   },
   "nav": {
     "matchRules": "Match rules",
@@ -34,7 +35,12 @@
     "busy": "Reconciliation in progress. Try again when it finishes.",
     "failedToLoad": "Failed to load settings",
     "failedToSave": "Failed to save",
-    "notInElectron": "Settings are only editable in the desktop app."
+    "notInElectron": "Settings are only editable in the desktop app.",
+    "version": "Concilia {{version}}"
+  },
+  "update": {
+    "available": "A new version ({{version}}) is available.",
+    "viewRelease": "View release"
   },
   "auth": {
     "signIn": "Sign in",

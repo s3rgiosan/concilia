@@ -1,6 +1,6 @@
 # Build resources
 
-- `entitlements.mac.plist` — entitlements for ad-hoc signed macOS build.
+- `entitlements.mac.plist` — entitlements for the ad-hoc signed build. Ad-hoc signing (`identity: "-"`) provides a stable code identity but does not satisfy Gatekeeper; users strip the quarantine attribute on first launch. Entitlements allow JIT and disable library validation for Electron and poppler.
 - `icon.icns` — app icon. Generate from a 1024×1024 PNG:
 
   ```bash

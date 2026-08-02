@@ -38,6 +38,7 @@ export function SettingsModal({ onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
   const { showToast } = useToast();
   const { t } = useTranslation();
 
@@ -50,6 +51,9 @@ export function SettingsModal({ onClose }: Props) {
       .then((c) => setCfg({ ...DEFAULTS, ...c }))
       .catch(() => showToast(t('settings.failedToLoad', 'Failed to load settings'), 'error'))
       .finally(() => setLoading(false));
+    window.concilia.getVersion?.()
+      ?.then((v) => setVersion(v))
+      .catch(() => {});
   }, []);
 
   function update<K extends keyof Config>(key: K, value: Config[K]) {
@@ -217,19 +221,22 @@ export function SettingsModal({ onClose }: Props) {
         )}
       </div>
 
-      <div className="px-6 py-4 border-t border-base-200 flex justify-end gap-2">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-          {t('common.cancel', 'Cancel')}
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm gap-1.5 !text-white"
-          onClick={save}
-          disabled={!dirty || saving}
-        >
-          <Save className="w-4 h-4" />
-          {saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
-        </button>
+      <div className="px-6 py-4 border-t border-base-200 flex items-center justify-between gap-2">
+        {version && <span className="text-xs text-base-content/60">{t('settings.version', 'Concilia {{version}}', { version })}</span>}
+        <div className="flex justify-end gap-2 ml-auto">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+            {t('common.cancel', 'Cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm gap-1.5 !text-white"
+            onClick={save}
+            disabled={!dirty || saving}
+          >
+            <Save className="w-4 h-4" />
+            {saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+          </button>
+        </div>
       </div>
     </Drawer>
   );
