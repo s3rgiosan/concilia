@@ -18,8 +18,8 @@ function tx(id, date, description, amountCents) {
   };
 }
 
-function receipt(file, amountCents, date = null) {
-  return { file, amount_cents: amountCents, confidence: 'high', provider_used: 'gemini', date };
+function receipt(file, amountCents, date = null, currency = 'EUR') {
+  return { file, amount_cents: amountCents, confidence: 'high', provider_used: 'gemini', date, currency };
 }
 
 describe('matchTransactions', () => {
@@ -503,6 +503,74 @@ describe('matchTransactions', () => {
     });
   });
 
+  describe('unknown currency matching', () => {
+    it('does not auto-match an exact-cents receipt with unknown currency', async () => {
+      const { matchTransactions } = await load();
+      // Extraction failed to determine currency (currency: null); amount happens to equal
+      // the transaction exactly. Must never silently MATCH — could be a foreign currency.
+      const r = { file: '/r/ACME invoice.pdf', amount_cents: 4500, confidence: 'high', provider_used: 'gemini', currency: null, vendor: 'Acme' };
+      const result = matchTransactions(
+        [tx('tx-001', '2024-12-15', 'ACME CORP', -4500)],
+        [r],
+      );
+      const t = result.transactions[0];
+      assert.equal(t.status, 'REVIEW');
+      assert.equal(t.notes, 'unknown_currency_match');
+      assert.deepEqual(t.receipt_files, ['/r/ACME invoice.pdf']);
+    });
+
+    it('does not consume an unknown-currency receipt matched to REVIEW', async () => {
+      const { matchTransactions } = await load();
+      const r = { file: '/r/ACME invoice.pdf', amount_cents: 4500, confidence: 'high', provider_used: 'gemini', currency: null, vendor: 'Acme' };
+      const result = matchTransactions(
+        [tx('tx-001', '2024-12-15', 'ACME CORP', -4500)],
+        [r],
+      );
+      assert.ok(result.receiptsByStatus.review.includes('/r/ACME invoice.pdf'));
+      assert.equal(result.receiptsByStatus.matched.length, 0);
+    });
+
+    it('routes unknown-currency exact-amount match to REVIEW even without name overlap (pass 2b)', async () => {
+      const { matchTransactions } = await load();
+      const r = { file: '/r/unknown.pdf', amount_cents: 4500, confidence: 'high', provider_used: 'gemini', currency: null, vendor: null };
+      const result = matchTransactions(
+        [tx('tx-001', '2024-12-15', 'SHOPCO PURCHASE', -4500)],
+        [r],
+      );
+      const t = result.transactions[0];
+      assert.equal(t.status, 'REVIEW');
+      assert.equal(t.notes, 'unknown_currency_match');
+    });
+
+    it('still auto-matches an explicit EUR receipt (regression check)', async () => {
+      const { matchTransactions } = await load();
+      const r = { file: '/r/ACME invoice.pdf', amount_cents: 4500, confidence: 'high', provider_used: 'gemini', currency: 'EUR', vendor: 'Acme' };
+      const result = matchTransactions(
+        [tx('tx-001', '2024-12-15', 'ACME CORP', -4500)],
+        [r],
+      );
+      const t = result.transactions[0];
+      assert.equal(t.status, 'MATCHED');
+      assert.equal(t.notes, 'name_amount_match');
+    });
+
+    it('prefers an unambiguous EUR match over an unknown-currency candidate at the same amount', async () => {
+      const { matchTransactions } = await load();
+      const eurReceipt = { file: '/r/eur.pdf', amount_cents: 4500, confidence: 'high', provider_used: 'gemini', currency: 'EUR' };
+      const unknownReceipt = { file: '/r/unknown.pdf', amount_cents: 4500, confidence: 'high', provider_used: 'gemini', currency: null };
+      const result = matchTransactions(
+        [tx('tx-001', '2024-12-15', 'COMPRA', -4500)],
+        [eurReceipt, unknownReceipt],
+      );
+      const t = result.transactions[0];
+      assert.equal(t.status, 'MATCHED');
+      assert.equal(t.notes, 'amount_match');
+      assert.deepEqual(t.receipt_files, ['/r/eur.pdf']);
+      // The unknown-currency receipt is not silently consumed by this match.
+      assert.ok(!result.receiptsByStatus.matched.includes('/r/unknown.pdf'));
+    });
+  });
+
   describe('filename matching (pass 3)', () => {
     it('matches receipt filename to transaction description', async () => {
       const { matchTransactions } = await load();
@@ -624,7 +692,7 @@ describe('matchTransactions', () => {
       const rules = [{ id: '1', receiptVendor: 'fastmail', transactionDescription: 'paddle' }];
       const result = matchTransactions(
         [tx('tx-001', '2024-12-15', 'PADDLE.NET CHARGE', -1200)],
-        [{ file: '/r/fastmail.pdf', amount_cents: 999, confidence: 'high', vendor: 'Fastmail Pty Ltd', provider_used: 'gemini' }],
+        [{ file: '/r/fastmail.pdf', amount_cents: 999, confidence: 'high', vendor: 'Fastmail Pty Ltd', provider_used: 'gemini', currency: 'EUR' }],
         rules,
       );
       const t = result.transactions[0];
@@ -637,7 +705,7 @@ describe('matchTransactions', () => {
       const rules = [{ id: '1', receiptVendor: 'fastmail', transactionDescription: 'paddle' }];
       const result = matchTransactions(
         [tx('tx-001', '2024-12-15', 'PADDLE.NET CHARGE', -1200)],
-        [{ file: '/r/other.pdf', amount_cents: 1200, confidence: 'high', vendor: 'Other Corp', provider_used: 'gemini' }],
+        [{ file: '/r/other.pdf', amount_cents: 1200, confidence: 'high', vendor: 'Other Corp', provider_used: 'gemini', currency: 'EUR' }],
         rules,
       );
       assert.equal(result.transactions[0].status, 'MATCHED');
@@ -649,7 +717,7 @@ describe('matchTransactions', () => {
       const rules = [{ id: '1', receiptVendor: 'fastmail', transactionDescription: 'paddle' }];
       const result = matchTransactions(
         [tx('tx-001', '2024-12-15', 'PADDLE.NET CHARGE', -1200)],
-        [{ file: '/r/fastmail_invoice.pdf', amount_cents: 999, confidence: 'high', vendor: null, provider_used: 'gemini' }],
+        [{ file: '/r/fastmail_invoice.pdf', amount_cents: 999, confidence: 'high', vendor: null, provider_used: 'gemini', currency: 'EUR' }],
         rules,
       );
       const t = result.transactions[0];
@@ -662,7 +730,7 @@ describe('matchTransactions', () => {
       const rules = [{ id: '1', receiptVendor: 'fastmail', transactionDescription: 'paddle' }];
       const result = matchTransactions(
         [tx('tx-001', '2024-12-15', 'PADDLE.NET CHARGE', -1200)],
-        [{ file: '/r/fastmail.pdf', amount_cents: null, confidence: null, vendor: 'Fastmail Pty Ltd', provider_used: 'gemini' }],
+        [{ file: '/r/fastmail.pdf', amount_cents: null, confidence: null, vendor: 'Fastmail Pty Ltd', provider_used: 'gemini', currency: 'EUR' }],
         rules,
       );
       const t = result.transactions[0];
@@ -674,8 +742,8 @@ describe('matchTransactions', () => {
       const { matchTransactions } = await load();
       const rules = [{ id: '1', receiptVendor: 'fastmail', transactionDescription: 'paddle' }];
       const receipts = [
-        { file: '/r/fastmail.pdf', amount_cents: 999, confidence: 'high', vendor: 'Fastmail Pty Ltd', provider_used: 'gemini' },
-        { file: '/r/exact.pdf', amount_cents: 1200, confidence: 'high', vendor: 'Someone Else', provider_used: 'gemini' },
+        { file: '/r/fastmail.pdf', amount_cents: 999, confidence: 'high', vendor: 'Fastmail Pty Ltd', provider_used: 'gemini', currency: 'EUR' },
+        { file: '/r/exact.pdf', amount_cents: 1200, confidence: 'high', vendor: 'Someone Else', provider_used: 'gemini', currency: 'EUR' },
       ];
       const result = matchTransactions(
         [tx('tx-001', '2024-12-15', 'PADDLE.NET CHARGE', -1200)],
@@ -695,8 +763,8 @@ describe('matchTransactions', () => {
       const result = matchTransactions(
         [tx('tx-001', '2025-11-14', 'OPENAI SUBSCRIPTION', -2000)],
         [
-          { file: '/r/openai-oct.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-10-14', provider_used: 'gemini' },
-          { file: '/r/openai-nov.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-11-13', provider_used: 'gemini' },
+          { file: '/r/openai-oct.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-10-14', provider_used: 'gemini', currency: 'EUR' },
+          { file: '/r/openai-nov.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-11-13', provider_used: 'gemini', currency: 'EUR' },
         ],
       );
       const t = result.transactions[0];
@@ -710,14 +778,14 @@ describe('matchTransactions', () => {
       const result = matchTransactions(
         [tx('tx-001', '2025-11-14', 'COMPRA', -2000)],
         [
-          { file: '/r/a.pdf', amount_cents: 2000, confidence: 'high', vendor: null, date: '2025-09-01', provider_used: 'gemini' },
-          { file: '/r/b.pdf', amount_cents: 2000, confidence: 'high', vendor: null, date: '2025-11-10', provider_used: 'gemini' },
+          { file: '/r/a.pdf', amount_cents: 2000, confidence: 'high', vendor: null, date: '2025-09-01', provider_used: 'gemini', currency: 'EUR' },
+          { file: '/r/b.pdf', amount_cents: 2000, confidence: 'high', vendor: null, date: '2025-11-10', provider_used: 'gemini', currency: 'EUR' },
         ],
       );
       const t = result.transactions[0];
       assert.equal(t.status, 'MATCHED');
       assert.deepEqual(t.receipt_files, ['/r/b.pdf']);
-      assert.equal(t.notes, 'name_amount_date_match');
+      assert.equal(t.notes, 'amount_date_match');
     });
 
     it('falls back to REVIEW when both candidates are outside the date window', async () => {
@@ -725,8 +793,8 @@ describe('matchTransactions', () => {
       const result = matchTransactions(
         [tx('tx-001', '2025-11-14', 'OPENAI', -2000)],
         [
-          { file: '/r/old.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2024-01-01', provider_used: 'gemini' },
-          { file: '/r/older.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2023-06-01', provider_used: 'gemini' },
+          { file: '/r/old.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2024-01-01', provider_used: 'gemini', currency: 'EUR' },
+          { file: '/r/older.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2023-06-01', provider_used: 'gemini', currency: 'EUR' },
         ],
       );
       const t = result.transactions[0];
@@ -739,8 +807,8 @@ describe('matchTransactions', () => {
       const result = matchTransactions(
         [tx('tx-001', '2025-11-14', 'OPENAI', -2000)],
         [
-          { file: '/r/a.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: null, provider_used: 'gemini' },
-          { file: '/r/b.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: null, provider_used: 'gemini' },
+          { file: '/r/a.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: null, provider_used: 'gemini', currency: 'EUR' },
+          { file: '/r/b.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: null, provider_used: 'gemini', currency: 'EUR' },
         ],
       );
       const t = result.transactions[0];
@@ -752,8 +820,8 @@ describe('matchTransactions', () => {
       const result = matchTransactions(
         [tx('tx-001', '2025-11-14', 'OPENAI', -2000)],
         [
-          { file: '/r/a.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-11-13', provider_used: 'gemini' },
-          { file: '/r/b.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-11-15', provider_used: 'gemini' },
+          { file: '/r/a.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-11-13', provider_used: 'gemini', currency: 'EUR' },
+          { file: '/r/b.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2025-11-15', provider_used: 'gemini', currency: 'EUR' },
         ],
       );
       const t = result.transactions[0];
@@ -765,8 +833,8 @@ describe('matchTransactions', () => {
       const result = matchTransactions(
         [tx('tx-001', '2025-11-14', 'OPENAI', -2000)],
         [
-          { file: '/r/far.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2024-01-01', provider_used: 'gemini' },
-          { file: '/r/near.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2024-02-01', provider_used: 'gemini' },
+          { file: '/r/far.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2024-01-01', provider_used: 'gemini', currency: 'EUR' },
+          { file: '/r/near.pdf', amount_cents: 2000, confidence: 'high', vendor: 'OpenAI', date: '2024-02-01', provider_used: 'gemini', currency: 'EUR' },
         ],
       );
       const t = result.transactions[0];

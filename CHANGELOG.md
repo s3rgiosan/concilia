@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Receipts with an unverified currency no longer auto-match.** `isEur()` treated a `null` currency (Gemini failed to determine one) as EUR, so such receipts got the strictest exact-cents auto-MATCH path instead of the most cautious one — a foreign-currency receipt could silently MATCH a same-cents EUR transaction with no REVIEW flag. `isEur()` now requires `currency === 'EUR'`; unknown-currency exact-cents matches route to `REVIEW` with notes `unknown_currency_match` and are never consumed. Pass 3 (FX) now gathers candidates via `isKnownForeignCurrency()` so unknown-currency receipts are not swept into the ±10% tolerance.
+- **Portuguese bank-fee patterns no longer swallow real invoices.** `/imposto.*selo/i`, `/manut.*conta/i`, `/taxa.*manut/i` and `/despesas.*conta/i` lacked `\b` anchors, so `conta` matched inside `contabilidade` — an accounting invoice was auto-classified `bank_fee` in the first pass and permanently excluded from reconciliation. English `/\bannual.*charge\b/i` and `/\bwire.*transfer\b/i` had the same class of over-broad `.*` span.
+- Pass 2's date-tiebreaker fallback reported `name_amount_date_match` ("Name, amount & date match" in the report) even when no name overlap was found. Now `amount_date_match`, with EN/PT labels.
+- Report download (`GET /report/:year/:month/report.xlsx`) regenerated the .xlsx directly over the canonical path with no lock — concurrent downloads interleaved writes and a crash mid-generation left a truncated file that was then served. Now writes to a `.tmp` and renames on success, guarded by the period lock (409 while a reconcile is in flight).
+- Finalize recorded the post-move receipt path even when `renameSync` failed (`EXDEV` on a network-share receipts root, permission errors), leaving `match-result.json` pointing at files that were never moved. Moves are now planned up front and rolled back on any failure, preserving the documented all-or-nothing contract.
+- A reconcile that hit the 30-minute timeout left its child process running while the period lock was released, so a retry put two pipelines on the same output files. Children are now tracked, SIGTERM'd (SIGKILL after 5s), and awaited before the lock is released. Client disconnect (`req.on('close')`) routes through the same path.
+- Single-file rescan and the period-level endpoints used separate lock namespaces while both read-modify-writing `match-result.json` — a rescan finishing after Finalize could overwrite it with pre-move paths. Both now cross-check and return 409. Concurrent rescans of different files in the same period are still allowed.
+- Uploaded statement PDFs leaked into the OS temp dir on every early-return path in `POST /api/reconcile` (invalid period, unknown bank, missing SA key, 409). All early returns now clean up.
+- The reconcile SSE stream ending without a terminal event left the UI spinning forever; the scan-receipts stream ending early reported a false "scan complete" success, so a user could Finalize on incomplete data. Both consumers now treat stream-end-without-`done` as an error, via a shared `client/src/lib/sse.ts` helper.
+- Finalize could be overwritten by a debounced draft autosave landing after the server deleted the draft, silently reviving superseded decisions in the report. `finalize()` now cancels the pending timer and aborts any in-flight draft PUT.
+- `ReconcileForm`'s status fetch had no race guard, so rapid month changes could show a resume banner for the wrong period.
+- The reconcile `AbortController` was returned from an `onSubmit` handler where React never invoked it, so an in-flight reconcile fetch could outlive the component. Now aborted on unmount.
+- Navigating away from Review via the "Start" breadcrumb discarded unflushed decisions without warning.
+
+### Changed
+
+- Finalize confirmation is now a native `<dialog>` — Escape and focus trapping come from the platform, and initial focus lands on Cancel so Enter cannot confirm the irreversible action by accident.
+
 ## [1.2.0] - 2026-05-10
 
 ### Added

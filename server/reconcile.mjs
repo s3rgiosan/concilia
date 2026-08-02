@@ -38,6 +38,21 @@ export function findReceipts(rootPath) {
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Run execFileAsync while registering the spawned child in `childTracker` (a
+ * Set) so a caller can kill it on timeout/abort. `childTracker` is optional;
+ * when omitted the call behaves exactly like a plain execFileAsync.
+ */
+function trackedExecFile(childTracker, file, args, options) {
+  const promise = execFileAsync(file, args, options);
+  const child = promise.child;
+  if (childTracker && child) {
+    childTracker.add(child);
+    child.once('exit', () => childTracker.delete(child));
+  }
+  return promise;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_BIN = process.env.WORKER_DIR || join(__dirname, '..', 'worker', 'bin');
 const RECEIPTS_BASE = process.env.RECEIPTS_PATH;
@@ -65,8 +80,10 @@ const NODE_ENV_EXTRA = { ELECTRON_RUN_AS_NODE: '1' };
  * @param {(event: object) => void} opts.emit
  * @param {boolean} [opts.forceReanalyze]
  * @param {string[]} opts.tempFiles - cleanup queue (mutated)
+ * @param {Set} [opts.childTracker] - spawned child is added/removed here so a
+ *   caller can kill it on timeout/abort
  */
-export async function extractToCache({ docsPath, files, cachePath, listFileName, progressStep, emit, forceReanalyze = false, tempFiles }) {
+export async function extractToCache({ docsPath, files, cachePath, listFileName, progressStep, emit, forceReanalyze = false, tempFiles, childTracker }) {
   const listPath = join(docsPath, listFileName);
   writeAtomic(listPath, files.join('\n'));
 
@@ -83,6 +100,10 @@ export async function extractToCache({ docsPath, files, cachePath, listFileName,
   const results = await new Promise((resolve, reject) => {
     const stdoutStream = createWriteStream(stdoutTmpPath);
     const proc = spawn(NODE_BIN, extractArgs, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...NODE_ENV_EXTRA } });
+    if (childTracker) {
+      childTracker.add(proc);
+      proc.once('exit', () => childTracker.delete(proc));
+    }
     let stderr = '';
     let extractedCount = 0;
     let lineBuf = '';
@@ -138,9 +159,10 @@ export async function extractToCache({ docsPath, files, cachePath, listFileName,
  * @param {(event: object) => void} opts.emit - SSE-style progress emitter
  * @param {boolean} [opts.forceReanalyze] - bypass cache when extracting
  * @param {string[]} opts.tempFiles - cleanup queue (mutated)
+ * @param {Set} [opts.childTracker] - forwarded to extractToCache and the match.mjs spawn
  * @returns {Promise<{ receipts: object[], matchResult: object, matchResultPath: string }>}
  */
-export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceReanalyze = false, tempFiles }) {
+export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceReanalyze = false, tempFiles, childTracker }) {
   const transactionsPath = join(docsPath, 'transactions.json');
   if (!existsSync(transactionsPath)) {
     throw new Error('No prior transactions found for this period');
@@ -156,6 +178,7 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
     emit,
     forceReanalyze,
     tempFiles,
+    childTracker,
   });
 
   emit({ step: 'matching' });
@@ -169,7 +192,7 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
   }
   const matchArgs = [join(WORKER_BIN, 'match.mjs'), transactionsPath, receiptsJsonPath];
   if (rulesExist) matchArgs.push(rulesPath);
-  const { stdout: matchOut } = await execFileAsync(NODE_BIN, matchArgs, { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } });
+  const { stdout: matchOut } = await trackedExecFile(childTracker, NODE_BIN, matchArgs, { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } });
   const matchResult = JSON.parse(matchOut);
   const matchResultPath = join(docsPath, 'match-result.json');
   writeAtomic(matchResultPath, JSON.stringify(matchResult, null, 2));
@@ -191,9 +214,10 @@ export async function runExtractAndMatch({ docsPath, receiptFiles, emit, forceRe
  * @param {(event: object) => void} opts.emit
  * @param {boolean} [opts.forceReanalyze]
  * @param {string[]} opts.tempFiles
+ * @param {Set} [opts.childTracker] - forwarded to extractToCache
  * @returns {Promise<{ reimbursements: object[], reimbursementsPath: string }>}
  */
-export async function runReimbursements({ periodPath, docsPath, emit, forceReanalyze = false, tempFiles }) {
+export async function runReimbursements({ periodPath, docsPath, emit, forceReanalyze = false, tempFiles, childTracker }) {
   const reimbursementsPath = join(periodPath, 'reimbursements');
   const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
   const files = findReceipts(reimbursementsPath);
@@ -217,6 +241,7 @@ export async function runReimbursements({ periodPath, docsPath, emit, forceReana
     emit,
     forceReanalyze,
     tempFiles,
+    childTracker,
   });
   return { reimbursements, reimbursementsPath: reimbursementsJsonPath };
 }
@@ -255,8 +280,9 @@ export function buildSummary(matchResult, totalReceipts) {
  * @param {string} opts.month
  * @param {(event: object) => void} opts.emit
  * @param {string} [opts.language] - Excel report language ("en" | "pt"); defaults to "en"
+ * @param {AbortSignal} [opts.abortSignal] - aborted when the SSE client disconnects
  */
-export async function reconcile({ statements, year, month, emit, forceReanalyze = false, language = 'en' }) {
+export async function reconcile({ statements, year, month, emit, forceReanalyze = false, language = 'en', abortSignal }) {
   const receiptMonthPath = join(RECEIPTS_BASE, year, month);
   const receiptsPath = join(receiptMonthPath, 'receipts');
   const docsPath = join(receiptMonthPath, 'docs');
@@ -264,10 +290,39 @@ export async function reconcile({ statements, year, month, emit, forceReanalyze 
   mkdirSync(docsPath, { recursive: true });
   mkdirSync(receiptsPath, { recursive: true });
 
+  const childTracker = new Set();
+
+  // Kills every tracked child (SIGTERM, escalating to SIGKILL after 5s) and
+  // resolves only once each one has actually exited, so the caller can hold
+  // the period lock until the child is truly gone.
+  async function killChildren() {
+    await Promise.all([...childTracker].map((child) => new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) { resolve(); return; }
+      const escalate = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 5000);
+      child.once('exit', () => { clearTimeout(escalate); resolve(); });
+      child.kill('SIGTERM');
+    })));
+  }
+
   const TIMEOUT_MS = 30 * 60 * 1000;
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error('Reconciliation timed out after 30 minutes')), TIMEOUT_MS);
+    timeoutId = setTimeout(() => {
+      killChildren().finally(() => reject(new Error('Reconciliation timed out after 30 minutes')));
+    }, TIMEOUT_MS);
+  });
+
+  let onAbort;
+  const abortPromise = new Promise((_, reject) => {
+    onAbort = () => {
+      killChildren().finally(() => reject(new Error('Client disconnected')));
+    };
+    if (abortSignal) {
+      if (abortSignal.aborted) onAbort();
+      else abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
   });
 
   const tempPdfPaths = [];
@@ -292,7 +347,8 @@ export async function reconcile({ statements, year, month, emit, forceReanalyze 
         tempPdfPaths.push(pdfPath);
       }
 
-      const { stdout } = await execFileAsync(
+      const { stdout } = await trackedExecFile(
+        childTracker,
         NODE_BIN,
         [join(WORKER_BIN, 'parse-statement.mjs'), bank, pdfPath],
         { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } },
@@ -325,10 +381,11 @@ export async function reconcile({ statements, year, month, emit, forceReanalyze 
     emit,
     forceReanalyze,
     tempFiles,
+    childTracker,
   });
 
   // Pass 4b: extract reimbursements (independent of matcher; report-only)
-  await runReimbursements({ periodPath: receiptMonthPath, docsPath, emit, forceReanalyze, tempFiles });
+  await runReimbursements({ periodPath: receiptMonthPath, docsPath, emit, forceReanalyze, tempFiles, childTracker });
 
   // Pass 5: export report
   emit({ step: 'exporting' });
@@ -336,7 +393,7 @@ export async function reconcile({ statements, year, month, emit, forceReanalyze 
   const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
   const exportArgs = [join(WORKER_BIN, 'export-xlsx.mjs'), matchResultPath, reportPath, '--lang', language];
   if (existsSync(reimbursementsJsonPath)) exportArgs.push('--reimbursements', reimbursementsJsonPath);
-  await execFileAsync(NODE_BIN, exportArgs, { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } });
+  await trackedExecFile(childTracker, NODE_BIN, exportArgs, { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } });
 
   // Files are NOT moved here — deferred to POST /api/review when user confirms
   const summary = buildSummary(matchResult, receipts.length);
@@ -344,9 +401,10 @@ export async function reconcile({ statements, year, month, emit, forceReanalyze 
   } // end run()
 
   try {
-    await Promise.race([run(), timeoutPromise]);
+    await Promise.race([run(), timeoutPromise, abortPromise]);
   } finally {
     clearTimeout(timeoutId);
+    if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
     for (const p of [...tempPdfPaths, ...tempFiles]) {
       if (existsSync(p)) try { unlinkSync(p); } catch { /* ignore */ }
     }

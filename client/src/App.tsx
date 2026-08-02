@@ -6,7 +6,8 @@ import { ReviewScreen } from './components/ReviewScreen';
 import { RulesPanel } from './components/RulesPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { ToastProvider } from './components/ui/Toast';
-import { useState } from 'react';
+import { pumpSSE } from './lib/sse';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export type ProgressEvent =
@@ -44,6 +45,15 @@ function AppContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [year, setYear] = useState('');
   const [month, setMonth] = useState('');
+  const [reviewDirty, setReviewDirty] = useState(false);
+  const reconcileAbortRef = useRef<AbortController | null>(null);
+
+  // An in-flight reconcile fetch must not outlive the component.
+  useEffect(() => {
+    return () => reconcileAbortRef.current?.abort();
+  }, []);
+
+  const handleReviewDirtyChange = useCallback((dirty: boolean) => setReviewDirty(dirty), []);
 
   function handleStart(formData: FormData) {
     setPhase('running');
@@ -55,43 +65,27 @@ function AppContent() {
     setMonth(formData.get('month') as string);
 
     const ctrl = new AbortController();
+    reconcileAbortRef.current = ctrl;
 
     fetch('/api/reconcile', { method: 'POST', body: formData, signal: ctrl.signal })
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok || !res.body) throw new Error(`Server error: ${res.status}`);
         const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        function pump(): Promise<void> {
-          return reader.read().then(({ done, value }) => {
-            if (done) return;
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split('\n\n');
-            buffer = parts.pop() ?? '';
-            for (const part of parts) {
-              const line = part.trim();
-              if (!line.startsWith('data:')) continue;
-              try {
-                const evt: ProgressEvent = JSON.parse(line.slice(5).trim());
-                setEvents((prev) => [...prev, evt]);
-                if (evt.step === 'done') {
-                  setSummary(evt.summary);
-                  setReportUrl(evt.reportUrl);
-                  setPhase('done');
-                } else if (evt.step === 'error') {
-                  setErrorMessage(evt.message);
-                  setPhase('error');
-                }
-              } catch {
-                // ignore malformed event
-              }
-            }
-            return pump();
-          });
+        const sawTerminal = await pumpSSE<ProgressEvent>(reader, (evt) => {
+          setEvents((prev) => [...prev, evt]);
+          if (evt.step === 'done') {
+            setSummary(evt.summary);
+            setReportUrl(evt.reportUrl);
+            setPhase('done');
+          } else if (evt.step === 'error') {
+            setErrorMessage(evt.message);
+            setPhase('error');
+          }
+        });
+        if (!sawTerminal) {
+          setErrorMessage(t('results.connectionClosed', 'Connection closed unexpectedly. Please try again.'));
+          setPhase('error');
         }
-
-        return pump();
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -99,13 +93,12 @@ function AppContent() {
           setPhase('error');
         }
       });
-
-    return () => ctrl.abort();
   }
 
   function handleResume(resumeYear: string, resumeMonth: string) {
     setYear(resumeYear);
     setMonth(resumeMonth);
+    setReviewDirty(false);
     setPhase('review');
   }
 
@@ -117,6 +110,7 @@ function AppContent() {
     setErrorMessage(null);
     setYear('');
     setMonth('');
+    setReviewDirty(false);
   }
 
   const breadcrumbLabel: Record<Phase, string> = {
@@ -164,7 +158,14 @@ function AppContent() {
             <li>
               <button
                 type="button"
-                onClick={() => { if (phase !== 'running') handleReset(); }}
+                onClick={() => {
+                  if (phase === 'running') return;
+                  if (phase === 'review' && reviewDirty
+                    && !window.confirm(t('nav.discardReviewChanges', 'You have unsaved review changes. Leave without saving?'))) {
+                    return;
+                  }
+                  handleReset();
+                }}
                 className="hover:underline disabled:opacity-50"
                 disabled={phase === 'running'}
               >
@@ -195,7 +196,7 @@ function AppContent() {
           />
         )}
         {phase === 'review' && (
-          <ReviewScreen year={year} month={month} />
+          <ReviewScreen year={year} month={month} onDirtyChange={handleReviewDirtyChange} />
         )}
       </main>
     </div>

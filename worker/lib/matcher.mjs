@@ -59,7 +59,15 @@ function extractWords(text) {
 }
 
 function isEur(receipt) {
-  return !receipt.currency || receipt.currency === 'EUR';
+  return receipt.currency === 'EUR';
+}
+
+function hasUnknownCurrency(receipt) {
+  return receipt.currency == null;
+}
+
+function isKnownForeignCurrency(receipt) {
+  return receipt.currency != null && receipt.currency !== 'EUR';
 }
 
 function daysBetween(txDate, receiptDate) {
@@ -140,7 +148,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
     const cents = receipts[i].amount_cents;
     if (!amountIndex.has(cents)) amountIndex.set(cents, []);
     amountIndex.get(cents).push(i);
-    if (!isEur(receipts[i])) hasFxReceipt = true;
+    if (isKnownForeignCurrency(receipts[i])) hasFxReceipt = true;
   }
 
   // Pre-compute word lists once per receipt and per transaction so the
@@ -185,8 +193,8 @@ export function matchTransactions(transactions, receipts, rules = []) {
       if (cents < lo || cents > hi) continue;
       for (const idx of indices) {
         if (!available.has(idx)) continue;
-        if (isEur(receipts[idx])) continue;  // explicit EUR: strict pass 1/2 only
-        candidates.push(idx);  // non-EUR and unknown currency: FX candidate
+        if (!isKnownForeignCurrency(receipts[idx])) continue;  // EUR and unknown currency: handled in passes 1/2
+        candidates.push(idx);
       }
     }
     return candidates;
@@ -279,6 +287,23 @@ export function matchTransactions(transactions, receipts, rules = []) {
     }
   }
 
+  // Pass 1b: name + amount match, unknown currency (extraction couldn't determine currency).
+  // Same exact-cents + name-overlap signal as pass 1, but never auto-MATCHED — the currency
+  // is unverified, so route to REVIEW for a human to confirm.
+  for (const out of result) {
+    if (out.status !== 'UNMATCHED') continue;
+
+    const candidates = findAmountCandidates(out.abs_cents, r => hasUnknownCurrency(r))
+      .filter(idx => overlapCached(out.description, idx));
+    if (candidates.length === 0) continue;
+
+    const sorted = sortByDateProximity(candidates, out.date, receipts);
+    const notes = sorted.length === 1
+      ? 'unknown_currency_match'
+      : `${sorted.length} receipts match name+amount (unknown currency)`;
+    markReview(out, sorted, notes);
+  }
+
   // Pass 2: amount match, EUR only (exact cents — same-currency rounding is not allowed)
   for (const out of result) {
     if (out.status !== 'UNMATCHED') continue;
@@ -291,12 +316,28 @@ export function matchTransactions(transactions, receipts, rules = []) {
     } else if (candidates.length > 1) {
       const dated = pickUniqueByDate(candidates, out.date, receipts);
       if (dated && dated.length === 1) {
-        matchSingle(out, dated[0], 'name_amount_date_match');
+        matchSingle(out, dated[0], 'amount_date_match');
       } else {
         const sorted = sortByDateProximity(candidates, out.date, receipts);
         markReview(out, sorted, `${candidates.length} receipts match amount`);
       }
     }
+  }
+
+  // Pass 2b: amount match, unknown currency — same rationale as pass 1b: exact cents is a
+  // strong signal but the currency is unverified, so always REVIEW, never auto-MATCHED.
+  for (const out of result) {
+    if (out.status !== 'UNMATCHED') continue;
+
+    let candidates = findAmountCandidates(out.abs_cents, r => hasUnknownCurrency(r));
+    candidates = preferNameOverlap(candidates, out.description);
+    if (candidates.length === 0) continue;
+
+    const sorted = sortByDateProximity(candidates, out.date, receipts);
+    const notes = sorted.length === 1
+      ? 'unknown_currency_match'
+      : `${sorted.length} receipts match amount (unknown currency)`;
+    markReview(out, sorted, notes);
   }
 
   // Pass 3: FX matching, non-EUR receipts within ±10%
@@ -340,7 +381,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
     for (let i = 0; i < receipts.length; i++) {
       if (consumed.has(i)) continue;
       // EUR receipts: only include if amount is unknown or equals tx amount exactly
-      if (receipts[i].currency === 'EUR' && receipts[i].amount_cents !== null) {
+      if (isEur(receipts[i]) && receipts[i].amount_cents !== null) {
         if (receipts[i].amount_cents !== out.abs_cents) continue;
       }
       if (overlapCached(out.description, i)) {
