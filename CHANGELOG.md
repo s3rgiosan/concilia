@@ -4,9 +4,11 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-02
+
 ### Added
 
-- In-app update notifier. On launch the app polls the GitHub Releases API, compares the latest tag against the running version with `semver.gt`, and shows a dismissible banner linking to the release page when a newer version exists. Notify-only by design — there is no auto-download and no auto-install, because Squirrel.Mac requires a Developer ID signature that this unsigned build does not have. Every failure path (offline, rate-limited, non-200, malformed response) resolves silently to "no update"; the check never blocks startup. New IPC `update:check`, exposed as `window.concilia.checkUpdate()`.
+- In-app update notifier. On launch the app polls the GitHub Releases API, compares the latest tag against the running version with `semver.gt`, and shows a dismissible banner linking to the release page when a newer version exists. Notify-only by design — there is no auto-download and no auto-install, because Squirrel.Mac requires a Developer ID signature, which an ad-hoc signed build does not have. Every failure path (offline, rate-limited, non-200, malformed response) resolves silently to "no update"; the check never blocks startup. New IPC `update:check`, exposed as `window.concilia.checkUpdate()`.
 - App version is now shown read-only in the Settings modal, via a new `app:version` IPC (`window.concilia.getVersion()`). Previously the version appeared nowhere in the UI.
 
 ### Changed
