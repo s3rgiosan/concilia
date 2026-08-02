@@ -9,7 +9,8 @@
     "low": "baixa",
     "loading": "A carregar…",
     "select": "Selecionar…",
-    "signOut": "Sair"
+    "signOut": "Sair",
+    "dismiss": "Dispensar"
   },
   "nav": {
     "matchRules": "Regras de correspondência",
@@ -34,7 +35,12 @@
     "busy": "Reconciliação em curso. Tente novamente quando terminar.",
     "failedToLoad": "Falha ao carregar definições",
     "failedToSave": "Falha ao guardar",
-    "notInElectron": "As definições só podem ser editadas na aplicação desktop."
+    "notInElectron": "As definições só podem ser editadas na aplicação desktop.",
+    "version": "Concilia {{version}}"
+  },
+  "update": {
+    "available": "Está disponível uma nova versão ({{version}}).",
+    "viewRelease": "Ver lançamento"
   },
   "auth": {
     "signIn": "Entrar",

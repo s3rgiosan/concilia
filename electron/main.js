@@ -2,8 +2,11 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { fork } = require('node:child_process');
+const semver = require('semver');
 const { getConfig, setConfig } = require('./config');
 const { SERVER_ENV_KEYS } = require('./config-schema');
+
+const LATEST_RELEASE_URL = 'https://api.github.com/repos/s3rgiosan/concilia/releases/latest';
 
 function openServerLog() {
   try {
@@ -192,6 +195,35 @@ async function isServerBusy() {
   }
 }
 
+async function checkForUpdate() {
+  const currentVersion = app.getVersion();
+  const fallback = { updateAvailable: false, currentVersion, latestVersion: null, releaseUrl: null };
+  try {
+    const res = await fetch(LATEST_RELEASE_URL, {
+      headers: {
+        'User-Agent': 'concilia-update-check',
+        Accept: 'application/vnd.github+json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return fallback;
+    const release = await res.json();
+    if (release.draft || release.prerelease) return fallback;
+    const latestVersion = typeof release.tag_name === 'string' ? release.tag_name.replace(/^v/, '') : null;
+    if (!latestVersion || !semver.valid(latestVersion) || !semver.valid(currentVersion)) return fallback;
+    return {
+      updateAvailable: semver.gt(latestVersion, currentVersion),
+      currentVersion,
+      latestVersion,
+      releaseUrl: typeof release.html_url === 'string' ? release.html_url : null,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+ipcMain.handle('update:check', () => checkForUpdate());
+ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('config:get', () => getConfig());
 ipcMain.handle('config:set', async (_e, patch) => {
   const before = getConfig();

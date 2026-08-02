@@ -3,6 +3,13 @@
 // Imported implicitly by all .ts files in this project (see tsconfig include).
 export {};
 
+export interface UpdateCheckResult {
+  updateAvailable: boolean;
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseUrl: string | null;
+}
+
 declare global {
   interface Window {
     concilia?: {
@@ -11,6 +18,8 @@ declare global {
       setConfig: (patch: Record<string, unknown>) => Promise<Record<string, unknown> & { error?: string }>;
       pickFolder: () => Promise<string | null>;
       pickFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>;
+      checkUpdate: () => Promise<UpdateCheckResult>;
+      getVersion: () => Promise<string>;
     };
   }
 }

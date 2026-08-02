@@ -17,7 +17,7 @@ Bank statement reconciliation. Deterministic parsers extract transactions from b
 - **Receipt extraction**: Google Gemini via Vertex AI (`worker/lib/gemini.mjs`) — service account auth, text PDFs sent as text, scanned PDFs/images sent as base64 images (300 DPI). PDF text + render are thin wrappers over the bundled poppler binaries: `worker/lib/pdf-text.mjs` → `pdftotext -layout`, `worker/lib/pdf-render.mjs` → `pdftoppm -png -r 300`. Concurrency 4 in `extract-receipts.mjs`.
 - **Matching**: Five-pass matching (Pass 0 = user-defined rules; Pass 1 = name+amount EUR; Pass 2 = amount-only EUR; Pass 3 = FX; Pass 4 = filename) with date-window tiebreaker, exact cents required for EUR↔EUR (no tolerance), ±10% tolerance for FX, 3-way sorting (MATCHED/REVIEW/UNMATCHED).
 - **Report**: Two-sheet Excel via `write-excel-file` — `Reconciliation` (transactions, color-coded status) + `Unmatched Receipts` (with TOTAL row). exceljs is a devDep used by tests only.
-- **Updates**: no in-app update mechanism.
+- **Updates**: notify-only. On launch the client calls `window.concilia.checkUpdate()`, which polls the GitHub Releases API for the latest tag and compares it to `app.getVersion()` via `semver.gt`. A newer version renders a dismissible banner linking to the release page. There is no auto-download and no auto-install: the app is ad-hoc signed (`identity: "-"`), and Squirrel.Mac auto-update requires a Developer ID signature, so it cannot work here. Failures (offline, rate-limited, malformed) resolve silently to "no update".
 
 ## File Structure
 
@@ -58,13 +58,15 @@ worker/                    # Standalone worker scripts (all business logic)
     export-xlsx.mjs        # CLI: match-result.json → Excel report
 electron/                  # Electron desktop wrapper
   main.js                  # App lifecycle, forks Express on PORT=0, IPC handlers
-  preload.js               # contextBridge: window.concilia.{getConfig,setConfig,pickFolder,pickFile,checkUpdate,onUpdateAvailable}
+  preload.js               # contextBridge: window.concilia.{bootLanguage,getConfig,setConfig,pickFolder,pickFile,checkUpdate,getVersion}
   config.js                # electron-store wrapper for receiptsRoot/saKeyPath/gemini*
   setup.html               # Fallback page when receiptsRoot not configured
 build/                     # electron-builder resources
   entitlements.mac.plist   # Ad-hoc signing entitlements (allow JIT, disable lib validation)
   icon.icns                # App icon (placeholder; user supplies)
-.github/workflows/ci.yml   # CI: tests + client build on push/PR (Linux only).
+.github/workflows/
+  ci.yml                   # CI: tests + client build on push/PR (Linux only)
+  release.yml              # Builds arm64 DMG on macOS runner, attaches to GitHub Release (semver tag push)
 package.json               # Electron entry; electron-builder config; install/test scripts
 tests/                     # node:test suite
   worker/

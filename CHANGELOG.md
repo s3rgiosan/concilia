@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Added
+
+- In-app update notifier. On launch the app polls the GitHub Releases API, compares the latest tag against the running version with `semver.gt`, and shows a dismissible banner linking to the release page when a newer version exists. Notify-only by design — there is no auto-download and no auto-install, because Squirrel.Mac requires a Developer ID signature that this unsigned build does not have. Every failure path (offline, rate-limited, non-200, malformed response) resolves silently to "no update"; the check never blocks startup. New IPC `update:check`, exposed as `window.concilia.checkUpdate()`.
+- App version is now shown read-only in the Settings modal, via a new `app:version` IPC (`window.concilia.getVersion()`). Previously the version appeared nowhere in the UI.
+
+### Changed
+
+- macOS builds are now ad-hoc signed (`mac.identity: "-"`, was `null`, i.e. unsigned). This does **not** change Gatekeeper behaviour — first launch still requires `xattr -dr com.apple.quarantine /Applications/Concilia.app` — but it gives the bundle a stable code identity, which macOS Keychain ACLs and TCC privacy prompts key off, so folder-access permissions should stop being re-requested on every launch.
+- Finalize confirmation is now a native `<dialog>` — Escape and focus trapping come from the platform, and initial focus lands on Cancel so Enter cannot confirm the irreversible action by accident.
+
 ### Fixed
 
 - **Receipts with an unverified currency no longer auto-match.** `isEur()` treated a `null` currency (Gemini failed to determine one) as EUR, so such receipts got the strictest exact-cents auto-MATCH path instead of the most cautious one — a foreign-currency receipt could silently MATCH a same-cents EUR transaction with no REVIEW flag. `isEur()` now requires `currency === 'EUR'`; unknown-currency exact-cents matches route to `REVIEW` with notes `unknown_currency_match` and are never consumed. Pass 3 (FX) now gathers candidates via `isKnownForeignCurrency()` so unknown-currency receipts are not swept into the ±10% tolerance.
@@ -19,10 +29,6 @@ All notable changes to this project are documented in this file. Format follows 
 - `ReconcileForm`'s status fetch had no race guard, so rapid month changes could show a resume banner for the wrong period.
 - The reconcile `AbortController` was returned from an `onSubmit` handler where React never invoked it, so an in-flight reconcile fetch could outlive the component. Now aborted on unmount.
 - Navigating away from Review via the "Start" breadcrumb discarded unflushed decisions without warning.
-
-### Changed
-
-- Finalize confirmation is now a native `<dialog>` — Escape and focus trapping come from the platform, and initial focus lands on Cancel so Enter cannot confirm the irreversible action by accident.
 
 ## [1.2.0] - 2026-05-10
 

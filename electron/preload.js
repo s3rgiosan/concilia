@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld('concilia', {
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   pickFile: (filters) => ipcRenderer.invoke('dialog:pickFile', filters),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  getVersion: () => ipcRenderer.invoke('app:version'),
 });
