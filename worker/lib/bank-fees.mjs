@@ -8,12 +8,12 @@
 export const noReceiptPatterns = [
   // Portuguese
   /comiss[aã]o/i,
-  /imposto.*selo/i,
+  /\bimposto\b.*\bselo\b/i,
   /juros/i,
-  /manut.*conta/i,
-  /taxa.*manut/i,
+  /\bmanut.*\bconta\b/i,
+  /\btaxa\b.*\bmanut/i,
   /anuidade/i,
-  /despesas.*conta/i,
+  /\bdespesas\b.*\bconta\b/i,
   /\bseguro\b/i,
   /\bmulta\b/i,
   /provis[aã]o/i,
@@ -21,11 +21,11 @@ export const noReceiptPatterns = [
   /\bfee\b/i,
   /\bcommission\b/i,
   /\binterest\b/i,
-  /\bannual.*charge\b/i,
+  /\bannual\s+(?:\w+\s+)?charge\b/i,
   /\baccount.*maintenance\b/i,
   /\bstamp.*duty\b/i,
   /\boverdraft\b/i,
-  /\bwire.*transfer\b/i,
+  /\bwire\s+(?:\w+\s+)?transfer\b/i,
   /\batm\b/i,
 ];
 

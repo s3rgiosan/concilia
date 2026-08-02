@@ -18,7 +18,8 @@
     "start": "Início",
     "running": "A processar",
     "results": "Resultados",
-    "review": "Revisão"
+    "review": "Revisão",
+    "discardReviewChanges": "Tem alterações de revisão não guardadas. Sair sem guardar?"
   },
   "settings": {
     "title": "Definições",
@@ -79,7 +80,8 @@
     "reviewAndValidate": "Rever e validar",
     "newReconciliation": "Nova reconciliação",
     "failed": "Erro na reconciliação",
-    "tryAgain": "Tentar novamente"
+    "tryAgain": "Tentar novamente",
+    "connectionClosed": "A ligação foi interrompida inesperadamente. Tente novamente."
   },
   "form": {
     "title": "Reconciliação",
@@ -140,6 +142,7 @@
     "saveFailed": "Não foi possível guardar as alterações: {{msg}}",
     "scanFailed": "Verificação falhou: {{msg}}",
     "scanComplete": "Verificação concluída",
+    "scanConnectionClosed": "A ligação foi interrompida inesperadamente.",
     "scanDroppedBanner_one": "{{count}} decisão pendente foi removida porque o recibo associado foi apagado: {{names}}",
     "scanDroppedBanner_other": "{{count}} decisões pendentes foram removidas porque os recibos associados foram apagados: {{names}}",
     "scanDroppedDismiss": "Dispensar",
@@ -178,14 +181,20 @@
       "nameAmountMatch": "Nome e valor coincidentes",
       "nameAmountDateMatch": "Nome, valor e data coincidentes",
       "amountMatch": "Valor coincidente",
+      "amountDateMatch": "Valor e data coincidentes",
+      "unknownCurrencyMatch": "Valor coincidente (moeda não verificada)",
       "filenameMatch": "Nome de ficheiro — verificar valores",
       "manualMatch": "Associação manual",
       "ruleMatch": "Regra de correspondência",
       "fxMatch": "Correspondência FX ({{detail}})",
       "multipleNameAmount_one": "{{count}} recibo coincide em nome e valor",
       "multipleNameAmount_other": "{{count}} recibos coincidem em nome e valor",
+      "multipleNameAmountUnknownCurrency_one": "{{count}} recibo coincide em nome e valor (moeda não verificada)",
+      "multipleNameAmountUnknownCurrency_other": "{{count}} recibos coincidem em nome e valor (moeda não verificada)",
       "multipleAmount_one": "{{count}} recibo coincide em valor",
       "multipleAmount_other": "{{count}} recibos coincidem em valor",
+      "multipleAmountUnknownCurrency_one": "{{count}} recibo coincide em valor (moeda não verificada)",
+      "multipleAmountUnknownCurrency_other": "{{count}} recibos coincidem em valor (moeda não verificada)",
       "multipleFx_one": "{{count}} recibo FX dentro de {{tolerance}}",
       "multipleFx_other": "{{count}} recibos FX dentro de {{tolerance}}",
       "multipleFilename_one": "{{count}} recibo coincide pelo nome do ficheiro",

@@ -37,11 +37,13 @@ export function ReconcileForm({ onSubmit, onResume }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setPriorStatus(null);
     fetch(`/api/status/${year}/${month}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((data: PriorStatus | null) => { if (data?.exists) setPriorStatus(data); })
+      .then((data: PriorStatus | null) => { if (!cancelled && data?.exists) setPriorStatus(data); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [year, month]);
 
   function addFiles(files: File[]) {

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Download, Save, ScanLine, Lock, AlertTriangle, Search, X, ChevronsDownUp, ChevronsUpDown, ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import type { ReviewData, TransactionResult, ReceiptMeta } from '../types';
 import type { ProgressEvent } from '../App';
+import { pumpSSE } from '../lib/sse';
 import { ProgressCard } from './ProgressCard';
 import { SidePanel } from './ui/SidePanel';
 import { useToast } from './ui/Toast';
@@ -26,6 +27,7 @@ interface DroppedDecision {
 interface Props {
   year: string;
   month: string;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface TransactionChange {
@@ -88,13 +90,19 @@ function buildMatchReasonLabel(notes: string, t: TFunction): string {
   if (notes === 'name_amount_match') return t('review.matchReason.nameAmountMatch');
   if (notes === 'name_amount_date_match') return t('review.matchReason.nameAmountDateMatch');
   if (notes === 'amount_match') return t('review.matchReason.amountMatch');
+  if (notes === 'amount_date_match') return t('review.matchReason.amountDateMatch');
+  if (notes === 'unknown_currency_match') return t('review.matchReason.unknownCurrencyMatch');
   if (notes.startsWith('fx_match')) {
     const cur = notes.match(/\(([^)]+)/)?.[1] ?? '';
     return t('review.matchReason.fxMatch', { detail: cur });
   }
   if (notes.startsWith('filename_match')) return t('review.matchReason.filenameMatch');
+  const nameAmountUnknownCurrency = notes.match(/^(\d+) receipts match name\+amount \(unknown currency\)$/);
+  if (nameAmountUnknownCurrency) return t('review.matchReason.multipleNameAmountUnknownCurrency', { count: Number(nameAmountUnknownCurrency[1]) });
   const nameAmountMulti = notes.match(/^(\d+) receipts match name\+amount$/);
   if (nameAmountMulti) return t('review.matchReason.multipleNameAmount', { count: Number(nameAmountMulti[1]) });
+  const amountUnknownCurrency = notes.match(/^(\d+) receipts match amount \(unknown currency\)$/);
+  if (amountUnknownCurrency) return t('review.matchReason.multipleAmountUnknownCurrency', { count: Number(amountUnknownCurrency[1]) });
   const amountMulti = notes.match(/^(\d+) receipts match amount$/);
   if (amountMulti) return t('review.matchReason.multipleAmount', { count: Number(amountMulti[1]) });
   const fxMulti = notes.match(/^(\d+) fx receipts within (.+)$/);
@@ -120,7 +128,7 @@ function amountMismatch(receiptCents: number | null, txAbsCents: number, currenc
 
 const FILTER_KEYS: FilterStatus[] = ['all', 'review', 'unmatched', 'matched'];
 
-export function ReviewScreen({ year, month }: Props) {
+export function ReviewScreen({ year, month, onDirtyChange }: Props) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -147,6 +155,22 @@ export function ReviewScreen({ year, month }: Props) {
     setToolbarSlot(document.getElementById('review-toolbar-slot'));
   }, []);
   const scanAbortRef = useRef<AbortController | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftAbortRef = useRef<AbortController | null>(null);
+  const finalizeDialogRef = useRef<HTMLDialogElement>(null);
+  const finalizeCancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const dialog = finalizeDialogRef.current;
+    if (!dialog) return;
+    if (finalizeModalOpen) {
+      if (!dialog.open) dialog.showModal();
+      // Destructive action: focus Cancel, not the confirm button, so Enter
+      // can't confirm by accident.
+      finalizeCancelRef.current?.focus();
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [finalizeModalOpen]);
   const [preview, setPreview] = useState<{
     url: string;
     filename: string;
@@ -185,27 +209,38 @@ export function ReviewScreen({ year, month }: Props) {
 
   // Debounced auto-save of pending changes so they survive app close / reload.
   // Only saves AFTER the user has interacted (dirty), so the initial empty
-  // changes Map doesn't clobber a just-restored draft on first mount.
+  // changes Map doesn't clobber a just-restored draft on first mount. Suspended
+  // while `applying` (Finalize in flight) so no new autosave can race the
+  // draft deletion that Finalize performs on success.
   useEffect(() => {
-    if (loading || notFound || fetchError || !dirty) return;
+    if (loading || notFound || fetchError || !dirty || applying) return;
     const timer = setTimeout(() => {
+      saveTimerRef.current = null;
       const body = Object.fromEntries(changes);
+      draftAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      draftAbortRef.current = ctrl;
       fetch(`/api/draft/${year}/${month}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: ctrl.signal,
       })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          onDirtyChange?.(false);
         })
         .catch((e) => {
-          // Surface persistent failures so the user knows their progress isn't
-          // being saved. Toast component dedupes identical messages.
+          // An intentional abort (e.g. Finalize cancelling this PUT) is not a
+          // save failure — only surface real, persistent failures. Toast
+          // component dedupes identical messages.
+          if ((e as Error).name === 'AbortError') return;
           showToast(t('review.draftSaveFailed', 'Could not save draft: {{msg}}', { msg: (e as Error).message }), 'error');
         });
     }, 500);
+    saveTimerRef.current = timer;
     return () => clearTimeout(timer);
-  }, [changes, year, month, loading, notFound, fetchError, dirty, showToast, t]);
+  }, [changes, year, month, loading, notFound, fetchError, dirty, applying, showToast, t, onDirtyChange]);
 
   const effectiveTransactions = useMemo<TransactionResult[]>(() => {
     if (!data) return [];
@@ -330,6 +365,7 @@ export function ReviewScreen({ year, month }: Props) {
   function applyChange(txId: string, change: TransactionChange) {
     setChanges((prev) => new Map(prev).set(txId, change));
     setDirty(true);
+    onDirtyChange?.(true);
   }
 
   function confirmMatch(txId: string, receipt?: ReceiptMeta) {
@@ -442,17 +478,27 @@ export function ReviewScreen({ year, month }: Props) {
 
   async function saveChanges() {
     if (!data) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
     setSaving(true);
     try {
       const body = Object.fromEntries(changes);
+      draftAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      draftAbortRef.current = ctrl;
       const res = await fetch(`/api/draft/${year}/${month}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: ctrl.signal,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onDirtyChange?.(false);
       showToast(t('review.changesSaved'), 'success');
     } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
       showToast(t('review.saveFailed', { msg: (err as Error).message }), 'error');
     } finally {
       setSaving(false);
@@ -474,75 +520,59 @@ export function ReviewScreen({ year, month }: Props) {
       method: 'POST',
       signal: ctrl.signal,
     })
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok || !res.body) {
-          return res.json().catch(() => ({})).then((body: { error?: string }) => {
-            throw new Error(body.error || `Server error: ${res.status}`);
-          });
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error || `Server error: ${res.status}`);
         }
         const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
         let dropped: DroppedDecision[] = [];
         let reportUrlOut: string | null = null;
-        let errored = false;
+        let sawDone = false;
 
-        function pump(): Promise<void> {
-          return reader.read().then(({ done, value }) => {
-            if (done) {
-              if (errored) return;
-              setScanModalOpen(false);
-              if (reportUrlOut) setUpdatedReportUrl(reportUrlOut);
-              setScanBanner(dropped);
-              showToast(t('review.scanComplete'), 'success');
-              // Refetch review data so newly extracted/removed receipts show up.
-              return fetch(`/api/review/${year}/${month}`)
-                .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Refresh failed: ${r.status}`))))
-                .then((fresh: ReviewData) => {
-                  if (fresh) {
-                    setData(fresh);
-                    // Drop user changes referencing transactions whose receipts no longer exist.
-                    const presentFiles = new Set<string>();
-                    for (const tx of fresh.transactions) {
-                      for (const m of tx.receipt_meta || []) presentFiles.add(m.file);
-                    }
-                    for (const r of fresh.unmatchedReceipts || []) presentFiles.add(r.file);
-                    setChanges((prev) => {
-                      const next = new Map(prev);
-                      for (const [txId, change] of prev) {
-                        const stillValid = (change.receipt_files || []).every((f) => presentFiles.has(f));
-                        if (!stillValid) next.delete(txId);
-                      }
-                      return next;
-                    });
-                  }
-                })
-                .catch((e) => showToast(t('review.refreshFailed', { msg: (e as Error).message }), 'error'));
-            }
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split('\n\n');
-            buffer = parts.pop() ?? '';
-            for (const part of parts) {
-              const line = part.trim();
-              if (!line.startsWith('data:')) continue;
-              try {
-                const evt = JSON.parse(line.slice(5).trim()) as ProgressEvent & { droppedDecisions?: DroppedDecision[] };
-                setScanEvents((prev) => [...prev, evt as ProgressEvent]);
-                if (evt.step === 'done') {
-                  dropped = evt.droppedDecisions || [];
-                  reportUrlOut = evt.reportUrl;
-                } else if (evt.step === 'error') {
-                  errored = true;
-                  setScanError(evt.message);
-                }
-              } catch {
-                // ignore malformed event
-              }
-            }
-            return pump();
-          });
+        const sawTerminal = await pumpSSE<ProgressEvent & { droppedDecisions?: DroppedDecision[] }>(reader, (evt) => {
+          setScanEvents((prev) => [...prev, evt as ProgressEvent]);
+          if (evt.step === 'done') {
+            sawDone = true;
+            dropped = evt.droppedDecisions || [];
+            reportUrlOut = evt.reportUrl;
+          } else if (evt.step === 'error') {
+            setScanError(evt.message);
+          }
+        });
+
+        if (!sawTerminal || !sawDone) {
+          setScanError(t('review.scanConnectionClosed', 'Connection closed unexpectedly.'));
+          return;
         }
-        return pump();
+
+        setScanModalOpen(false);
+        if (reportUrlOut) setUpdatedReportUrl(reportUrlOut);
+        setScanBanner(dropped);
+        showToast(t('review.scanComplete'), 'success');
+        // Refetch review data so newly extracted/removed receipts show up.
+        return fetch(`/api/review/${year}/${month}`)
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Refresh failed: ${r.status}`))))
+          .then((fresh: ReviewData) => {
+            if (fresh) {
+              setData(fresh);
+              // Drop user changes referencing transactions whose receipts no longer exist.
+              const presentFiles = new Set<string>();
+              for (const tx of fresh.transactions) {
+                for (const m of tx.receipt_meta || []) presentFiles.add(m.file);
+              }
+              for (const r of fresh.unmatchedReceipts || []) presentFiles.add(r.file);
+              setChanges((prev) => {
+                const next = new Map(prev);
+                for (const [txId, change] of prev) {
+                  const stillValid = (change.receipt_files || []).every((f) => presentFiles.has(f));
+                  if (!stillValid) next.delete(txId);
+                }
+                return next;
+              });
+            }
+          })
+          .catch((e) => showToast(t('review.refreshFailed', { msg: (e as Error).message }), 'error'));
       })
       .catch((err) => {
         if ((err as Error).name === 'AbortError') return;
@@ -561,6 +591,11 @@ export function ReviewScreen({ year, month }: Props) {
 
   async function finalize() {
     if (!data) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    draftAbortRef.current?.abort();
     setApplying(true);
     try {
       const updatedTransactions = data.transactions.map((tx) => {
@@ -580,6 +615,7 @@ export function ReviewScreen({ year, month }: Props) {
       setUpdatedReportUrl(result.reportUrl);
       setChanges(new Map());
       setDirty(false);
+      onDirtyChange?.(false);
       setFinalizeModalOpen(false);
       setFinalizeConsent(false);
       showToast(t('review.changesApplied'), 'success');
@@ -1023,44 +1059,51 @@ export function ReviewScreen({ year, month }: Props) {
         </div>
       )}
 
-      {/* Finalize confirmation modal */}
-      {finalizeModalOpen && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-lg">
-            <h3 className="font-semibold text-lg mb-2">{t('review.finalizeConfirm.title')}</h3>
-            <p className="text-sm text-base-content/80 mb-4">{t('review.finalizeConfirm.body')}</p>
-            <label className="label cursor-pointer justify-start gap-3">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-sm"
-                checked={finalizeConsent}
-                onChange={(e) => setFinalizeConsent(e.target.checked)}
-              />
-              <span className="label-text">{t('review.finalizeConfirm.checkbox')}</span>
-            </label>
-            <div className="modal-action">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => { setFinalizeModalOpen(false); setFinalizeConsent(false); }}
-                disabled={applying}
-              >
-                {t('review.finalizeConfirm.cancel')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm !text-white"
-                onClick={finalize}
-                disabled={!finalizeConsent || applying}
-              >
-                {applying && <span className="loading loading-spinner loading-xs" />}
-                {t('review.finalizeConfirm.cta')}
-              </button>
-            </div>
+      {/* Finalize confirmation modal — native <dialog> so Escape and focus
+          trapping come from the platform, not hand-rolled. */}
+      <dialog
+        ref={finalizeDialogRef}
+        className="modal"
+        onClose={() => { setFinalizeModalOpen(false); setFinalizeConsent(false); }}
+        onCancel={(e) => { if (applying) e.preventDefault(); }}
+      >
+        <div className="modal-box max-w-lg">
+          <h3 className="font-semibold text-lg mb-2">{t('review.finalizeConfirm.title')}</h3>
+          <p className="text-sm text-base-content/80 mb-4">{t('review.finalizeConfirm.body')}</p>
+          <label className="label cursor-pointer justify-start gap-3">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-sm"
+              checked={finalizeConsent}
+              onChange={(e) => setFinalizeConsent(e.target.checked)}
+            />
+            <span className="label-text">{t('review.finalizeConfirm.checkbox')}</span>
+          </label>
+          <div className="modal-action">
+            <button
+              ref={finalizeCancelRef}
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => finalizeDialogRef.current?.close()}
+              disabled={applying}
+            >
+              {t('review.finalizeConfirm.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm !text-white"
+              onClick={finalize}
+              disabled={!finalizeConsent || applying}
+            >
+              {applying && <span className="loading loading-spinner loading-xs" />}
+              {t('review.finalizeConfirm.cta')}
+            </button>
           </div>
-          <div className="modal-backdrop" />
         </div>
-      )}
+        <form method="dialog" className="modal-backdrop">
+          <button disabled={applying}>close</button>
+        </form>
+      </dialog>
 
       {preview && renderPreview()}
     </>

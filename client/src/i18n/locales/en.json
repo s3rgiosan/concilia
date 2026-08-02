@@ -18,7 +18,8 @@
     "start": "Start",
     "running": "Processing",
     "results": "Results",
-    "review": "Review"
+    "review": "Review",
+    "discardReviewChanges": "You have unsaved review changes. Leave without saving?"
   },
   "settings": {
     "title": "Settings",
@@ -79,7 +80,8 @@
     "reviewAndValidate": "Review & Validate",
     "newReconciliation": "New reconciliation",
     "failed": "Reconciliation failed",
-    "tryAgain": "Try again"
+    "tryAgain": "Try again",
+    "connectionClosed": "Connection closed unexpectedly. Please try again."
   },
   "form": {
     "title": "Reconciliation",
@@ -140,6 +142,7 @@
     "saveFailed": "Could not save changes: {{msg}}",
     "scanFailed": "Scan failed: {{msg}}",
     "scanComplete": "Scan complete",
+    "scanConnectionClosed": "Connection closed unexpectedly.",
     "scanDroppedBanner_one": "{{count}} pending decision was dropped because its receipt was removed: {{names}}",
     "scanDroppedBanner_other": "{{count}} pending decisions were dropped because their receipts were removed: {{names}}",
     "scanDroppedDismiss": "Dismiss",
@@ -178,14 +181,20 @@
       "nameAmountMatch": "Name & amount match",
       "nameAmountDateMatch": "Name, amount & date match",
       "amountMatch": "Amount match",
+      "amountDateMatch": "Amount & date match",
+      "unknownCurrencyMatch": "Amount match (currency unverified)",
       "filenameMatch": "Filename match — verify amounts",
       "manualMatch": "Manual match",
       "ruleMatch": "Rule match",
       "fxMatch": "FX match ({{detail}})",
       "multipleNameAmount_one": "{{count}} receipt matches name & amount",
       "multipleNameAmount_other": "{{count}} receipts match name & amount",
+      "multipleNameAmountUnknownCurrency_one": "{{count}} receipt matches name & amount (currency unverified)",
+      "multipleNameAmountUnknownCurrency_other": "{{count}} receipts match name & amount (currency unverified)",
       "multipleAmount_one": "{{count}} receipt matches amount",
       "multipleAmount_other": "{{count}} receipts match amount",
+      "multipleAmountUnknownCurrency_one": "{{count}} receipt matches amount (currency unverified)",
+      "multipleAmountUnknownCurrency_other": "{{count}} receipts match amount (currency unverified)",
       "multipleFx_one": "{{count}} FX receipt within {{tolerance}}",
       "multipleFx_other": "{{count}} FX receipts within {{tolerance}}",
       "multipleFilename_one": "{{count}} receipt matches by filename",

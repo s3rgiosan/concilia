@@ -71,12 +71,16 @@ const TRANSLATIONS = {
       nameAmountMatch: 'Name & amount match',
       nameAmountDateMatch: 'Name, amount & date match',
       amountMatch: 'Amount match',
+      amountDateMatch: 'Amount & date match',
+      unknownCurrencyMatch: 'Amount match (currency unverified)',
       filenameMatch: 'Filename match — verify amounts',
       manualMatch: 'Manual match',
       ruleMatch: (vendor) => `Rule match (${vendor})`,
       fxMatch: (detail) => `FX match (${detail})`,
       multipleNameAmount: (n) => n === 1 ? '1 receipt matches name & amount' : `${n} receipts match name & amount`,
+      multipleNameAmountUnknownCurrency: (n) => n === 1 ? '1 receipt matches name & amount (currency unverified)' : `${n} receipts match name & amount (currency unverified)`,
       multipleAmount: (n) => n === 1 ? '1 receipt matches amount' : `${n} receipts match amount`,
+      multipleAmountUnknownCurrency: (n) => n === 1 ? '1 receipt matches amount (currency unverified)' : `${n} receipts match amount (currency unverified)`,
       multipleFx: (n, tol) => n === 1 ? `1 FX receipt within ${tol}` : `${n} FX receipts within ${tol}`,
       multipleFilename: (n) => n === 1 ? '1 receipt matches by filename' : `${n} receipts match by filename`,
       noReceipt: {
@@ -135,12 +139,16 @@ const TRANSLATIONS = {
       nameAmountMatch: 'Nome e valor coincidentes',
       nameAmountDateMatch: 'Nome, valor e data coincidentes',
       amountMatch: 'Valor coincidente',
+      amountDateMatch: 'Valor e data coincidentes',
+      unknownCurrencyMatch: 'Valor coincidente (moeda não verificada)',
       filenameMatch: 'Nome de ficheiro — verificar valores',
       manualMatch: 'Associação manual',
       ruleMatch: (vendor) => `Regra de correspondência (${vendor})`,
       fxMatch: (detail) => `Correspondência FX (${detail})`,
       multipleNameAmount: (n) => n === 1 ? '1 recibo coincide em nome e valor' : `${n} recibos coincidem em nome e valor`,
+      multipleNameAmountUnknownCurrency: (n) => n === 1 ? '1 recibo coincide em nome e valor (moeda não verificada)' : `${n} recibos coincidem em nome e valor (moeda não verificada)`,
       multipleAmount: (n) => n === 1 ? '1 recibo coincide em valor' : `${n} recibos coincidem em valor`,
+      multipleAmountUnknownCurrency: (n) => n === 1 ? '1 recibo coincide em valor (moeda não verificada)' : `${n} recibos coincidem em valor (moeda não verificada)`,
       multipleFx: (n, tol) => n === 1 ? `1 recibo FX dentro de ${tol}` : `${n} recibos FX dentro de ${tol}`,
       multipleFilename: (n) => n === 1 ? '1 recibo coincide pelo nome do ficheiro' : `${n} recibos coincidem pelo nome do ficheiro`,
       noReceipt: {
@@ -179,6 +187,8 @@ function formatNotes(notes, dict) {
   if (notes === 'name_amount_match') return n.nameAmountMatch;
   if (notes === 'name_amount_date_match') return n.nameAmountDateMatch;
   if (notes === 'amount_match') return n.amountMatch;
+  if (notes === 'amount_date_match') return n.amountDateMatch;
+  if (notes === 'unknown_currency_match') return n.unknownCurrencyMatch;
   if (notes.startsWith('fx_match')) {
     const detail = notes.match(/\(([^)]+)\)/)?.[1] ?? '';
     return n.fxMatch(detail);
@@ -191,7 +201,9 @@ function formatNotes(notes, dict) {
   }
 
   let m;
+  if ((m = notes.match(/^(\d+) receipts match name\+amount \(unknown currency\)$/))) return n.multipleNameAmountUnknownCurrency(Number(m[1]));
   if ((m = notes.match(/^(\d+) receipts match name\+amount$/))) return n.multipleNameAmount(Number(m[1]));
+  if ((m = notes.match(/^(\d+) receipts match amount \(unknown currency\)$/))) return n.multipleAmountUnknownCurrency(Number(m[1]));
   if ((m = notes.match(/^(\d+) receipts match amount$/))) return n.multipleAmount(Number(m[1]));
   if ((m = notes.match(/^(\d+) fx receipts within (.+)$/))) return n.multipleFx(Number(m[1]), m[2]);
   if ((m = notes.match(/^(\d+) receipts match by filename$/))) return n.multipleFilename(Number(m[1]));

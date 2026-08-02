@@ -49,6 +49,16 @@ describe('isBankFee', () => {
       assert.equal(isBankFee('DESPESAS DE CONTA'), true);
     });
 
+    it('matches MANUTENCAO CONTA', async () => {
+      const { isBankFee } = await load();
+      assert.equal(isBankFee('MANUTENCAO CONTA'), true);
+    });
+
+    it('does not match DESPESAS CONTABILIDADE (partial word "conta")', async () => {
+      const { isBankFee } = await load();
+      assert.equal(isBankFee('FATURA DESPESAS CONTABILIDADE MENSAL'), false);
+    });
+
     it('matches SEGURO', async () => {
       const { isBankFee } = await load();
       assert.equal(isBankFee('SEGURO CARTAO DEBITO'), true);
@@ -106,9 +116,24 @@ describe('isBankFee', () => {
       assert.equal(isBankFee('OVERDRAFT CHARGE'), true);
     });
 
+    it('matches ANNUAL MAINTENANCE CHARGE', async () => {
+      const { isBankFee } = await load();
+      assert.equal(isBankFee('ANNUAL MAINTENANCE CHARGE'), true);
+    });
+
+    it('does not match ANNUAL SOFTWARE LICENSE CHARGE (unrelated invoice)', async () => {
+      const { isBankFee } = await load();
+      assert.equal(isBankFee('ANNUAL SOFTWARE LICENSE CHARGE ACME CORP'), false);
+    });
+
     it('matches WIRE TRANSFER', async () => {
       const { isBankFee } = await load();
       assert.equal(isBankFee('WIRE TRANSFER FEE'), true);
+    });
+
+    it('matches WIRE BANK TRANSFER', async () => {
+      const { isBankFee } = await load();
+      assert.equal(isBankFee('WIRE BANK TRANSFER'), true);
     });
 
     it('matches ATM', async () => {

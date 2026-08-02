@@ -247,6 +247,14 @@ app.delete('/api/draft/:year/:month', (req, res) => {
   res.json({ ok: true });
 });
 
+// Uploaded files land on disk (multer `dest: tmpdir()`) before any handler
+// validation runs. Every early-return path after multer must clean them up.
+function cleanupUploadedFiles(files) {
+  for (const f of files || []) {
+    try { unlinkSync(f.path); } catch { /* ignore */ }
+  }
+}
+
 // POST /api/reconcile — multipart: statements[] (PDFs), banks[] (strings), year, month
 // Response: SSE stream
 app.post('/api/reconcile', (req, res, next) => {
@@ -260,36 +268,46 @@ app.post('/api/reconcile', (req, res, next) => {
   });
 }, async (req, res) => {
   const { year, month } = req.body;
+  const files = req.files || [];
 
   if (!/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
+    cleanupUploadedFiles(files);
     res.status(400).json({ error: 'Invalid year/month' });
     return;
   }
-  const files = req.files || [];
   const banks = [].concat(req.body.banks || []);
 
   console.log(`[reconcile] year=${year} month=${month} files=${files?.length} banks=${JSON.stringify(banks)}`);
 
   const isRerun = req.body.clearCache === 'true';
   if (!year || !month || (!isRerun && (!files || files.length === 0))) {
+    cleanupUploadedFiles(files);
     res.status(400).json({ error: 'year, month, and at least one statement are required' });
     return;
   }
 
   const invalidBank = banks.find((b) => !KNOWN_BANKS.has(b));
   if (invalidBank) {
+    cleanupUploadedFiles(files);
     res.status(400).json({ error: `Unknown bank: ${invalidBank}` });
     return;
   }
 
   if (!process.env.AI_GEMINI_SA_KEY) {
+    cleanupUploadedFiles(files);
     res.status(500).json({ error: 'AI_GEMINI_SA_KEY is not configured' });
     return;
   }
 
   const periodKey = `${year}-${month}`;
   if (reconcileLocks.has(periodKey)) {
+    cleanupUploadedFiles(files);
     res.status(409).json({ error: 'Reconciliation already in progress for this period' });
+    return;
+  }
+  if (rescanPeriodCounts.get(periodKey) > 0) {
+    cleanupUploadedFiles(files);
+    res.status(409).json({ error: 'Rescan in progress for this period' });
     return;
   }
   reconcileLocks.add(periodKey);
@@ -314,7 +332,8 @@ app.post('/api/reconcile', (req, res, next) => {
   res.flushHeaders();
 
   let clientClosed = false;
-  req.on('close', () => { clientClosed = true; });
+  const abortController = new AbortController();
+  req.on('close', () => { clientClosed = true; abortController.abort(); });
   // 31-min ceiling: matches the inner reconcile timeout plus a small grace
   // window. Without this, a stuck socket holds the period lock indefinitely.
   req.setTimeout(31 * 60 * 1000);
@@ -327,7 +346,7 @@ app.post('/api/reconcile', (req, res, next) => {
 
   const forceReanalyze = req.body.clearCache === 'true';
   const language = ['en', 'pt'].includes(req.body.language) ? req.body.language : 'en';
-  reconcile({ statements, year, month, emit, forceReanalyze, language })
+  reconcile({ statements, year, month, emit, forceReanalyze, language, abortSignal: abortController.signal })
     .catch((err) => {
       console.error('[reconcile error]', err);
       emit({ step: 'error', message: err.message });
@@ -400,6 +419,10 @@ app.post('/api/review/:year/:month', express.json({ limit: '10mb' }), async (req
     res.status(409).json({ error: 'Reconciliation in progress for this period' });
     return;
   }
+  if (rescanPeriodCounts.get(periodKey) > 0) {
+    res.status(409).json({ error: 'Rescan in progress for this period' });
+    return;
+  }
   const periodPath = join(RECEIPTS_BASE, year, month);
   const docsPath = join(periodPath, 'docs');
   const matchResultPath = join(docsPath, 'match-result.json');
@@ -434,44 +457,64 @@ app.post('/api/review/:year/:month', express.json({ limit: '10mb' }), async (req
       mkdirSync(join(receiptsPath, folder), { recursive: true });
     }
 
+    // The recorded `file` path must always match where the file actually is
+    // on disk. Plan every move up front, execute them, and roll back any
+    // completed moves if one fails, so Finalize stays all-or-nothing.
     const assigned = new Set();
+    const plannedMoves = [];
 
-    const updatedTransactions = transactions.map((tx) => {
-      const folder = targetFolder(tx.status);
-      const updatedMeta = (tx.receipt_meta || [])
-        .filter((m) => {
-          if (isSafeReceiptPath(m.file)) return true;
-          console.warn('[apply] dropping unsafe path:', m.file);
-          return false;
-        })
-        .map((m) => {
-          const base = basename(m.file);
-          const newPath = join(receiptsPath, folder, base);
-          if (m.file !== newPath && existsSync(m.file) && !assigned.has(base)) {
-            assigned.add(base);
-            try { renameSync(m.file, newPath); } catch (e) { console.warn('[apply move]', e.message); }
-          }
-          return { ...m, file: newPath };
-        });
+    function planMove(m, folder) {
+      const base = basename(m.file);
+      const newPath = join(receiptsPath, folder, base);
+      if (m.file !== newPath && existsSync(m.file) && !assigned.has(base)) {
+        assigned.add(base);
+        plannedMoves.push({ from: m.file, to: newPath });
+      }
+      return newPath;
+    }
+
+    const safeTransactions = transactions.map((tx) => ({
+      tx,
+      folder: targetFolder(tx.status),
+      safeMeta: (tx.receipt_meta || []).filter((m) => {
+        if (isSafeReceiptPath(m.file)) return true;
+        console.warn('[apply] dropping unsafe path:', m.file);
+        return false;
+      }),
+    }));
+    const plannedTransactions = safeTransactions.map(({ tx, folder, safeMeta }) => ({
+      tx,
+      newPaths: safeMeta.map((m) => planMove(m, folder)),
+      safeMeta,
+    }));
+
+    const safeUnmatched = unmatchedReceipts.filter((m) => {
+      if (isSafeReceiptPath(m.file)) return true;
+      console.warn('[apply] dropping unsafe unmatched path:', m.file);
+      return false;
+    });
+    const unmatchedNewPaths = safeUnmatched.map((m) => planMove(m, '_unmatched'));
+
+    const completedMoves = [];
+    try {
+      for (const { from, to } of plannedMoves) {
+        renameSync(from, to);
+        completedMoves.push({ from, to });
+      }
+    } catch (err) {
+      for (const { from, to } of completedMoves.reverse()) {
+        try { renameSync(to, from); } catch (rollbackErr) { console.error('[apply rollback]', rollbackErr.message); }
+      }
+      throw err;
+    }
+
+    const updatedTransactions = plannedTransactions.map(({ tx, safeMeta, newPaths }) => {
+      const updatedMeta = safeMeta.map((m, i) => ({ ...m, file: newPaths[i] }));
       const updatedFiles = updatedMeta.map((m) => m.file);
       return { ...tx, receipt_meta: updatedMeta, receipt_files: updatedFiles };
     });
 
-    const updatedUnmatched = unmatchedReceipts
-      .filter((m) => {
-        if (isSafeReceiptPath(m.file)) return true;
-        console.warn('[apply] dropping unsafe unmatched path:', m.file);
-        return false;
-      })
-      .map((m) => {
-        const base = basename(m.file);
-        const newPath = join(receiptsPath, '_unmatched', base);
-        if (m.file !== newPath && existsSync(m.file) && !assigned.has(base)) {
-          assigned.add(base);
-          try { renameSync(m.file, newPath); } catch (e) { console.warn('[apply move unmatched]', e.message); }
-        }
-        return { ...m, file: newPath };
-      });
+    const updatedUnmatched = safeUnmatched.map((m, i) => ({ ...m, file: unmatchedNewPaths[i] }));
 
     const receiptsByStatus = { matched: [], review: [], unmatched: [] };
     for (const tx of updatedTransactions) {
@@ -547,6 +590,10 @@ app.post('/api/scan-receipts/:year/:month', async (req, res) => {
   const periodKey = `${year}-${month}`;
   if (reconcileLocks.has(periodKey)) {
     res.status(409).json({ error: 'Reconciliation already in progress for this period' });
+    return;
+  }
+  if (rescanPeriodCounts.get(periodKey) > 0) {
+    res.status(409).json({ error: 'Rescan in progress for this period' });
     return;
   }
   reconcileLocks.add(periodKey);
@@ -640,6 +687,23 @@ app.post('/api/scan-receipts/:year/:month', async (req, res) => {
 
 // POST /api/rescan-receipt/:year/:month — re-run Gemini extraction on a single receipt
 const rescanLocks = new Set();
+// periodKey -> count of active rescans for that period. Lets period-level
+// endpoints (reconcile/scan-receipts/Finalize) detect an in-flight rescan
+// without scanning rescanLocks for path prefixes.
+const rescanPeriodCounts = new Map();
+
+function acquireRescanLock(realFile, periodKey) {
+  rescanLocks.add(realFile);
+  rescanPeriodCounts.set(periodKey, (rescanPeriodCounts.get(periodKey) || 0) + 1);
+}
+
+function releaseRescanLock(realFile, periodKey) {
+  rescanLocks.delete(realFile);
+  const remaining = (rescanPeriodCounts.get(periodKey) || 1) - 1;
+  if (remaining <= 0) rescanPeriodCounts.delete(periodKey);
+  else rescanPeriodCounts.set(periodKey, remaining);
+}
+
 app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) => {
   const { year, month } = req.params;
   if (!/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
@@ -681,6 +745,11 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
     res.status(409).json({ error: 'rescan already in progress for this file' });
     return;
   }
+  const periodKey = `${year}-${month}`;
+  if (reconcileLocks.has(periodKey)) {
+    res.status(409).json({ error: 'Reconciliation in progress for this period' });
+    return;
+  }
 
   const PROJECT = process.env.AI_GEMINI_PROJECT || '';
   const LOCATION = process.env.AI_GEMINI_LOCATION || 'europe-west1';
@@ -690,7 +759,7 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
     return;
   }
 
-  rescanLocks.add(realFile);
+  acquireRescanLock(realFile, periodKey);
   try {
     // SA key path is forwarded to the child via the env so it does not appear
     // in `ps -ef` output.
@@ -722,7 +791,7 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
     console.error('[rescan-receipt]', err);
     res.status(500).json({ error: err.message });
   } finally {
-    rescanLocks.delete(realFile);
+    releaseRescanLock(realFile, periodKey);
   }
 });
 
@@ -763,6 +832,11 @@ app.post('/api/rescan-reimbursement/:year/:month', express.json(), async (req, r
     res.status(409).json({ error: 'rescan already in progress for this file' });
     return;
   }
+  const periodKey = `${year}-${month}`;
+  if (reconcileLocks.has(periodKey)) {
+    res.status(409).json({ error: 'Reconciliation in progress for this period' });
+    return;
+  }
 
   const PROJECT = process.env.AI_GEMINI_PROJECT || '';
   const LOCATION = process.env.AI_GEMINI_LOCATION || 'europe-west1';
@@ -772,7 +846,7 @@ app.post('/api/rescan-reimbursement/:year/:month', express.json(), async (req, r
     return;
   }
 
-  rescanLocks.add(realFile);
+  acquireRescanLock(realFile, periodKey);
   try {
     const cmdArgs = [join(WORKER_BIN, 'receipt-meta.mjs'), absFile, '--location', LOCATION, '--model', MODEL];
     if (PROJECT) cmdArgs.push('--project', PROJECT);
@@ -793,7 +867,7 @@ app.post('/api/rescan-reimbursement/:year/:month', express.json(), async (req, r
     console.error('[rescan-reimbursement]', err);
     res.status(500).json({ error: err.message });
   } finally {
-    rescanLocks.delete(realFile);
+    releaseRescanLock(realFile, periodKey);
   }
 });
 
@@ -870,60 +944,77 @@ app.get('/report/:year/:month/report.xlsx', async (req, res) => {
     return;
   }
 
-  // Regenerate the report on every download so language/header/format changes
-  // take effect immediately. The .xlsx reflects the user's CURRENT state:
-  // match-result.json merged with any pending review-draft.json decisions.
-  // After Finalize, draft is gone and behavior collapses to plain match-result.
-  const lang = ['en', 'pt'].includes(req.query.lang) ? req.query.lang : 'en';
-  const reportPath = join(docsPath, 'report.xlsx');
-
-  let sourcePath = matchResultPath;
-  let mergedTmpPath = null;
-  const draftPath = join(docsPath, 'review-draft.json');
-  if (existsSync(draftPath)) {
-    try {
-      const matchResult = JSON.parse(readFileSync(matchResultPath, 'utf8'));
-      const draft = JSON.parse(readFileSync(draftPath, 'utf8'));
-      const draftKeys = Object.keys(draft);
-      if (draftKeys.length > 0) {
-        const merged = {
-          ...matchResult,
-          transactions: matchResult.transactions.map((tx) => {
-            const change = draft[tx.id];
-            return change ? { ...tx, ...change } : tx;
-          }),
-        };
-        mergedTmpPath = join(tmpdir(), `concilia-report-merge-${process.pid}-${Date.now()}.json`);
-        writeFileSync(mergedTmpPath, JSON.stringify(merged));
-        sourcePath = mergedTmpPath;
-      }
-    } catch (err) {
-      console.error('[report merge]', err.message);
-      // Fall through with the unmerged match-result.
-    }
-  }
-
-  const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
-  const reportExportArgs = [join(WORKER_BIN, 'export-xlsx.mjs'), sourcePath, reportPath, '--lang', lang];
-  if (existsSync(reimbursementsJsonPath)) reportExportArgs.push('--reimbursements', reimbursementsJsonPath);
-  try {
-    await execFileAsync(
-      NODE_BIN,
-      reportExportArgs,
-      { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } },
-    );
-  } catch (err) {
-    console.error('[report regen]', err);
-    if (mergedTmpPath) try { unlinkSync(mergedTmpPath); } catch { /* ignore */ }
-    res.status(500).send('Report generation failed');
+  // Regeneration writes to a .tmp path and renames over the canonical report
+  // only on success, same pattern as Finalize — a crash or interleaved
+  // concurrent download must never leave a truncated report.xlsx being served.
+  const periodKey = `${year}-${month}`;
+  if (reconcileLocks.has(periodKey)) {
+    res.status(409).send('Reconciliation in progress for this period');
     return;
   }
-  if (mergedTmpPath) try { unlinkSync(mergedTmpPath); } catch { /* ignore */ }
+  reconcileLocks.add(periodKey);
 
-  res.setHeader('Cache-Control', 'no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.download(reportPath, `${year}-${month}.xlsx`);
+  try {
+    // Regenerate the report on every download so language/header/format changes
+    // take effect immediately. The .xlsx reflects the user's CURRENT state:
+    // match-result.json merged with any pending review-draft.json decisions.
+    // After Finalize, draft is gone and behavior collapses to plain match-result.
+    const lang = ['en', 'pt'].includes(req.query.lang) ? req.query.lang : 'en';
+    const reportPath = join(docsPath, 'report.xlsx');
+    const reportTmp = `${reportPath}.tmp`;
+
+    let sourcePath = matchResultPath;
+    let mergedTmpPath = null;
+    const draftPath = join(docsPath, 'review-draft.json');
+    if (existsSync(draftPath)) {
+      try {
+        const matchResult = JSON.parse(readFileSync(matchResultPath, 'utf8'));
+        const draft = JSON.parse(readFileSync(draftPath, 'utf8'));
+        const draftKeys = Object.keys(draft);
+        if (draftKeys.length > 0) {
+          const merged = {
+            ...matchResult,
+            transactions: matchResult.transactions.map((tx) => {
+              const change = draft[tx.id];
+              return change ? { ...tx, ...change } : tx;
+            }),
+          };
+          mergedTmpPath = join(tmpdir(), `concilia-report-merge-${process.pid}-${Date.now()}.json`);
+          writeFileSync(mergedTmpPath, JSON.stringify(merged));
+          sourcePath = mergedTmpPath;
+        }
+      } catch (err) {
+        console.error('[report merge]', err.message);
+        // Fall through with the unmerged match-result.
+      }
+    }
+
+    const reimbursementsJsonPath = join(docsPath, 'reimbursements.json');
+    const reportExportArgs = [join(WORKER_BIN, 'export-xlsx.mjs'), sourcePath, reportTmp, '--lang', lang];
+    if (existsSync(reimbursementsJsonPath)) reportExportArgs.push('--reimbursements', reimbursementsJsonPath);
+    try {
+      await execFileAsync(
+        NODE_BIN,
+        reportExportArgs,
+        { timeout: 60000, env: { ...process.env, ...NODE_ENV_EXTRA } },
+      );
+    } catch (err) {
+      console.error('[report regen]', err);
+      if (mergedTmpPath) try { unlinkSync(mergedTmpPath); } catch { /* ignore */ }
+      try { unlinkSync(reportTmp); } catch { /* ignore */ }
+      res.status(500).send('Report generation failed');
+      return;
+    }
+    if (mergedTmpPath) try { unlinkSync(mergedTmpPath); } catch { /* ignore */ }
+    renameSync(reportTmp, reportPath);
+
+    res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.download(reportPath, `${year}-${month}.xlsx`);
+  } finally {
+    reconcileLocks.delete(periodKey);
+  }
 });
 
 // SPA fallback — only for non-API, non-report routes WITHOUT a file extension.

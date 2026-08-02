@@ -70,7 +70,7 @@ describe('match CLI', () => {
       { id: 'tx-001', date: '2025-01-15', description: 'COMPRA', amount_cents: -4599, abs_cents: 4599, status: 'UNMATCHED' },
     ];
     const receipts = [
-      { file: '/r/receipt.pdf', amount_cents: 4599, confidence: 'high', provider_used: 'gemini' },
+      { file: '/r/receipt.pdf', amount_cents: 4599, confidence: 'high', provider_used: 'gemini', currency: 'EUR' },
     ];
     writeFileSync(txPath, JSON.stringify(transactions), 'utf8');
     writeFileSync(rcptPath, JSON.stringify(receipts), 'utf8');
@@ -145,8 +145,8 @@ describe('match CLI', () => {
       { id: 'tx-001', date: '2025-01-15', description: 'COMPRA A', amount_cents: -5000, abs_cents: 5000, status: 'UNMATCHED' },
     ];
     const receipts = [
-      { file: '/r/matched.pdf', amount_cents: 5000, confidence: 'high', provider_used: 'gemini' },
-      { file: '/r/extra.pdf', amount_cents: 9999, confidence: 'high', provider_used: 'gemini' },
+      { file: '/r/matched.pdf', amount_cents: 5000, confidence: 'high', provider_used: 'gemini', currency: 'EUR' },
+      { file: '/r/extra.pdf', amount_cents: 9999, confidence: 'high', provider_used: 'gemini', currency: 'EUR' },
     ];
     writeFileSync(txPath, JSON.stringify(transactions), 'utf8');
     writeFileSync(rcptPath, JSON.stringify(receipts), 'utf8');
