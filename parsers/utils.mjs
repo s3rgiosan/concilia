@@ -39,11 +39,14 @@ export function extractTextWithPoppler(buffer) {
 /**
  * Parse European decimal format (1.234,56 or -1.234,56) to a standard number.
  *
- * @param {string} value - European-formatted number string
+ * @param {string|number} value - European-formatted number string
  * @returns {number}
  */
 export function parseEuropeanDecimal(value) {
-  if (!value || value.trim() === '') return 0;
-  const normalized = value.trim().replace(/\./g, '').replace(',', '.');
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  const str = String(value).trim();
+  if (str === '') return 0;
+  const normalized = str.replace(/\./g, '').replace(',', '.');
   return parseFloat(normalized);
 }
