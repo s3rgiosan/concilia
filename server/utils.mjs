@@ -1,4 +1,4 @@
-import { openSync, writeSync, fsyncSync, closeSync, renameSync } from 'node:fs';
+import { openSync, writeSync, fsyncSync, closeSync, renameSync, rmSync } from 'node:fs';
 
 /**
  * Atomically write `data` to `filePath`. Writes to a sibling .tmp file first,
@@ -17,5 +17,11 @@ export function writeAtomic(filePath, data) {
   } finally {
     closeSync(fd);
   }
-  renameSync(tmp, filePath);
+  try {
+    renameSync(tmp, filePath);
+  } catch (err) {
+    // Rename failed (permissions/space); don't leave the .tmp orphan behind.
+    try { rmSync(tmp, { force: true }); } catch { /* best effort */ }
+    throw err;
+  }
 }
