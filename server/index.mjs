@@ -704,6 +704,25 @@ function releaseRescanLock(realFile, periodKey) {
   else rescanPeriodCounts.set(periodKey, remaining);
 }
 
+// The per-file rescan lock lets two rescans on DIFFERENT files in the same
+// period run concurrently. Their Gemini calls should stay parallel, but the
+// read-modify-write of the period's shared JSON files (receipts.json,
+// match-result.json, reimbursements.json) must not interleave or the second
+// writer clobbers the first's patch. This chains the write sections per period
+// so they serialize while the slow Gemini calls outside the chain do not.
+const periodWriteChains = new Map();
+
+function runExclusivePeriodWrite(periodKey, fn) {
+  const prev = periodWriteChains.get(periodKey) || Promise.resolve();
+  const run = prev.then(() => fn(), () => fn());
+  const guarded = run.catch(() => {});
+  periodWriteChains.set(periodKey, guarded);
+  guarded.then(() => {
+    if (periodWriteChains.get(periodKey) === guarded) periodWriteChains.delete(periodKey);
+  });
+  return run;
+}
+
 app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) => {
   const { year, month } = req.params;
   if (!/^\d{4}$/.test(year) || !/^(0[1-9]|1[0-2])$/.test(month)) {
@@ -768,23 +787,25 @@ app.post('/api/rescan-receipt/:year/:month', express.json(), async (req, res) =>
     const { stdout } = await execFileAsync(NODE_BIN, cmdArgs, { timeout: 180000, env: { ...process.env, ...NODE_ENV_EXTRA } });
     const newMeta = JSON.parse(stdout);
 
-    if (existsSync(receiptsJsonPath)) {
-      const arr = JSON.parse(readFileSync(receiptsJsonPath, 'utf8'));
-      const idx = arr.findIndex((r) => r.file === absFile);
-      if (idx >= 0) arr[idx] = newMeta; else arr.push(newMeta);
-      writeAtomic(receiptsJsonPath, JSON.stringify(arr, null, 2));
-    }
+    await runExclusivePeriodWrite(periodKey, () => {
+      if (existsSync(receiptsJsonPath)) {
+        const arr = JSON.parse(readFileSync(receiptsJsonPath, 'utf8'));
+        const idx = arr.findIndex((r) => r.file === absFile);
+        if (idx >= 0) arr[idx] = newMeta; else arr.push(newMeta);
+        writeAtomic(receiptsJsonPath, JSON.stringify(arr, null, 2));
+      }
 
-    if (existsSync(matchResultPath)) {
-      const mr = JSON.parse(readFileSync(matchResultPath, 'utf8'));
-      const patch = (m) => m.file === absFile ? newMeta : m;
-      mr.transactions = (mr.transactions || []).map((tx) => ({
-        ...tx,
-        receipt_meta: (tx.receipt_meta || []).map(patch),
-      }));
-      mr.unmatchedReceipts = (mr.unmatchedReceipts || []).map(patch);
-      writeAtomic(matchResultPath, JSON.stringify(mr, null, 2));
-    }
+      if (existsSync(matchResultPath)) {
+        const mr = JSON.parse(readFileSync(matchResultPath, 'utf8'));
+        const patch = (m) => m.file === absFile ? newMeta : m;
+        mr.transactions = (mr.transactions || []).map((tx) => ({
+          ...tx,
+          receipt_meta: (tx.receipt_meta || []).map(patch),
+        }));
+        mr.unmatchedReceipts = (mr.unmatchedReceipts || []).map(patch);
+        writeAtomic(matchResultPath, JSON.stringify(mr, null, 2));
+      }
+    });
 
     res.json({ ...newMeta, receiptUrl: `/api/receipt/${receiptRelativePath(absFile)}` });
   } catch (err) {
@@ -853,14 +874,16 @@ app.post('/api/rescan-reimbursement/:year/:month', express.json(), async (req, r
     const { stdout } = await execFileAsync(NODE_BIN, cmdArgs, { timeout: 180000, env: { ...process.env, ...NODE_ENV_EXTRA } });
     const newMeta = JSON.parse(stdout);
 
-    if (existsSync(reimbursementsJsonPath)) {
-      const arr = JSON.parse(readFileSync(reimbursementsJsonPath, 'utf8'));
-      const idx = arr.findIndex((r) => r.file === absFile);
-      if (idx >= 0) arr[idx] = newMeta; else arr.push(newMeta);
-      writeAtomic(reimbursementsJsonPath, JSON.stringify(arr, null, 2));
-    } else {
-      writeAtomic(reimbursementsJsonPath, JSON.stringify([newMeta], null, 2));
-    }
+    await runExclusivePeriodWrite(periodKey, () => {
+      if (existsSync(reimbursementsJsonPath)) {
+        const arr = JSON.parse(readFileSync(reimbursementsJsonPath, 'utf8'));
+        const idx = arr.findIndex((r) => r.file === absFile);
+        if (idx >= 0) arr[idx] = newMeta; else arr.push(newMeta);
+        writeAtomic(reimbursementsJsonPath, JSON.stringify(arr, null, 2));
+      } else {
+        writeAtomic(reimbursementsJsonPath, JSON.stringify([newMeta], null, 2));
+      }
+    });
 
     res.json({ ...newMeta, receiptUrl: `/api/receipt/${receiptRelativePath(absFile)}` });
   } catch (err) {
