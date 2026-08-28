@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-28
+
+### Fixed
+
+- Concurrent single-file rescans of *different* receipts in the same period (still permitted by design) each did an independent read-modify-write of the shared period JSON (`receipts.json`, `match-result.json`, `reimbursements.json`), so the later writer overwrote the earlier one's patch and a rescanned amount could silently revert. The write sections are now serialized per period through a promise-chain mutex, while the slow Gemini extraction calls stay parallel.
+- `writeAtomic` left an orphan `.tmp` file behind when `renameSync` failed (permissions, out of space); it now removes the temp file before re-throwing.
+- Two matcher call sites dereferenced `receipt.file` without the null guard used elsewhere; they now match the guarded sites.
+- `parseEuropeanDecimal` threw on a numeric or non-string argument (`value.trim is not a function`); it now returns a number as-is and coerces other inputs safely.
+
+### Security
+
+- The Electron config file is now locked to `0o600` at load, not only on the first settings save. `electron-store` writes the file on construction, so it previously sat world-readable (per the user's umask) until the first `setConfig`. The file stores the path to the Gemini service account key.
+
 ## [1.3.0] - 2026-08-02
 
 ### Added

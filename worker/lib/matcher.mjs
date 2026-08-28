@@ -118,7 +118,7 @@ function pickUniqueByDate(candidates, txDate, receipts) {
  */
 function ruleMatches(rule, description, receipt) {
   const vendor = (receipt.vendor || '').toLowerCase();
-  const filename = (receipt.file.split('/').pop() || '').toLowerCase();
+  const filename = (receipt.file ? receipt.file.split('/').pop() : '').toLowerCase();
   const receiptKeyword = rule.receiptVendor.toLowerCase();
   const desc = description.toLowerCase();
   return (vendor.includes(receiptKeyword) || filename.includes(receiptKeyword)) &&
@@ -393,7 +393,7 @@ export function matchTransactions(transactions, receipts, rules = []) {
 
     const sorted = sortByDateProximity(candidates, out.date, receipts);
     const notes = sorted.length === 1
-      ? `filename_match (${receipts[sorted[0]].file.split('/').pop()})`
+      ? `filename_match (${receipts[sorted[0]].file ? receipts[sorted[0]].file.split('/').pop() : ''})`
       : `${sorted.length} receipts match by filename`;
     markReview(out, sorted, notes);
   }
