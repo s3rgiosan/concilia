@@ -18,3 +18,10 @@ show these differences are kept out of the fixtures.
 - **Finalize.** A file referenced more than once, or two files sharing a name, get one
   destination each with a numeric suffix on clashes, and existing files are never
   overwritten. Node could record paths that did not match the disk.
+- **Receipts left out of a confirmed REVIEW.** When the user confirms a REVIEW transaction
+  with one of its candidates, the other candidates return to the unmatched receipts, so the
+  review screen can assign them and Finalize moves them to `_unmatched`. Node dropped them
+  from the records and left them in `receipts/`.
+- **Finalize input.** Finalize derives the reviewed state from `match-result.json` and the
+  saved draft, and only touches receipts inside the period's `receipts/` folder. Node took
+  both lists from the review screen.

@@ -57,31 +57,22 @@ pub fn claimed_files(transactions: &[Transaction]) -> HashSet<String> {
         .collect()
 }
 
-/// Receipts free for assignment: the matcher's unmatched receipts, plus the receipts of
-/// MATCHED or REVIEW transactions the user sent back to UNMATCHED, minus every claimed receipt.
-pub fn effective_unmatched(
-    result: &MatchResult,
-    draft: &Draft,
-    merged: &[Transaction],
-) -> Vec<ReceiptMeta> {
+/// Receipts free for assignment: the matcher's unmatched receipts, plus every receipt of the
+/// original transactions that no reviewed transaction references any more (receipts of
+/// transactions sent back to UNMATCHED, candidates left out when a REVIEW is confirmed),
+/// minus every claimed receipt.
+pub fn effective_unmatched(result: &MatchResult, merged: &[Transaction]) -> Vec<ReceiptMeta> {
     let mut pool: IndexMap<String, ReceiptMeta> = IndexMap::new();
     for receipt in &result.unmatched_receipts {
         pool.insert(receipt.file.clone(), receipt.clone());
     }
-    let originals: HashMap<&str, &Transaction> = result
-        .transactions
+    let referenced: HashSet<&str> = merged
         .iter()
-        .map(|t| (t.id.as_str(), t))
+        .flat_map(|tx| tx.receipt_meta.iter().map(|m| m.file.as_str()))
         .collect();
-    for (tx_id, change) in draft {
-        let Some(original) = originals.get(tx_id.as_str()) else {
-            continue;
-        };
-        let sent_back = change.get("status").and_then(Value::as_str) == Some("UNMATCHED");
-        if sent_back && matches!(original.status, Status::Review | Status::Matched) {
-            for meta in &original.receipt_meta {
-                pool.insert(meta.file.clone(), meta.clone());
-            }
+    for meta in result.transactions.iter().flat_map(|tx| &tx.receipt_meta) {
+        if !referenced.contains(meta.file.as_str()) {
+            pool.insert(meta.file.clone(), meta.clone());
         }
     }
     for file in claimed_files(merged) {
@@ -244,11 +235,24 @@ mod tests {
             "t3": { "status": "MATCHED", "receipt_meta": [receipt("/r/d.pdf", 500)], "receipt_files": ["/r/d.pdf"], "notes": "manual_match" }
         }));
         let merged = merge_draft(&result(), &d).unwrap();
-        let pool: Vec<String> = effective_unmatched(&result(), &d, &merged)
+        let pool: Vec<String> = effective_unmatched(&result(), &merged)
             .into_iter()
             .map(|r| r.file)
             .collect();
         assert_eq!(pool, ["/r/a.pdf"]);
+    }
+
+    #[test]
+    fn candidates_left_out_of_a_confirmed_review_return_to_the_pool() {
+        let d = draft(json!({
+            "t2": { "status": "MATCHED", "receipt_meta": [receipt("/r/c.pdf", 1000)], "receipt_files": ["/r/c.pdf"], "notes": "amount_match" }
+        }));
+        let merged = merge_draft(&result(), &d).unwrap();
+        let pool: Vec<String> = effective_unmatched(&result(), &merged)
+            .into_iter()
+            .map(|r| r.file)
+            .collect();
+        assert_eq!(pool, ["/r/d.pdf", "/r/b.pdf"]);
     }
 
     #[test]

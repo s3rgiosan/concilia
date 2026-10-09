@@ -65,16 +65,36 @@ pub struct PeriodPaths {
     pub receipts: PathBuf,
     pub reimbursements: PathBuf,
     pub docs: PathBuf,
+    /// `YYYY/MM`, the period folder relative to the receipts root.
+    pub prefix: String,
 }
 
 impl PeriodPaths {
     pub fn new(dir: PathBuf) -> PeriodPaths {
+        let mut parts = dir
+            .iter()
+            .rev()
+            .take(2)
+            .map(|p| p.to_string_lossy().into_owned());
+        let month = parts.next().unwrap_or_default();
+        let year = parts.next().unwrap_or_default();
         PeriodPaths {
+            prefix: format!("{year}/{month}"),
             receipts: dir.join("receipts"),
             reimbursements: dir.join("reimbursements"),
             docs: dir.join("docs"),
             dir,
         }
+    }
+
+    /// A file's path relative to the receipts root (`YYYY/MM/...`), or none outside the period.
+    pub fn relative(&self, file: &str) -> Option<String> {
+        let rest = std::path::Path::new(file).strip_prefix(&self.dir).ok()?;
+        let parts: Vec<String> = rest
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        (!parts.is_empty()).then(|| format!("{}/{}", self.prefix, parts.join("/")))
     }
 
     pub fn transactions(&self) -> PathBuf {
@@ -149,5 +169,13 @@ mod tests {
             paths.applied_marker(),
             Path::new("/root/2030/03/docs/.applied")
         );
+        assert_eq!(paths.prefix, "2030/03");
+        assert_eq!(
+            paths
+                .relative("/root/2030/03/receipts/sub/acme.pdf")
+                .as_deref(),
+            Some("2030/03/receipts/sub/acme.pdf")
+        );
+        assert_eq!(paths.relative("/root/2030/04/receipts/acme.pdf"), None);
     }
 }

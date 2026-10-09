@@ -76,3 +76,53 @@ pub fn poppler_on_path() -> Option<concilia_lib::poppler::Poppler> {
     let poppler = concilia_lib::poppler::Poppler::resolve(None);
     poppler.status().ok().map(|_| poppler)
 }
+
+/// Writes `bytes` to `path`, creating the folders above it.
+pub fn write_file(path: &std::path::Path, bytes: &[u8]) {
+    std::fs::create_dir_all(path.parent().expect("file has a parent")).unwrap();
+    std::fs::write(path, bytes).unwrap();
+}
+
+/// Writes `value` as JSON to `path`, creating the folders above it.
+pub fn write_json_file(path: &std::path::Path, value: &impl serde::Serialize) {
+    write_file(path, &serde_json::to_vec_pretty(value).unwrap());
+}
+
+/// Reads a JSON file into `T`.
+pub fn read_json_file<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> T {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+/// A high-confidence EUR receipt dated 2030-03-01.
+pub fn receipt_meta(
+    file: &str,
+    amount_cents: i64,
+    vendor: &str,
+) -> concilia_lib::model::ReceiptMeta {
+    concilia_lib::model::ReceiptMeta {
+        file: file.to_string(),
+        amount_cents: Some(amount_cents),
+        confidence: Some("high".into()),
+        currency: Some("EUR".into()),
+        vendor: Some(vendor.to_string()),
+        date: Some("2030-03-01".into()),
+        provider_used: Some("gemini".into()),
+        extra: Default::default(),
+    }
+}
+
+/// The sheet names of a written report, in order.
+pub fn report_sheet_names(report: &std::path::Path) -> Vec<String> {
+    use calamine::Reader;
+    let workbook: calamine::Xlsx<_> = calamine::open_workbook(report).unwrap();
+    workbook.sheet_names()
+}
+
+/// The cells of one report sheet, row by row.
+pub fn report_rows(report: &std::path::Path, sheet: &str) -> Vec<Vec<calamine::Data>> {
+    use calamine::Reader;
+    let mut workbook: calamine::Xlsx<_> = calamine::open_workbook(report).unwrap();
+    let range = workbook.worksheet_range(sheet).unwrap();
+    range.rows().map(<[calamine::Data]>::to_vec).collect()
+}
