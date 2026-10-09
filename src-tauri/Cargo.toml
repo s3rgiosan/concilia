@@ -24,6 +24,12 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+# Native TLS like the rest of the app; macOS installs the .app.tar.gz without the zip feature.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "system-proxy"] }
+tauri-plugin-process = "2"
+keyring = "4"
+uuid = { version = "1", features = ["v4"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 log = "0.4.34"

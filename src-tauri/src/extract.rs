@@ -245,7 +245,10 @@ pub async fn extract_all(
             .collect()
     };
     let done = AtomicUsize::new(0);
-    let work = stream::iter(files)
+    // The futures are built up front: they start only when the stream polls them, and a
+    // stream of closures would make the returned future not `Send`.
+    let jobs: Vec<_> = files
+        .iter()
         .map(|file| {
             let cached = cached.get(file.as_str()).copied().cloned();
             let done = &done;
@@ -258,6 +261,8 @@ pub async fn extract_all(
                 Ok::<_, ExtractAllError>(meta)
             }
         })
+        .collect();
+    let work = stream::iter(jobs)
         .buffered(options.concurrency.max(1))
         .try_collect::<Vec<_>>();
     tokio::select! {

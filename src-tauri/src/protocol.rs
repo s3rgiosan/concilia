@@ -6,17 +6,13 @@
 //! period folder, are served.
 
 use std::path::{Component, Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::Arc;
 
 use percent_encoding::percent_decode_str;
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
 pub const SCHEME: &str = "receipt";
-
-/// The folder holding the `<year>/<month>/` period folders, or none until it is configured.
-#[derive(Default)]
-pub struct ReceiptsRoot(pub RwLock<Option<PathBuf>>);
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ProtocolError {
@@ -105,11 +101,8 @@ pub fn handle<R: Runtime>(
 ) {
     let root = ctx
         .app_handle()
-        .state::<ReceiptsRoot>()
-        .0
-        .read()
-        .ok()
-        .and_then(|guard| guard.clone());
+        .try_state::<Arc<crate::app::AppState>>()
+        .and_then(|state| state.receipts_root());
     let path = request.uri().path().to_string();
     std::thread::spawn(move || {
         let result = root

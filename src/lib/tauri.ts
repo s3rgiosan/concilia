@@ -15,3 +15,8 @@ export function popplerStatus(): Promise<PopplerStatus> {
 export function receiptUrl(relativePath: string): string {
   return convertFileSrc(relativePath, "receipt");
 }
+
+/** The app's setup as the backend reports it. */
+export function getAppState(): Promise<unknown> {
+  return invoke("get_app_state");
+}

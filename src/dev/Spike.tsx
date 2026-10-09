@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { popplerStatus, receiptUrl, type PopplerStatus } from "../lib/tauri";
+import { getAppState, popplerStatus, receiptUrl, type PopplerStatus } from "../lib/tauri";
 
 /** Dev-only checks: receipt rendering through `receipt://` and the PDF tools in use. */
 export function Spike() {
@@ -7,9 +7,11 @@ export function Spike() {
   const pdf = params.get("pdf") ?? "2030/03/receipts/acme.pdf";
   const image = params.get("image") ?? "2030/03/receipts/acme.png";
   const [poppler, setPoppler] = useState<PopplerStatus | string>("checking");
+  const [appState, setAppState] = useState("loading");
 
   useEffect(() => {
     popplerStatus().then(setPoppler, (e: unknown) => setPoppler(JSON.stringify(e)));
+    getAppState().then((s) => setAppState(JSON.stringify(s)), (e: unknown) => setAppState(JSON.stringify(e)));
   }, []);
 
   return (
@@ -17,6 +19,9 @@ export function Spike() {
       <p style={{ gridColumn: "1 / -1", margin: 0 }} data-testid="poppler">
         poppler: {typeof poppler === "string" ? poppler : `${poppler.version} (${poppler.bundled ? "bundled" : "PATH"})`}
       </p>
+      <pre style={{ gridColumn: "1 / -1", margin: 0, whiteSpace: "pre-wrap" }} data-testid="state">
+        {appState}
+      </pre>
       <iframe title="pdf" src={`${receiptUrl(pdf)}#navpanes=0`} style={{ width: "100%", height: "90%", border: "1px solid gray" }} />
       <img alt="png" src={receiptUrl(image)} style={{ maxWidth: "100%", border: "1px solid gray" }} />
     </div>
