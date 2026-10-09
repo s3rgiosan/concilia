@@ -5,12 +5,26 @@
 // Usage: node scripts/golden/dump.mjs
 
 import { writeFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { matchTransactions } from '../../worker/lib/matcher.mjs';
 import { isBankFee } from '../../worker/lib/bank-fees.mjs';
 import { euroToCents, ddmmyyyyToISO, makeTransactionId } from '../../worker/lib/schema.mjs';
-import { parseJsonFromText } from '../../worker/lib/gemini.mjs';
+import { parseJsonFromText, RECEIPT_PROMPT } from '../../worker/lib/gemini.mjs';
+
+// The Excel writer hands its sheets to write-excel-file; this stub records them instead of
+// writing a file, so the fixtures hold the cells themselves.
+const stub = 'export default async function write(data, options) { globalThis.__xlsx = { data, options }; }';
+registerHooks({
+  resolve(specifier, context, next) {
+    if (specifier === 'write-excel-file/node') {
+      return { url: `data:text/javascript,${encodeURIComponent(stub)}`, shortCircuit: true };
+    }
+    return next(specifier, context);
+  },
+});
+const { writeExcelReport } = await import('../../worker/lib/excel-writer.mjs');
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const outDir = join(root, 'src-tauri', 'tests', 'fixtures', 'golden');
@@ -146,3 +160,44 @@ const replies = [
   '[{"amount": 1}]', '{"amount": null}', '{"amount": 7.005, "currency": "jpy", "vendor": "Example Café", "date": " 2030-03-01 "}',
 ];
 write('gemini_parse', replies.map((input) => ({ input, expected: parseJsonFromText(input) })));
+
+// Prompts.
+const geminiSource = (await import('node:fs')).readFileSync(join(root, 'worker', 'lib', 'gemini.mjs'), 'utf8');
+const retryPrompt = geminiSource.match(/const retryPrompt = '(.*?)';\n/s)[1];
+write('prompts', [{ input: 'receipt', expected: RECEIPT_PROMPT }, { input: 'retry', expected: retryPrompt }]);
+
+// Excel report: the cells, styles and column widths of each sheet.
+function sheetsOf(result, lang) {
+  globalThis.__xlsx = null;
+  return writeExcelReport(result, '/dev/null', { lang }).then(() => {
+    const { data, options } = globalThis.__xlsx;
+    return data.map((rows, i) => ({
+      name: options.sheets[i],
+      widths: options.columns[i].map((c) => c.width),
+      rows: rows.map((row) => row.map((c) => ({
+        value: c.value,
+        number: c.type === Number,
+        bold: c.fontWeight === 'bold',
+        background: c.backgroundColor ?? null,
+        format: c.format ?? null,
+      }))),
+    }));
+  });
+}
+const NO_RECEIPT = ['bank_fee', 'salary', 'transfer', 'refund', 'no_receipt'];
+const excelCases = [];
+for (let i = 0; i < 40; i++) {
+  const result = structuredClone(matcherCases[i * 7].expected);
+  // Review decisions add notes the matcher never writes.
+  for (const tx of result.transactions) {
+    if (tx.status === 'UNMATCHED' && chance(0.3)) {
+      Object.assign(tx, { status: 'MATCHED', receipt_meta: [], receipt_files: [], notes: pick(NO_RECEIPT) });
+    } else if (tx.status === 'UNMATCHED' && chance(0.1)) {
+      tx.notes = 'manual_match';
+    }
+  }
+  const reimbursements = chance(0.5) ? scenario(1000 + i).receipts.slice(0, int(1, 4)) : [];
+  const input = { result, reimbursements, lang: i % 2 ? 'pt' : 'en' };
+  excelCases.push({ input, expected: await sheetsOf({ ...result, reimbursements }, input.lang) });
+}
+write('excel', excelCases);

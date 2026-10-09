@@ -5,9 +5,10 @@
 //! looked up on `PATH`.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde::Serialize;
+use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PopplerError {
@@ -16,6 +17,9 @@ pub enum PopplerError {
     #[error("{0}")]
     Failed(String),
 }
+
+/// Largest text output accepted from `pdftotext`.
+const MAX_TEXT_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Poppler {
@@ -74,6 +78,87 @@ impl Poppler {
             version: version.trim().to_string(),
             bundled: self.bundled,
         })
+    }
+}
+
+impl Poppler {
+    /// Extracts the text of a PDF with `pdftotext -layout`, keeping column alignment.
+    pub async fn text(&self, pdf: &[u8]) -> Result<String, PopplerError> {
+        let mut child = tokio::process::Command::new(&self.pdftotext)
+            .args(["-layout", "-enc", "UTF-8", "-", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| spawn_error("pdftotext", e))?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| PopplerError::Failed("pdftotext stdin unavailable".into()))?;
+        let input = pdf.to_vec();
+        let writer = tokio::spawn(async move {
+            let result = stdin.write_all(&input).await;
+            drop(stdin);
+            result
+        });
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| PopplerError::Failed(e.to_string()))?;
+        // A PDF pdftotext rejects early can close stdin before all bytes are written.
+        let _ = writer.await;
+        if !output.status.success() {
+            return Err(PopplerError::Failed(format!(
+                "pdftotext exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        if output.stdout.len() > MAX_TEXT_BYTES {
+            return Err(PopplerError::Failed("pdftotext output too large".into()));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    /// Renders one page of a PDF to PNG bytes with `pdftoppm`.
+    pub async fn render_page(
+        &self,
+        pdf: &Path,
+        page: u32,
+        dpi: u32,
+    ) -> Result<Vec<u8>, PopplerError> {
+        let dir = tempfile::tempdir().map_err(|e| PopplerError::Failed(e.to_string()))?;
+        let prefix = dir.path().join("page");
+        let output = tokio::process::Command::new(&self.pdftoppm)
+            .arg("-png")
+            .args(["-r", &dpi.to_string()])
+            .args(["-f", &page.to_string(), "-l", &page.to_string()])
+            .arg("-singlefile")
+            .arg(pdf)
+            .arg(&prefix)
+            .stdin(Stdio::null())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|e| spawn_error("pdftoppm", e))?;
+        if !output.status.success() {
+            return Err(PopplerError::Failed(format!(
+                "pdftoppm exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        tokio::fs::read(prefix.with_extension("png"))
+            .await
+            .map_err(|e| PopplerError::Failed(format!("pdftoppm wrote no image: {e}")))
+    }
+}
+
+fn spawn_error(tool: &str, error: std::io::Error) -> PopplerError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => PopplerError::Missing(tool.into()),
+        _ => PopplerError::Failed(error.to_string()),
     }
 }
 

@@ -108,3 +108,16 @@ fn gemini_reply_parsing_matches_the_node_implementation() {
         );
     }
 }
+
+#[test]
+fn prompts_match_the_node_implementation() {
+    let prompts: Vec<Case<String, String>> = cases("prompts");
+    for case in prompts {
+        let actual = match case.input.as_str() {
+            "receipt" => concilia_lib::gemini::prompt::RECEIPT_PROMPT,
+            "retry" => concilia_lib::gemini::prompt::RETRY_PROMPT,
+            other => panic!("unknown prompt {other}"),
+        };
+        assert_eq!(actual, case.expected, "{} prompt", case.input);
+    }
+}

@@ -1,6 +1,8 @@
 pub mod bank;
 pub mod bank_fees;
 pub mod commands;
+pub mod excel;
+pub mod extract;
 pub mod finalize;
 pub mod fsutil;
 pub mod gemini;
