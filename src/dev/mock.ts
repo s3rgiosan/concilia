@@ -1,17 +1,53 @@
 // Browser preview backend. Loaded only by `npm run dev` outside Tauri, so the windows can be
 // designed and checked in a plain browser. All names and data here are fabricated.
 //
-// Pick a scenario with `?mock=<name>`: first-run (default), configured, busy, update, read-only,
-// load-error.
+// Pick a scenario with `?mock=<name>`: first-run (default), configured, resume, applied, busy,
+// update, read-only, load-error, run-error.
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import type { AppStateView, Missing, Rule, Settings, UpdateInfo } from "../lib/tauri";
+import type { Channel } from "@tauri-apps/api/core";
+import type { AppStateView, Missing, Rule, RunEvent, Settings, Summary, UpdateInfo } from "../lib/tauri";
 
 const AVAILABLE_UPDATE: UpdateInfo = { version: "2.1.0", notes: "Fabricated release notes." };
 
 function delay<T>(ms: number, value: T): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+}
+
+const SUMMARY: Summary = {
+  totalTransactions: 42,
+  matched: 31,
+  review: 6,
+  unmatched: 5,
+  bankFees: 4,
+  totalReceipts: 38,
+  matchedReceipts: 27,
+  reviewReceipts: 8,
+  unmatchedReceipts: 3,
+  matchRate: 74,
+};
+
+/** Replays a run's progress over a few seconds, stopping when `cancelled` turns true. */
+async function replay(channel: Channel<RunEvent>, scan: boolean, cancelled: () => boolean): Promise<void> {
+  const send = (event: RunEvent) => channel.onmessage(event);
+  const steps: RunEvent[] = scan ? [] : [{ step: "parsing", count: 2 }];
+  steps.push({ step: "receipts_found", count: 38 });
+  for (let current = 0; current <= 38; current += 2) {
+    steps.push({ step: "extracting", current, total: 38 });
+  }
+  steps.push({ step: "matching" }, { step: "reimbursements_found", count: 2 });
+  steps.push({ step: "extracting_reimbursements", current: 0, total: 2 }, { step: "extracting_reimbursements", current: 2, total: 2 });
+  if (!scan) {
+    steps.push({ step: "exporting" });
+  }
+  for (const event of steps) {
+    if (cancelled()) {
+      throw { kind: "cancelled", message: "cancelled" };
+    }
+    send(event);
+    await delay(event.step === "extracting" ? 120 : 400, null);
+  }
 }
 
 export function install(): void {
@@ -33,6 +69,8 @@ export function install(): void {
         { id: "rule-2", receiptVendor: "globex", transactionDescription: "GLOBEX ONLINE" },
       ]
     : [];
+
+  let cancelRequested = false;
 
   function view(): AppStateView {
     const missing: Missing[] = [];
@@ -90,6 +128,35 @@ export function install(): void {
         case "save_rules":
           rules = a.rules as Rule[];
           return delay(200, rules);
+        case "period_status": {
+          const exists = scenario === "resume" || scenario === "applied";
+          return { exists, applied: scenario === "applied", has_transactions: exists, has_draft: scenario === "resume" };
+        }
+        case "pick_statements":
+          return delay(300, ["/Users/example/Downloads/extrato-2030-03.pdf"]);
+        case "reconcile":
+        case "scan_receipts":
+          cancelRequested = false;
+          return (async () => {
+            await replay(a.onEvent as Channel<RunEvent>, cmd === "scan_receipts", () => cancelRequested);
+            if (scenario === "run-error") {
+              throw { kind: "unauthorized", message: "token exchange failed (400)" };
+            }
+            return cmd === "scan_receipts"
+              ? {
+                  summary: SUMMARY,
+                  dropped_decisions: [{ txId: "tx-003-2030-03-04--2500", description: "GLOBEX ONLINE", removedReceiptFiles: ["globex.pdf"] }],
+                }
+              : SUMMARY;
+          })();
+        case "cancel_run":
+          cancelRequested = true;
+          return true;
+        case "export_report":
+          return delay(300, "/Users/example/Documents/2030-03.xlsx");
+        case "open_report":
+        case "reveal_period":
+          return null;
         case "open_settings":
           window.open(`${window.location.pathname}?view=settings&mock=${scenario}`, "settings", "width=640,height=560");
           return null;

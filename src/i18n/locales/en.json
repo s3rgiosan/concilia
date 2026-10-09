@@ -28,18 +28,23 @@
     "discardReviewChanges": "You have unsaved review changes. Leave without saving?"
   },
   "progress": {
-    "title": "Progress",
+    "title": "Reconciling {{period}}",
     "parsingStatements": "Parsing statements",
     "scanningReceipts": "Scanning receipts",
     "extractingReceiptData": "Extracting receipt data",
     "matching": "Matching",
     "generatingReport": "Generating report",
-    "filesFound": "{{count}} file",
-    "filesFound_plural": "{{count}} files",
-    "receiptsFound": "{{count}} found"
+    "receiptsFound": "{{count}} found",
+    "scanTitle": "Scanning {{period}}",
+    "reimbursements": "Reading reimbursements",
+    "savedTransactions": "using the saved transactions",
+    "cancel": "Cancel",
+    "cancelling": "Stopping…",
+    "filesFound_one": "{{count}} file",
+    "filesFound_other": "{{count}} files"
   },
   "results": {
-    "title": "Results",
+    "title": "{{period}} reconciled",
     "subtitle": "{{totalTransactions}} transactions · {{totalReceipts}} receipts",
     "matched": "Matched",
     "review": "Review",
@@ -51,13 +56,20 @@
     "autoDetected": "auto-detected",
     "downloadReport": "Download Report",
     "reviewAndValidate": "Review & Validate",
-    "newReconciliation": "New reconciliation",
+    "newReconciliation": "New Reconciliation",
     "failed": "Reconciliation failed",
-    "tryAgain": "Try again",
-    "connectionClosed": "Connection closed unexpectedly. Please try again."
+    "tryAgain": "Try Again",
+    "connectionClosed": "Connection closed unexpectedly. Please try again.",
+    "scanTitle": "{{period}} scanned",
+    "saveReport": "Save Report…",
+    "openReport": "Open Report",
+    "reveal": "Show in Finder",
+    "reportSaved": "Report saved to {{path}}.",
+    "stopped": "The reconciliation was stopped.",
+    "droppedTitle": "Some review decisions were removed because their receipts are gone:"
   },
   "form": {
-    "title": "Reconciliation",
+    "title": "Reconcile a month",
     "subtitle": "Select the period and upload bank statements",
     "year": "Year",
     "month": "Month",
@@ -65,10 +77,10 @@
     "dropzone": "Drop PDF files here or",
     "browse": "browse",
     "addStatement": "Add statement",
-    "run": "Run",
-    "priorApplied": "A reconciliation for this period was already applied.",
-    "priorUnfinished": "An unfinished reconciliation was found for this period.",
-    "resumeReview": "Resume review",
+    "run": "Reconcile",
+    "priorApplied": "This month is finalized.",
+    "priorUnfinished": "This month has a reconciliation in progress.",
+    "resumeReview": "Resume Review",
     "rerunFromScratch": "Re-run from scratch",
     "rerun": "Re-run",
     "months": {
@@ -84,7 +96,15 @@
       "10": "October",
       "11": "November",
       "12": "December"
-    }
+    },
+    "statements": "Bank statements",
+    "dropHint": "Drop statement PDFs here",
+    "addStatements": "Add Statements…",
+    "bank": "Bank",
+    "removeStatement": "Remove {{name}}",
+    "notPdf": "Only PDF files can be added.",
+    "scan": "Scan for New Receipts",
+    "rerunHint": "Re-running moves sorted receipts back into the receipts folder and reads every receipt again."
   },
   "review": {
     "title": "Review & Validate",
