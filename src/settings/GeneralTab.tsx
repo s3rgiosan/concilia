@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { FormRow, FormSection, Toggle } from "../components/Form";
 import { PopUpButton } from "../components/PopUpButton";
 import { friendlyError } from "../lib/errors";
-import { appVersion, checkForUpdates, popplerStatus, type Language, type PopplerStatus } from "../lib/tauri";
+import { useInstallUpdate } from "../lib/hooks/useInstallUpdate";
+import { appVersion, checkForUpdates, popplerStatus, type Language, type PopplerStatus, type UpdateInfo } from "../lib/tauri";
 import type { PaneProps } from "./types";
 
 type LanguageChoice = Language | "system";
@@ -12,25 +13,12 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
   const { t } = useTranslation();
   const [version, setVersion] = useState("");
   const [poppler, setPoppler] = useState<PopplerStatus | string | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [checkResult, setCheckResult] = useState<string | null>(null);
   const disabled = state.read_only;
 
   useEffect(() => {
     appVersion().then(setVersion, onError);
     popplerStatus().then(setPoppler, (e) => setPoppler(friendlyError(e, t)));
   }, [onError, t]);
-
-  function checkNow() {
-    setChecking(true);
-    setCheckResult(null);
-    checkForUpdates()
-      .then(
-        (update) => setCheckResult(update ? t("update.available", { version: update.version }) : t("settings.general.upToDate")),
-        (e) => setCheckResult(friendlyError(e, t)),
-      )
-      .finally(() => setChecking(false));
-  }
 
   const languages: { value: LanguageChoice; label: string }[] = [
     { value: "system", label: t("settings.general.languageSystem") },
@@ -46,9 +34,9 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
   }
 
   return (
-    <>
-      <FormSection>
-        <FormRow label={t("settings.general.language")} htmlFor="language" description={t("settings.general.languageHint")}>
+    <div className="form-pane">
+      <FormSection title={t("settings.general.languageSection")} footer={t("settings.general.languageHint")}>
+        <FormRow label={t("settings.general.language")} htmlFor="language">
           <PopUpButton<LanguageChoice>
             id="language"
             label={t("settings.general.language")}
@@ -59,25 +47,99 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
           />
         </FormRow>
       </FormSection>
-      <FormSection footer={checkResult ?? undefined}>
-        <FormRow label={t("settings.general.updates")} htmlFor="updates">
+
+      <FormSection title={t("settings.general.updatesSection")}>
+        <FormRow label={t("settings.general.updates")}>
           <Toggle
-            id="updates"
             label={t("settings.general.updates")}
             checked={state.settings.check_for_updates}
             disabled={disabled}
             onChange={(on) => save((s) => ({ ...s, check_for_updates: on }))}
           />
         </FormRow>
-        <FormRow label={t("settings.general.version", { version })}>
-          <button type="button" onClick={checkNow} disabled={checking}>
-            {checking ? t("settings.general.checking") : t("settings.general.checkNow")}
-          </button>
+        <FormRow label={t("settings.general.versionLabel")}>
+          <span className="value">{version}</span>
+        </FormRow>
+        <FormRow label={t("settings.general.checkNowLabel")}>
+          <UpdateCheck />
         </FormRow>
       </FormSection>
-      <FormSection>
-        <FormRow label={t("settings.general.pdfTools")} description={pdfTools || t("common.loading")} />
+
+      <FormSection title={t("settings.general.pdfSection")}>
+        <FormRow label={t("settings.general.pdfTools")}>
+          <span className="value">{pdfTools || t("common.loading")}</span>
+        </FormRow>
       </FormSection>
+    </div>
+  );
+}
+
+type CheckState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "current" }
+  | { kind: "available"; update: UpdateInfo }
+  | { kind: "failed" }
+  | { kind: "install_failed" };
+
+/** The Check Now button with its one-line result, or the install button once a release is found. */
+function UpdateCheck() {
+  const { t } = useTranslation();
+  const [state, setState] = useState<CheckState>({ kind: "idle" });
+  const { busy, label, install } = useInstallUpdate(() => setState({ kind: "install_failed" }));
+
+  function check() {
+    setState({ kind: "checking" });
+    checkForUpdates()
+      .then((update) => setState(update ? { kind: "available", update } : { kind: "current" }))
+      .catch((e) => {
+        console.error(e);
+        setState({ kind: "failed" });
+      });
+  }
+
+  let dot: string | null = null;
+  let text = "";
+  switch (state.kind) {
+    case "checking":
+      dot = "gray";
+      text = t("settings.general.statusChecking");
+      break;
+    case "current":
+      dot = "green";
+      text = t("settings.general.statusCurrent");
+      break;
+    case "available":
+      dot = "green";
+      text = t("settings.general.statusAvailable", { version: state.update.version });
+      break;
+    case "failed":
+      dot = "red";
+      text = t("settings.general.statusFailed");
+      break;
+    case "install_failed":
+      dot = "red";
+      text = t("settings.general.statusInstallFailed");
+      break;
+    default:
+      break;
+  }
+
+  return (
+    <>
+      <span className="value value--status" role="status">
+        {dot ? <span className={`dot dot--${dot}`} aria-hidden="true" /> : null}
+        {text}
+      </span>
+      {state.kind === "available" ? (
+        <button type="button" onClick={install} disabled={busy}>
+          {label}
+        </button>
+      ) : (
+        <button type="button" onClick={check} disabled={state.kind === "checking"}>
+          {t("settings.general.checkNow")}
+        </button>
+      )}
     </>
   );
 }

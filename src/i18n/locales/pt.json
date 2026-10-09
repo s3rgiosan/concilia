@@ -245,13 +245,20 @@
       "languageSystem": "Igual ao sistema",
       "languageHint": "Define também o idioma do relatório Excel.",
       "updates": "Procurar atualizações automaticamente",
-      "version": "Versão {{version}}",
-      "checkNow": "Procurar agora",
-      "checking": "A procurar…",
-      "upToDate": "O Concilia está atualizado.",
       "pdfTools": "Ferramentas de PDF",
       "pdfToolsBundled": "poppler {{version}}, incluído no Concilia",
-      "pdfToolsSystem": "poppler {{version}}"
+      "pdfToolsSystem": "poppler {{version}}",
+      "languageSection": "Idioma",
+      "updatesSection": "Atualizações",
+      "versionLabel": "Versão",
+      "checkNowLabel": "Procurar agora",
+      "statusChecking": "A procurar…",
+      "statusCurrent": "Atualizado",
+      "statusAvailable": "Versão {{version}} disponível",
+      "statusFailed": "Não foi possível procurar atualizações",
+      "statusInstallFailed": "Não foi possível instalar a atualização",
+      "pdfSection": "Ferramentas de PDF",
+      "checkNow": "Procurar agora"
     },
     "folder": {
       "receiptsRoot": "Pasta de recibos",
@@ -275,7 +282,8 @@
       "model": "Modelo",
       "test": "Testar ligação",
       "testing": "A testar…",
-      "testOk": "O Concilia ligou-se à Google com esta chave."
+      "connected": "Ligado",
+      "testFailed": "Falhou"
     },
     "rules": {
       "title": "Regras de associação",
@@ -314,7 +322,7 @@
     "busy": "Está a decorrer outra tarefa neste mês. Aguarde que termine e tente novamente.",
     "not_configured": "Conclua primeiro a configuração nas Definições: {{message}}.",
     "keychain": "O Concilia não consegue usar o Porta-chaves: {{message}}",
-    "unauthorized": "A Google recusou a conta de serviço. Verifique a chave, o projeto e se a API Vertex AI está ativa.",
+    "unauthorized": "A Google recusou a conta de serviço. Verifique a chave, o projeto e se a API Agent Platform está ativa.",
     "network": "O Concilia não consegue contactar o servidor. Verifique a ligação à Internet.",
     "poppler_missing": "Faltam as ferramentas de PDF de que o Concilia precisa. Reinstale o Concilia.",
     "parse": "O Concilia não conseguiu ler o extrato: {{message}}",

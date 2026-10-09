@@ -105,3 +105,13 @@
 .rules .add-remove {
   align-self: flex-start;
 }
+
+.value {
+  color: var(--label-secondary);
+}
+
+.value--status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

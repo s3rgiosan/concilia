@@ -8,8 +8,10 @@ import {
   getAppState,
   getRules,
   importServiceAccount,
+  installUpdate,
   onBusyChanged,
   onSettingsChanged,
+  onUpdateProgress,
   pickReceiptsRoot,
   popplerStatus,
   removeServiceAccount,
@@ -18,6 +20,7 @@ import {
   testGeminiConnection,
   type AppStateView,
   type Settings as SettingsData,
+  type UpdateProgress,
 } from "../lib/tauri";
 import { ACCOUNT, deferred, makeRule, makeSettings, makeView } from "../test/fixtures";
 import { Settings } from "./Settings";
@@ -29,8 +32,10 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   getAppState: vi.fn(),
   getRules: vi.fn(),
   importServiceAccount: vi.fn(),
+  installUpdate: vi.fn(),
   onBusyChanged: vi.fn(),
   onSettingsChanged: vi.fn(),
+  onUpdateProgress: vi.fn(),
   pickReceiptsRoot: vi.fn(),
   popplerStatus: vi.fn(),
   removeServiceAccount: vi.fn(),
@@ -41,6 +46,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
 
 let pushSettings: (view: AppStateView) => void;
 let pushBusy: (busy: boolean) => void;
+let pushProgress: (progress: UpdateProgress) => void;
 /** The view the window loaded; saved settings are echoed back on top of it. */
 let current: AppStateView;
 
@@ -52,6 +58,10 @@ beforeEach(() => {
   });
   vi.mocked(onBusyChanged).mockImplementation((handler) => {
     pushBusy = handler;
+    return Promise.resolve(() => undefined);
+  });
+  vi.mocked(onUpdateProgress).mockImplementation((handler) => {
+    pushProgress = handler;
     return Promise.resolve(() => undefined);
   });
   vi.mocked(saveSettings).mockImplementation((settings) => Promise.resolve({ ...current, settings }));
@@ -110,22 +120,28 @@ describe("Settings window", () => {
     expect(document.title).toBe("Settings");
   });
 
-  it("opens on General and switches panes", async () => {
+  it("lists the panes in order", async () => {
     await renderSettings();
-    expect(tab("General").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByLabelText("Language")).toBeTruthy();
+    const tabs = within(screen.getByRole("navigation", { name: "Settings" })).getAllByRole("button");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Folder", "Gemini", "Rules", "General"]);
+  });
 
-    fireEvent.click(tab("Folder"));
+  it("opens on Folder and switches panes", async () => {
+    await renderSettings();
     expect(tab("Folder").getAttribute("aria-pressed")).toBe("true");
-    expect(tab("General").getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByText("Receipts folder")).toBeTruthy();
-    expect(screen.queryByLabelText("Language")).toBeNull();
 
     fireEvent.click(tab("Gemini"));
     expect(screen.getByText("Service account key")).toBeTruthy();
 
     fireEvent.click(tab("Rules"));
     expect(await screen.findByText("No rules yet.")).toBeTruthy();
+
+    fireEvent.click(tab("General"));
+    expect(tab("General").getAttribute("aria-pressed")).toBe("true");
+    expect(tab("Folder").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByLabelText("Language")).toBeTruthy();
+    expect(screen.queryByText("Receipts folder")).toBeNull();
   });
 
   it("remembers the pane", async () => {
@@ -137,9 +153,9 @@ describe("Settings window", () => {
     expect(tab("Gemini").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("opens on General when the stored pane is unknown", async () => {
+  it("opens on Folder when the stored pane is unknown", async () => {
     await renderSettings(makeView(), "advanced");
-    expect(tab("General").getAttribute("aria-pressed")).toBe("true");
+    expect(tab("Folder").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("works when storage throws", async () => {
@@ -150,9 +166,9 @@ describe("Settings window", () => {
       throw new Error("denied");
     });
     await renderSettings();
-    expect(tab("General").getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(tab("Folder"));
     expect(tab("Folder").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(tab("General"));
+    expect(tab("General").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("shows a load error with Try Again", async () => {
@@ -175,7 +191,7 @@ describe("Settings window", () => {
   });
 
   it("shows a read-only banner and disables the controls", async () => {
-    await renderSettings(makeView({ read_only: true }));
+    await renderSettings(makeView({ read_only: true }), "general");
     expect(screen.getByText("These settings were saved by a newer version of Concilia and can't be changed here.")).toBeTruthy();
     expect((screen.getByLabelText("Language") as HTMLSelectElement).disabled).toBe(true);
     expect(field("Check for updates automatically").disabled).toBe(true);
@@ -183,7 +199,7 @@ describe("Settings window", () => {
 
   it("shows the busy banner on the Folder and Gemini panes only", async () => {
     const busyText = "The folder and Gemini settings can't change while a month is being processed.";
-    await renderSettings(makeView({ busy: true }));
+    await renderSettings(makeView({ busy: true }), "general");
     expect(screen.queryByText(busyText)).toBeNull();
     fireEvent.click(tab("Folder"));
     expect(screen.getByText(busyText)).toBeTruthy();
@@ -207,7 +223,7 @@ describe("Settings window", () => {
   });
 
   it("shows a save failure and clears it on the next save or pane switch", async () => {
-    await renderSettings();
+    await renderSettings(makeView(), "general");
     vi.mocked(saveSettings).mockRejectedValueOnce({ kind: "read_only", message: "" });
     fireEvent.click(field("Check for updates automatically"));
     const alert = await screen.findByRole("alert");
@@ -225,12 +241,34 @@ describe("Settings window", () => {
 });
 
 describe("General pane", () => {
+  function renderGeneral(view: AppStateView = makeView()) {
+    return renderSettings(view, "general");
+  }
+
+  /** The one-line result next to Check Now. */
+  function updateStatus(): HTMLElement {
+    return screen.getByRole("status");
+  }
+
+  function dotOf(status: HTMLElement): string | null {
+    return status.querySelector(".dot")?.className ?? null;
+  }
+
+  it("groups the rows under Language, Updates and PDF tools", async () => {
+    await renderGeneral();
+    const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(["Language", "Updates", "PDF tools"]);
+    expect(screen.getByText("Also sets the language of the Excel report.").className).toBe("form-section__footer");
+    expect(screen.getByText("Version")).toBeTruthy();
+    expect(screen.getByText("Check now")).toBeTruthy();
+  });
+
   it.each([
     ["pt", "pt"],
     ["en", "en"],
     ["system", null],
   ] as const)("saves the language choice %s", async (choice, saved) => {
-    await renderSettings(makeView({ settings: makeSettings({ language: choice === "system" ? "en" : null }) }));
+    await renderGeneral(makeView({ settings: makeSettings({ language: choice === "system" ? "en" : null }) }));
     fireEvent.change(screen.getByLabelText("Language"), { target: { value: choice } });
     expect(saveSettings).toHaveBeenCalledTimes(1);
     expect(lastSaved()).toEqual({ ...current.settings, language: saved });
@@ -238,19 +276,19 @@ describe("General pane", () => {
 
   it("shows the saved language", async () => {
     const changeLanguage = vi.spyOn(i18n, "changeLanguage").mockResolvedValue(i18n.t);
-    await renderSettings(makeView({ settings: makeSettings({ language: "pt" }) }));
+    await renderGeneral(makeView({ settings: makeSettings({ language: "pt" }) }));
     expect((screen.getByLabelText("Language") as HTMLSelectElement).value).toBe("pt");
     expect(changeLanguage).toHaveBeenCalledWith("pt");
   });
 
   it("shows Same as System when no language is saved", async () => {
-    await renderSettings();
+    await renderGeneral();
     expect((screen.getByLabelText("Language") as HTMLSelectElement).value).toBe("system");
     expect(screen.getAllByText("Same as System").length).toBeGreaterThan(0);
   });
 
   it("saves the update switch", async () => {
-    await renderSettings();
+    await renderGeneral();
     const toggle = field("Check for updates automatically");
     expect(toggle.checked).toBe(true);
     fireEvent.click(toggle);
@@ -258,67 +296,114 @@ describe("General pane", () => {
   });
 
   it("shows the app version", async () => {
-    await renderSettings();
-    expect(await screen.findByText("Version 2.0.0")).toBeTruthy();
+    await renderGeneral();
+    const version = await screen.findByText("2.0.0");
+    expect(version.className).toBe("value");
   });
 
   it("reports a failure to read the version", async () => {
     vi.mocked(appVersion).mockRejectedValue(new Error("no app"));
-    await renderSettings();
+    await renderGeneral();
     expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong: no app");
+  });
+
+  it("shows no status before a check", async () => {
+    await renderGeneral();
+    expect(updateStatus().textContent).toBe("");
+    expect(dotOf(updateStatus())).toBeNull();
+    expect(button("Check Now").disabled).toBe(false);
   });
 
   it("says when Concilia is up to date", async () => {
     const check = deferred<null>();
     vi.mocked(checkForUpdates).mockReturnValue(check.promise);
-    await renderSettings();
+    await renderGeneral();
     fireEvent.click(button("Check Now"));
-    expect(button("Checking…").disabled).toBe(true);
+    expect(updateStatus().textContent).toBe("Checking…");
+    expect(dotOf(updateStatus())).toBe("dot dot--gray");
+    expect(button("Check Now").disabled).toBe(true);
     await act(async () => check.resolve(null));
-    expect(screen.getByText("Concilia is up to date.")).toBeTruthy();
+    expect(updateStatus().textContent).toBe("Up to date");
+    expect(dotOf(updateStatus())).toBe("dot dot--green");
     expect(button("Check Now").disabled).toBe(false);
   });
 
-  it("names an available update", async () => {
+  it("names an available update and offers to install it", async () => {
     vi.mocked(checkForUpdates).mockResolvedValue({ version: "9.9.9", notes: null });
-    await renderSettings();
+    await renderGeneral();
     fireEvent.click(button("Check Now"));
-    expect(await screen.findByText("Concilia 9.9.9 is available.")).toBeTruthy();
+    expect(await screen.findByText("Version 9.9.9 available")).toBeTruthy();
+    expect(dotOf(updateStatus())).toBe("dot dot--green");
+    expect(screen.queryByRole("button", { name: "Check Now" })).toBeNull();
+    expect(button("Install and Relaunch").disabled).toBe(false);
+  });
+
+  it("installs the update from the Check now row and follows the progress", async () => {
+    const install = deferred<void>();
+    vi.mocked(checkForUpdates).mockResolvedValue({ version: "9.9.9", notes: null });
+    vi.mocked(installUpdate).mockReturnValue(install.promise);
+    await renderGeneral();
+    fireEvent.click(button("Check Now"));
+    fireEvent.click(await screen.findByRole("button", { name: "Install and Relaunch" }));
+    expect(installUpdate).toHaveBeenCalledTimes(1);
+    expect(button("Downloading…").disabled).toBe(true);
+    act(() => pushProgress({ downloaded: 25, total: 100 }));
+    expect(button("Downloading… 25%").disabled).toBe(true);
+    act(() => pushProgress({ downloaded: 100, total: 100 }));
+    expect(button("Installing…").disabled).toBe(true);
+    expect(updateStatus().textContent).toBe("Version 9.9.9 available");
+  });
+
+  it("says when the update couldn't be installed", async () => {
+    vi.mocked(checkForUpdates).mockResolvedValue({ version: "9.9.9", notes: null });
+    vi.mocked(installUpdate).mockRejectedValue({ kind: "network", message: "offline" });
+    await renderGeneral();
+    fireEvent.click(button("Check Now"));
+    fireEvent.click(await screen.findByRole("button", { name: "Install and Relaunch" }));
+    expect(await screen.findByText("Couldn’t install the update")).toBeTruthy();
+    expect(dotOf(updateStatus())).toBe("dot dot--red");
+    expect(button("Check Now").disabled).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows a failed check", async () => {
-    vi.mocked(checkForUpdates).mockRejectedValue({ kind: "network", message: "offline" });
-    await renderSettings();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const failure = { kind: "network", message: "offline" };
+    vi.mocked(checkForUpdates).mockRejectedValue(failure);
+    await renderGeneral();
     fireEvent.click(button("Check Now"));
-    expect(await screen.findByText("Concilia can't reach the server. Check your internet connection.")).toBeTruthy();
+    expect(await screen.findByText("Couldn’t check for updates")).toBeTruthy();
+    expect(dotOf(updateStatus())).toBe("dot dot--red");
+    expect(consoleError).toHaveBeenCalledWith(failure);
     expect(button("Check Now").disabled).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("keeps Check Now enabled when read-only", async () => {
-    await renderSettings(makeView({ read_only: true }));
+    await renderGeneral(makeView({ read_only: true }));
     expect(button("Check Now").disabled).toBe(false);
   });
 
   it("shows the bundled PDF tools", async () => {
-    await renderSettings();
+    await renderGeneral();
     expect(await screen.findByText("poppler 24.02.0, included with Concilia")).toBeTruthy();
   });
 
   it("shows system PDF tools", async () => {
     vi.mocked(popplerStatus).mockResolvedValue({ version: "25.01.0", bundled: false });
-    await renderSettings();
+    await renderGeneral();
     expect(await screen.findByText("poppler 25.01.0")).toBeTruthy();
   });
 
   it("shows missing PDF tools", async () => {
     vi.mocked(popplerStatus).mockRejectedValue({ kind: "poppler_missing", message: "" });
-    await renderSettings();
+    await renderGeneral();
     expect(await screen.findByText("The PDF tools Concilia needs are missing. Reinstall Concilia.")).toBeTruthy();
   });
 
   it("shows Loading… while the PDF tools are checked", async () => {
     vi.mocked(popplerStatus).mockReturnValue(new Promise(() => undefined));
-    await renderSettings();
+    await renderGeneral();
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
 });
@@ -521,6 +606,13 @@ describe("Gemini pane", () => {
     expect(button("Test Connection").disabled).toBe(false);
   });
 
+  it("shows no test result before a test", async () => {
+    await renderSettings(makeView(), "gemini");
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("");
+    expect(status.getAttribute("title")).toBeNull();
+  });
+
   it("reports a working connection", async () => {
     const test = deferred<void>();
     vi.mocked(testGeminiConnection).mockReturnValue(test.promise);
@@ -528,18 +620,27 @@ describe("Gemini pane", () => {
     fireEvent.click(button("Test Connection"));
     expect(button("Testing…").disabled).toBe(true);
     await act(async () => test.resolve());
-    expect(screen.getByText("Concilia reached Google with this key.")).toBeTruthy();
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Connected");
+    expect(status.querySelector(".dot")?.className).toBe("dot dot--green");
+    expect(status.getAttribute("title")).toBeNull();
     expect(button("Test Connection").disabled).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("reports a failed connection", async () => {
+  it("reports a failed connection next to the button and under the section", async () => {
+    const message = "Google refused the service account. Check the key and the project, and that the Agent Platform API is enabled.";
     vi.mocked(testGeminiConnection).mockRejectedValue({ kind: "unauthorized", message: "" });
     await renderSettings(makeView(), "gemini");
     fireEvent.click(button("Test Connection"));
-    expect(
-      await screen.findByText("Google refused the service account. Check the key and the project, and that the Vertex AI API is enabled."),
-    ).toBeTruthy();
+    await screen.findByText("Failed");
+    expect(screen.getByText(message).className).toBe("form-section__footer");
     expect(screen.queryByRole("alert")).toBeNull();
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Failed");
+    expect(status.querySelector(".dot")?.className).toBe("dot dot--red");
+    expect(status.getAttribute("title")).toBe(message);
+    expect(button("Test Connection").disabled).toBe(false);
   });
 
   it("clears the test result when a key is imported", async () => {
@@ -547,9 +648,32 @@ describe("Gemini pane", () => {
     vi.mocked(importServiceAccount).mockResolvedValue(null);
     await renderSettings(makeView(), "gemini");
     fireEvent.click(button("Test Connection"));
-    await screen.findByText("Concilia reached Google with this key.");
+    await screen.findByText("Connected");
     fireEvent.click(button("Replace…"));
-    expect(screen.queryByText("Concilia reached Google with this key.")).toBeNull();
+    expect(screen.queryByText("Connected")).toBeNull();
+  });
+
+  it("clears the failure message when a later test succeeds", async () => {
+    vi.mocked(testGeminiConnection).mockRejectedValueOnce({ kind: "network", message: "" }).mockResolvedValueOnce(undefined);
+    await renderSettings(makeView(), "gemini");
+    fireEvent.click(button("Test Connection"));
+    await screen.findByText("Failed");
+    fireEvent.click(button("Test Connection"));
+    await screen.findByText("Connected");
+    expect(screen.queryByText(/can’t reach the server|can't reach the server/i)).toBeNull();
+  });
+
+  it("clears a failed test result when the key is removed", async () => {
+    vi.mocked(testGeminiConnection).mockRejectedValue({ kind: "unauthorized", message: "" });
+    vi.mocked(removeServiceAccount).mockResolvedValue(makeView({ service_account: null }));
+    await renderSettings(makeView(), "gemini");
+    fireEvent.click(button("Test Connection"));
+    await screen.findByText("Failed");
+    fireEvent.click(button("Remove"));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.queryByText("Failed")).toBeNull();
+    expect(screen.getByRole("status").getAttribute("title")).toBeNull();
   });
 });
 

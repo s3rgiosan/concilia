@@ -43,7 +43,7 @@ describe("friendlyError", () => {
     busy: "Another job is running for this month. Wait for it to finish and try again.",
     not_configured: "Finish the setup in Settings first: bad value.",
     keychain: "Concilia can't use the Keychain: bad value",
-    unauthorized: "Google refused the service account. Check the key and the project, and that the Vertex AI API is enabled.",
+    unauthorized: "Google refused the service account. Check the key and the project, and that the Agent Platform API is enabled.",
     network: "Concilia can't reach the server. Check your internet connection.",
     poppler_missing: "The PDF tools Concilia needs are missing. Reinstall Concilia.",
     parse: "Concilia couldn't read the statement: bad value",

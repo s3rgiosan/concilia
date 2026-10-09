@@ -7,7 +7,7 @@ A bank statement reconciliation desktop app for macOS that matches transactions 
 - **Local-only**: Single-user desktop app; the server binds to `127.0.0.1`, no auth, no cloud storage of your data
 - **Multilingual**: English and Portuguese UI with user locale preference
 - **Bank statement parsing**: Deterministic per-bank parsers (no AI) — currently CGD (extensible to other banks). All PDF I/O (statement parsing, receipt text extraction, receipt rendering for the Gemini vision fallback) goes through bundled poppler binaries (`pdftotext`, `pdftoppm`), shipped inside the .app.
-- **Receipt extraction**: Google Gemini via Vertex AI extracts amount, currency, vendor, and issue date from receipts; service-account auth, low-confidence results retried up to 3×
+- **Receipt extraction**: Google Gemini via Gemini Enterprise Agent Platform (formerly Vertex AI) extracts amount, currency, vendor, and issue date from receipts; service-account auth, low-confidence results retried up to 3×
 - **Five-pass matching**: User rules → name+amount (EUR exact cents) → amount-only (EUR exact cents) → FX (±10%) → filename, with date-window tiebreaker
 - **3-way sorting**: Receipts auto-moved into `_matched/`, `_review/`, `_unmatched/` on Finalize
 - **Reimbursements**: Drop receipts paid personally on the company's VAT into `<year>/<month>/reimbursements/` — Concilia extracts them via the same Gemini pipeline (no matching attempted) and adds a dedicated sheet plus a totals row to the Excel report. Read-only in the UI with per-file rescan.
@@ -23,7 +23,7 @@ A bank statement reconciliation desktop app for macOS that matches transactions 
 - **Frontend**: React + TypeScript + Vite + react-i18next + Tailwind CSS + daisyUI + Lucide
 - **Backend**: Node.js (Electron-as-Node) + Express
 - **PDF parsing/rendering**: bundled poppler binaries — `pdftotext` (text) + `pdftoppm` (page → PNG)
-- **AI extraction**: Google Gemini 2.5 Flash (Vertex AI), service-account JWT auth
+- **AI extraction**: Google Gemini 2.5 Flash (Agent Platform), service-account JWT auth
 - **Excel**: write-excel-file
 - **Tests**: node:test (built-in)
 
@@ -48,7 +48,7 @@ concilia/
 - macOS Apple Silicon (arm64)
 - Node.js 22+
 - npm 10+
-- Google Cloud account with Vertex AI enabled (required for receipt extraction)
+- Google Cloud account with the Agent Platform API enabled (required for receipt extraction)
 - For **building from source** only: [poppler](https://poppler.freedesktop.org/) (`brew install poppler`). The build script bundles poppler from your Homebrew install into the .app. Users of the released DMG do **not** need to install anything.
 
 ### Installation
@@ -91,10 +91,10 @@ Settings are stored in `~/Library/Application Support/Concilia/config.json` (chm
 | Key | Default | Notes |
 |---|---|---|
 | `receiptsRoot` | — | Root folder containing `<year>/<month>/receipts/` subfolders |
-| `saKeyPath` | — | Path to Vertex AI service-account JSON key |
+| `saKeyPath` | — | Path to Agent Platform service-account JSON key |
 | `geminiProject` | auto | Auto-detected from key file if blank |
-| `geminiLocation` | `europe-west1` | Vertex AI region |
-| `geminiModel` | `gemini-2.5-flash` | Vertex AI model ID |
+| `geminiLocation` | `europe-west1` | Agent Platform region |
+| `geminiModel` | `gemini-2.5-flash` | Agent Platform model ID |
 | `language` | `en` | `en` or `pt` |
 
 The config file stores a *path* to the SA key, not the key contents. Treat the file as sensitive.
@@ -106,9 +106,9 @@ PDF tooling resolves binaries from these environment variables (Electron main se
 | `PDFTOTEXT_BIN` | `pdftotext` on `PATH` | Used by the CGD parser AND the receipt text-extraction path |
 | `PDFTOPPM_BIN` | `pdftoppm` on `PATH` | Used by the Gemini vision-fallback receipt rendering |
 
-### Setting up Google Gemini (Vertex AI)
+### Setting up Google Gemini (Agent Platform)
 
-Concilia uses Google's Vertex AI (Gemini) to read receipts. You need a Google Cloud project with the Vertex AI API enabled and a service-account JSON key. Follow the steps below — the whole flow takes ~5 minutes.
+Concilia uses Gemini on Google's Gemini Enterprise Agent Platform (formerly Vertex AI) to read receipts. You need a Google Cloud project with the Agent Platform API enabled and a service-account JSON key. Follow the steps below — the whole flow takes ~5 minutes.
 
 #### 1. Create or select a Google Cloud project
 
@@ -117,18 +117,18 @@ Concilia uses Google's Vertex AI (Gemini) to read receipts. You need a Google Cl
 3. Give it a name (e.g. `concilia`) and click **Create**.
 4. Once created, make sure it's selected in the project picker — every subsequent step assumes this project is active.
 
-> First-time Google Cloud users get a $300 free trial credit. After that, Vertex AI is pay-per-use (see pricing note at the bottom).
+> First-time Google Cloud users get a $300 free trial credit. After that, Agent Platform is pay-per-use (see pricing note at the bottom).
 
 #### 2. Enable billing
 
-Vertex AI requires a billing account, even though monthly cost is typically a few cents.
+Agent Platform requires a billing account, even though monthly cost is typically a few cents.
 
 1. Go to **Billing** ([direct link](https://console.cloud.google.com/billing)).
 2. Link a billing account to the project (create one if you don't have any).
 
-#### 3. Enable the Vertex AI API
+#### 3. Enable the Agent Platform API
 
-1. Open the Vertex AI API page: <https://console.cloud.google.com/apis/library/aiplatform.googleapis.com>.
+1. Open the Agent Platform API page: <https://console.cloud.google.com/apis/library/aiplatform.googleapis.com>.
 2. Make sure your project is selected in the top bar.
 3. Click **Enable**. Wait ~30 seconds for activation.
 
@@ -142,7 +142,7 @@ Vertex AI requires a billing account, even though monthly cost is typically a fe
    - **Description**: optional
 4. Click **Create and continue**.
 5. Under **Grant this service account access to project**, add the role:
-   - **Vertex AI User** (`roles/aiplatform.user`)
+   - **Agent Platform User** (`roles/aiplatform.user`)
 6. Click **Continue**, then **Done**. You'll be returned to the service-accounts list.
 
 #### 5. Generate a JSON key
@@ -153,7 +153,7 @@ Vertex AI requires a billing account, even though monthly cost is typically a fe
 4. Select **JSON** and click **Create**.
 5. The browser downloads a `.json` file (e.g. `concilia-abc123.json`). **Save this file in a safe location** — e.g. `~/.config/concilia/sa-key.json`. You can't re-download it; if lost, generate a new key.
 
-> Treat this file as a password. Anyone with it can call Vertex AI on your billing account. Don't commit it to git, don't email it.
+> Treat this file as a password. Anyone with it can call Agent Platform on your billing account. Don't commit it to git, don't email it.
 
 #### 6. Point Concilia at the key
 
@@ -164,7 +164,7 @@ The Project ID, Location and Model fields can stay blank/default — Concilia au
 
 #### Pricing & privacy
 
-Vertex AI is pay-per-use. Gemini 2.5 Flash costs ~$0.10/1M input tokens. ~200 receipts/month ≈ $0.04. Data sent to Vertex AI is **not used to train Google models** under the Vertex AI terms — see [Vertex AI pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing) and [data governance](https://cloud.google.com/vertex-ai/generative-ai/docs/data-governance).
+Agent Platform is pay-per-use. Gemini 2.5 Flash costs ~$0.10/1M input tokens. ~200 receipts/month ≈ $0.04. Data sent to Agent Platform is **not used to train Google models** under the Agent Platform terms — see [Agent Platform pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing) and [data governance](https://cloud.google.com/vertex-ai/generative-ai/docs/data-governance).
 
 ## Usage
 

@@ -245,13 +245,20 @@
       "languageSystem": "Same as System",
       "languageHint": "Also sets the language of the Excel report.",
       "updates": "Check for updates automatically",
-      "version": "Version {{version}}",
-      "checkNow": "Check Now",
-      "checking": "Checking…",
-      "upToDate": "Concilia is up to date.",
       "pdfTools": "PDF tools",
       "pdfToolsBundled": "poppler {{version}}, included with Concilia",
-      "pdfToolsSystem": "poppler {{version}}"
+      "pdfToolsSystem": "poppler {{version}}",
+      "languageSection": "Language",
+      "updatesSection": "Updates",
+      "versionLabel": "Version",
+      "checkNowLabel": "Check now",
+      "statusChecking": "Checking…",
+      "statusCurrent": "Up to date",
+      "statusAvailable": "Version {{version}} available",
+      "statusFailed": "Couldn’t check for updates",
+      "statusInstallFailed": "Couldn’t install the update",
+      "pdfSection": "PDF tools",
+      "checkNow": "Check Now"
     },
     "folder": {
       "receiptsRoot": "Receipts folder",
@@ -275,7 +282,8 @@
       "model": "Model",
       "test": "Test Connection",
       "testing": "Testing…",
-      "testOk": "Concilia reached Google with this key."
+      "connected": "Connected",
+      "testFailed": "Failed"
     },
     "rules": {
       "title": "Match rules",
@@ -314,7 +322,7 @@
     "busy": "Another job is running for this month. Wait for it to finish and try again.",
     "not_configured": "Finish the setup in Settings first: {{message}}.",
     "keychain": "Concilia can't use the Keychain: {{message}}",
-    "unauthorized": "Google refused the service account. Check the key and the project, and that the Vertex AI API is enabled.",
+    "unauthorized": "Google refused the service account. Check the key and the project, and that the Agent Platform API is enabled.",
     "network": "Concilia can't reach the server. Check your internet connection.",
     "poppler_missing": "The PDF tools Concilia needs are missing. Reinstall Concilia.",
     "parse": "Concilia couldn't read the statement: {{message}}",

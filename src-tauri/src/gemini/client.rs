@@ -1,4 +1,5 @@
-//! Gemini on Vertex AI, authenticated with a Google service account.
+//! Gemini on Google's Gemini Enterprise Agent Platform (formerly Vertex AI), authenticated with a
+//! Google service account.
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 

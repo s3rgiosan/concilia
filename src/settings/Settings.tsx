@@ -11,7 +11,7 @@ import { GeminiTab } from "./GeminiTab";
 import { GeneralTab } from "./GeneralTab";
 import { RulesTab } from "./RulesTab";
 
-const PANES = ["general", "folder", "gemini", "rules"] as const;
+const PANES = ["folder", "gemini", "rules", "general"] as const;
 type Pane = (typeof PANES)[number];
 
 const PANE_ICONS: Record<Pane, IconName> = {
@@ -29,8 +29,8 @@ function isPane(value: string): value is Pane {
 export function Settings() {
   const { t } = useTranslation();
   const { state, error: loadError, replace, reload } = useAppState();
-  const [stored, setStored] = useSafeStorage("settings.pane", "general");
-  const pane: Pane = isPane(stored) ? stored : "general";
+  const [stored, setStored] = useSafeStorage("settings.pane", "folder");
+  const pane: Pane = isPane(stored) ? stored : "folder";
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

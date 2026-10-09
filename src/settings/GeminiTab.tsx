@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FormRow, FormSection } from "../components/Form";
-import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { TextSetting } from "../components/TextSetting";
 import { friendlyError } from "../lib/errors";
@@ -56,17 +55,6 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
     keyDescription = t("settings.gemini.none");
   }
 
-  let testNote: string | undefined;
-  switch (test.kind) {
-    case "ok":
-      testNote = t("settings.gemini.testOk");
-      break;
-    case "failed":
-      testNote = test.message;
-      break;
-    default:
-      testNote = undefined;
-  }
 
   const projectPlaceholder = account?.project_id
     ? t("settings.gemini.projectFromKey", { project: account.project_id })
@@ -86,7 +74,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
           </button>
         </FormRow>
       </FormSection>
-      <FormSection footer={testNote}>
+      <FormSection footer={test.kind === "failed" ? test.message : undefined}>
         <FormRow label={t("settings.gemini.project")} htmlFor="project">
           <TextSetting
             id="project"
@@ -116,8 +104,20 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
           />
         </FormRow>
         <FormRow label="">
-          {test.kind === "failed" ? <Icon name="warning" size={13} /> : null}
-          {test.kind === "ok" ? <Icon name="check" size={13} /> : null}
+          <span className="value value--status" role="status" title={test.kind === "failed" ? test.message : undefined}>
+            {test.kind === "ok" ? (
+              <>
+                <span className="dot dot--green" aria-hidden="true" />
+                {t("settings.gemini.connected")}
+              </>
+            ) : null}
+            {test.kind === "failed" ? (
+              <>
+                <span className="dot dot--red" aria-hidden="true" />
+                {t("settings.gemini.testFailed")}
+              </>
+            ) : null}
+          </span>
           <button type="button" onClick={runTest} disabled={!account || test.kind === "testing"}>
             {test.kind === "testing" ? t("settings.gemini.testing") : t("settings.gemini.test")}
           </button>
