@@ -69,3 +69,7 @@ jobs:
       - run: npm ci
         working-directory: worker
       - run: npm run test:legacy
+      - name: Check the golden fixtures are current
+        run: |
+          node scripts/golden/dump.mjs
+          git diff --exit-code src-tauri/tests/fixtures/golden

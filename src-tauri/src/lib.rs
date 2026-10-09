@@ -1,6 +1,18 @@
+pub mod bank;
+pub mod bank_fees;
 pub mod commands;
+pub mod finalize;
+pub mod fsutil;
+pub mod gemini;
+pub mod matcher;
+pub mod model;
+pub mod period;
 pub mod poppler;
 pub mod protocol;
+pub mod receipts;
+pub mod review;
+pub mod schema;
+pub mod text;
 
 use tauri::Manager;
 

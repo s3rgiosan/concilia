@@ -1,0 +1,9 @@
+[
+{"input":"15/01/2030","expected":"2030-01-15"},
+{"input":"01/12/2029","expected":"2029-12-01"},
+{"input":"31/07/2028","expected":"2028-07-31"},
+{"input":"2030-01-15","expected":null},
+{"input":"1/1/2030","expected":null},
+{"input":"","expected":null},
+{"input":"15/01/30","expected":null}
+]
