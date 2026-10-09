@@ -1,0 +1,46 @@
+[package]
+name = "concilia"
+version = "2.0.0"
+description = "Bank statement reconciliation desktop app"
+authors = ["Sérgio Santos"]
+license = "GPL-3.0-or-later"
+edition = "2021"
+rust-version = "1.94"
+publish = false
+
+[lib]
+name = "concilia_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Exposes test doubles to integration tests.
+test-support = []
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4.34"
+thiserror = "2.0.21"
+percent-encoding = "2.3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+[dev-dependencies]
+# The crate itself with test doubles enabled, for the integration tests.
+concilia = { path = ".", features = ["test-support"] }
+tempfile = "3.27.0"
+
+[lints.clippy]
+all = "deny"

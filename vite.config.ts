@@ -1,0 +1,58 @@
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+// @ts-expect-error type error without @types/node package
+import process from "node:process";
+const host = process.env.TAURI_DEV_HOST;
+
+// https://vite.dev/config/
+export default defineConfig(() => ({
+  plugins: [react()],
+
+  // TAURI_ENV_PLATFORM tells the frontend which OS the Tauri CLI builds for.
+  envPrefix: ["VITE_", "TAURI_ENV_"],
+
+  test: {
+    include: ["src/**/*.test.{ts,tsx}"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/dev/**",
+        "src/test/**",
+        "src/**/*.test.*",
+        "src/main.tsx",
+        "src/vite-env.d.ts",
+      ],
+      reporter: ["text-summary", "json-summary"],
+      reportsDirectory: "coverage",
+    },
+  },
+
+  build: {
+    // Safari 18 is the WebKit that shipped with macOS 15, the minimum system version set by the
+    // bundled poppler libraries.
+    target: "safari18",
+  },
+
+  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
+  //
+  // 1. prevent Vite from obscuring rust errors
+  clearScreen: false,
+  // 2. tauri expects a fixed port, fail if that port is not available
+  server: {
+    port: 1420,
+    strictPort: true,
+    host: host || false,
+    hmr: host
+      ? {
+          protocol: "ws",
+          host,
+          port: 1421,
+        }
+      : undefined,
+    watch: {
+      // 3. tell Vite to ignore watching `src-tauri`
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+}));

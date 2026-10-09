@@ -1,0 +1,9 @@
+.main {
+  padding: 24px;
+}
+
+.main__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}

@@ -49,3 +49,7 @@ yarn-error.log*
 
 # Playwright MCP session files
 .playwright-mcp/
+
+# Tauri frontend build output and coverage
+dist/
+coverage/
