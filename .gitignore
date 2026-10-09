@@ -53,3 +53,6 @@ yarn-error.log*
 # Tauri frontend build output and coverage
 dist/
 coverage/
+
+# Generated icons (scripts/symbols.mjs)
+src/assets/symbols/

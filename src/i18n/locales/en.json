@@ -1,0 +1,293 @@
+{
+  "common": {
+    "save": "Save",
+    "saving": "Saving…",
+    "add": "Add",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "optional": "optional",
+    "low": "low",
+    "loading": "Loading…",
+    "select": "Select…",
+    "signOut": "Sign out",
+    "dismiss": "Dismiss",
+    "remove": "Remove",
+    "close": "Close",
+    "choose": "Choose…",
+    "working": "Working…",
+    "tryAgain": "Try Again"
+  },
+  "nav": {
+    "matchRules": "Match rules",
+    "rules": "Rules",
+    "settings": "Settings",
+    "start": "Start",
+    "running": "Processing",
+    "results": "Results",
+    "review": "Review",
+    "discardReviewChanges": "You have unsaved review changes. Leave without saving?"
+  },
+  "progress": {
+    "title": "Progress",
+    "parsingStatements": "Parsing statements",
+    "scanningReceipts": "Scanning receipts",
+    "extractingReceiptData": "Extracting receipt data",
+    "matching": "Matching",
+    "generatingReport": "Generating report",
+    "filesFound": "{{count}} file",
+    "filesFound_plural": "{{count}} files",
+    "receiptsFound": "{{count}} found"
+  },
+  "results": {
+    "title": "Results",
+    "subtitle": "{{totalTransactions}} transactions · {{totalReceipts}} receipts",
+    "matched": "Matched",
+    "review": "Review",
+    "unmatched": "Unmatched",
+    "bankFees": "Bank fees",
+    "matchRate": "{{matchRate}}% match rate",
+    "needsAttention": "needs attention",
+    "noReceipt": "no receipt",
+    "autoDetected": "auto-detected",
+    "downloadReport": "Download Report",
+    "reviewAndValidate": "Review & Validate",
+    "newReconciliation": "New reconciliation",
+    "failed": "Reconciliation failed",
+    "tryAgain": "Try again",
+    "connectionClosed": "Connection closed unexpectedly. Please try again."
+  },
+  "form": {
+    "title": "Reconciliation",
+    "subtitle": "Select the period and upload bank statements",
+    "year": "Year",
+    "month": "Month",
+    "bankStatements": "Bank Statements",
+    "dropzone": "Drop PDF files here or",
+    "browse": "browse",
+    "addStatement": "Add statement",
+    "run": "Run",
+    "priorApplied": "A reconciliation for this period was already applied.",
+    "priorUnfinished": "An unfinished reconciliation was found for this period.",
+    "resumeReview": "Resume review",
+    "rerunFromScratch": "Re-run from scratch",
+    "rerun": "Re-run",
+    "months": {
+      "01": "January",
+      "02": "February",
+      "03": "March",
+      "04": "April",
+      "05": "May",
+      "06": "June",
+      "07": "July",
+      "08": "August",
+      "09": "September",
+      "10": "October",
+      "11": "November",
+      "12": "December"
+    }
+  },
+  "review": {
+    "title": "Review & Validate",
+    "empty": "No reconciliation data for this period yet. Run a reconciliation first.",
+    "refreshFailed": "Could not refresh review data: {{msg}}",
+    "draftSaveFailed": "Could not save draft: {{msg}}",
+    "noTransactions": "No transactions.",
+    "noReceipt": "No receipt",
+    "save": "Save",
+    "scan": "Scan receipts",
+    "downloadReport": "Download Report",
+    "finalize": "Finalize",
+    "changesSaved": "Changes saved",
+    "saveFailed": "Could not save changes: {{msg}}",
+    "scanFailed": "Scan failed: {{msg}}",
+    "scanComplete": "Scan complete",
+    "scanConnectionClosed": "Connection closed unexpectedly.",
+    "scanDroppedBanner_one": "{{count}} pending decision was dropped because its receipt was removed: {{names}}",
+    "scanDroppedBanner_other": "{{count}} pending decisions were dropped because their receipts were removed: {{names}}",
+    "scanDroppedDismiss": "Dismiss",
+    "changesApplied": "Changes applied and report updated",
+    "finalizeConfirm": {
+      "title": "Finalize reconciliation?",
+      "body": "This will move every receipt file into _matched, _review, or _unmatched subfolders, regenerate the report, and delete your draft. The action cannot be undone.",
+      "checkbox": "I understand this action is irreversible",
+      "cta": "Confirm",
+      "cancel": "Cancel"
+    },
+    "scanModal": {
+      "title": "Scanning receipts",
+      "subtitle": "Looking for new or removed receipts and re-running the matcher.",
+      "close": "Close"
+    },
+    "other": "Other…",
+    "filters": {
+      "all": "All",
+      "review": "Review",
+      "unmatched": "Unmatched",
+      "matched": "Matched"
+    },
+    "nameFilter": {
+      "placeholder": "Filter by name…",
+      "clear": "Clear filter"
+    },
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "amountKind": {
+      "income": "Income",
+      "expense": "Expense"
+    },
+    "matchReason": {
+      "bankFeeAuto": "Bank fee (auto)",
+      "nameAmountMatch": "Name & amount match",
+      "nameAmountDateMatch": "Name, amount & date match",
+      "amountMatch": "Amount match",
+      "amountDateMatch": "Amount & date match",
+      "unknownCurrencyMatch": "Amount match (currency unverified)",
+      "filenameMatch": "Filename match — verify amounts",
+      "manualMatch": "Manual match",
+      "ruleMatch": "Rule match",
+      "fxMatch": "FX match ({{detail}})",
+      "multipleNameAmount_one": "{{count}} receipt matches name & amount",
+      "multipleNameAmount_other": "{{count}} receipts match name & amount",
+      "multipleNameAmountUnknownCurrency_one": "{{count}} receipt matches name & amount (currency unverified)",
+      "multipleNameAmountUnknownCurrency_other": "{{count}} receipts match name & amount (currency unverified)",
+      "multipleAmount_one": "{{count}} receipt matches amount",
+      "multipleAmount_other": "{{count}} receipts match amount",
+      "multipleAmountUnknownCurrency_one": "{{count}} receipt matches amount (currency unverified)",
+      "multipleAmountUnknownCurrency_other": "{{count}} receipts match amount (currency unverified)",
+      "multipleFx_one": "{{count}} FX receipt within {{tolerance}}",
+      "multipleFx_other": "{{count}} FX receipts within {{tolerance}}",
+      "multipleFilename_one": "{{count}} receipt matches by filename",
+      "multipleFilename_other": "{{count}} receipts match by filename"
+    },
+    "dateUnknown": "Date unknown",
+    "noReceiptCategories": {
+      "bankFee": "Bank fee",
+      "salary": "Salary",
+      "transfer": "Transfer",
+      "refund": "Refund",
+      "noReceipt": "No receipt"
+    },
+    "actions": {
+      "preview": "Preview",
+      "rescan": "Rescan",
+      "accept": "Accept",
+      "reject": "Reject",
+      "assign": "Accept",
+      "dispute": "Dispute"
+    },
+    "rescanDone": "Receipt rescanned",
+    "reimbursements": {
+      "title": "Reimbursements",
+      "subtitle": "Receipts paid personally on company VAT — read-only.",
+      "total": "Total",
+      "empty": "No reimbursement receipts for this period.",
+      "rescanDone": "Reimbursement rescanned",
+      "rescanFailed": "Could not rescan reimbursement: {{msg}}"
+    }
+  },
+  "preview": {
+    "unavailable": "Preview not available for this file type.",
+    "openNewTab": "Open in new tab ↗"
+  },
+  "lang": {
+    "en": "English",
+    "pt": "Português"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "general": "General",
+      "folder": "Folder",
+      "gemini": "Gemini",
+      "rules": "Rules"
+    },
+    "busy": "The folder and Gemini settings can't change while a month is being processed.",
+    "readOnly": "These settings were saved by a newer version of Concilia and can't be changed here.",
+    "saveFailed": "Couldn't save the settings: {{message}}",
+    "general": {
+      "language": "Language",
+      "languageSystem": "Same as System",
+      "languageHint": "Also sets the language of the Excel report.",
+      "updates": "Check for updates automatically",
+      "version": "Version {{version}}",
+      "checkNow": "Check Now",
+      "checking": "Checking…",
+      "upToDate": "Concilia is up to date.",
+      "pdfTools": "PDF tools",
+      "pdfToolsBundled": "poppler {{version}}, included with Concilia",
+      "pdfToolsSystem": "poppler {{version}}"
+    },
+    "folder": {
+      "receiptsRoot": "Receipts folder",
+      "hint": "Holds one folder per year and month, such as 2030/03, each with a receipts folder inside.",
+      "notSet": "Not chosen",
+      "missing": "This folder no longer exists. Choose it again."
+    },
+    "gemini": {
+      "key": "Service account key",
+      "keyHint": "Concilia copies the key into the Keychain, so the file can be moved or deleted afterwards.",
+      "none": "No key imported",
+      "import": "Import Key File…",
+      "replace": "Replace…",
+      "removeTitle": "Remove the service account key?",
+      "removeMessage": "Concilia can't read receipts until you import a key again.",
+      "keyUnreadable": "Concilia can't read the stored key: {{message}}",
+      "project": "Project",
+      "projectFromKey": "{{project}} (from the key)",
+      "projectRequired": "Required",
+      "location": "Location",
+      "model": "Model",
+      "test": "Test Connection",
+      "testing": "Testing…",
+      "testOk": "Concilia reached Google with this key."
+    },
+    "rules": {
+      "title": "Match rules",
+      "description": "Rules run before automatic matching. A rule links a receipt to a transaction when the receipt's vendor or file name contains the receipt keyword and the transaction's description contains the transaction keyword. Case is ignored.",
+      "none": "No rules yet.",
+      "receipt": "Receipt keyword",
+      "transaction": "Transaction keyword",
+      "receiptPlaceholder": "e.g. acme",
+      "transactionPlaceholder": "e.g. acme corp",
+      "addRule": "Add Rule",
+      "deleteRule": "Delete Rule",
+      "saved": "Rules saved.",
+      "incomplete": "Fill in both keywords of every rule.",
+      "editRule": "Edit Rule"
+    }
+  },
+  "setup": {
+    "title": "Set up Concilia",
+    "intro": "Finish these steps in Settings before reconciling a month:",
+    "receipts_root": "Choose the folder that holds your receipts.",
+    "service_account": "Import a Google Cloud service account key for Gemini.",
+    "project": "Enter the Google Cloud project to bill.",
+    "openSettings": "Open Settings"
+  },
+  "update": {
+    "available": "Concilia {{version}} is available.",
+    "install": "Install and Relaunch",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading… {{percent}}%",
+    "installing": "Installing…",
+    "failed": "The update couldn't be installed: {{message}}"
+  },
+  "errors": {
+    "invalid_input": "{{message}}",
+    "not_found": "{{message}}",
+    "busy": "Another job is running for this month. Wait for it to finish and try again.",
+    "not_configured": "Finish the setup in Settings first: {{message}}.",
+    "keychain": "Concilia can't use the Keychain: {{message}}",
+    "unauthorized": "Google refused the service account. Check the key and the project, and that the Vertex AI API is enabled.",
+    "network": "Concilia can't reach the server. Check your internet connection.",
+    "poppler_missing": "The PDF tools Concilia needs are missing. Reinstall Concilia.",
+    "parse": "Concilia couldn't read the statement: {{message}}",
+    "finalized": "This month is finalized. Re-run it to scan for receipts again.",
+    "cancelled": "Stopped.",
+    "timeout": "The run took longer than 30 minutes and was stopped.",
+    "read_only": "The settings were saved by a newer version of Concilia and are read-only.",
+    "io": "Concilia couldn't read or write a file: {{message}}",
+    "internal": "Something went wrong: {{message}}",
+    "unknown": "Something went wrong."
+  }
+}

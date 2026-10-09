@@ -7,20 +7,29 @@
   "author": "Sérgio Santos",
   "license": "GPL-3.0-or-later",
   "scripts": {
+    "symbols": "node scripts/symbols.mjs",
+    "predev": "npm run symbols",
     "dev": "vite",
+    "prebuild": "npm run symbols",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "pretest": "npm run symbols",
     "test": "vitest run",
     "test:legacy": "node --test tests/worker/*.test.js",
+    "precoverage": "npm run symbols",
     "coverage": "vitest run --coverage",
+    "pretypecheck": "npm run symbols",
     "typecheck": "tsc --noEmit",
     "bundle:poppler": "./scripts/bundle-poppler.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "i18next": "^26.4.2",
+    "lucide-static": "^1.54.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.16"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

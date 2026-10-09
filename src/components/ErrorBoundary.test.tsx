@@ -38,11 +38,11 @@ describe("ErrorBoundary", () => {
         <Bomb />
       </ErrorBoundary>,
     );
-    expect(screen.getByRole("alert").textContent).toContain("Something went wrong in this view.");
+    expect(screen.getByRole("alert").textContent).toContain("Something went wrong.");
     expect(error.mock.calls.some((c) => c[0] === "view crashed")).toBe(true);
 
     shouldThrow = false;
-    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
     expect(screen.getByText("fine")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     error.mockRestore();
@@ -67,7 +67,7 @@ describe("ErrorBoundary", () => {
     );
     const before = mounts;
     shouldThrow = false;
-    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
     expect(mounts).toBeGreaterThan(before);
     error.mockRestore();
   });

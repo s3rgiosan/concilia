@@ -1,0 +1,107 @@
+.settings {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Pane switcher: icon above label, each pane in its own rounded button, a separator under it. */
+.toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.toolbar__tab {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 64px;
+  padding: 5px 7px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--label-secondary);
+  font-size: 11px;
+}
+
+.toolbar__tab--active {
+  border-color: var(--separator);
+  background: var(--control-fill);
+  color: var(--label);
+}
+
+.pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  padding: 20px 20px 18px;
+  overflow-y: auto;
+}
+
+.path {
+  max-width: 300px;
+  overflow: hidden;
+  color: var(--label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rules__table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: var(--radius-group);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+  overflow: hidden;
+}
+
+.rules__table th {
+  padding: 6px 12px;
+  color: var(--label-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.rules__table td {
+  padding: 6px 12px;
+  border-top: 0.5px solid var(--separator);
+  overflow-wrap: anywhere;
+}
+
+.rules__row--selected td {
+  background: var(--selection);
+}
+
+.rules__empty {
+  color: var(--label-secondary);
+  text-align: center;
+}
+
+.sheet__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sheet__field .field {
+  width: 100%;
+}
+
+.rules .add-remove {
+  align-self: flex-start;
+}

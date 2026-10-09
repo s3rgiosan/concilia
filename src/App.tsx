@@ -2,27 +2,32 @@
 import "./App.css";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { viewFromSearch } from "./lib/view";
 
 const Main = lazy(() => import("./main/Main").then((m) => ({ default: m.Main })));
-// Checks for the webview and the bundled tools; only on the dev server.
-const Spike = import.meta.env.DEV ? lazy(() => import("./dev/Spike").then((m) => ({ default: m.Spike }))) : null;
+const Settings = lazy(() => import("./settings/Settings").then((m) => ({ default: m.Settings })));
 
 function App() {
-  if (Spike && new URLSearchParams(window.location.search).get("view") === "spike") {
-    return (
-      <Suspense fallback={null}>
-        <Spike />
-      </Suspense>
-    );
+  const view = viewFromSearch(window.location.search);
+  switch (view) {
+    case "settings":
+      return (
+        <ErrorBoundary>
+          <Suspense fallback={null}>
+            <Settings />
+          </Suspense>
+        </ErrorBoundary>
+      );
+    case "main":
+    default:
+      return (
+        <ErrorBoundary>
+          <Suspense fallback={null}>
+            <Main />
+          </Suspense>
+        </ErrorBoundary>
+      );
   }
-
-  return (
-    <ErrorBoundary>
-      <Suspense fallback={null}>
-        <Main />
-      </Suspense>
-    </ErrorBoundary>
-  );
 }
 
 export default App;
