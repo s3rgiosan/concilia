@@ -153,7 +153,7 @@ export function Main() {
   }
 
   return (
-    <div className="main">
+    <div className={`main ${screen === "review" && state?.configured ? "main--review" : ""}`}>
       <UpdateBanner onError={report} />
       {loadError ? (
         <div className="banner banner--error" role="alert">

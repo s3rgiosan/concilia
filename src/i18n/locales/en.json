@@ -107,7 +107,7 @@
     "rerunHint": "Re-running moves sorted receipts back into the receipts folder and reads every receipt again."
   },
   "review": {
-    "title": "Review & Validate",
+    "title": "Review {{period}}",
     "empty": "No reconciliation data for this period yet. Run a reconciliation first.",
     "refreshFailed": "Could not refresh review data: {{msg}}",
     "draftSaveFailed": "Could not save draft: {{msg}}",
@@ -116,7 +116,7 @@
     "save": "Save",
     "scan": "Scan receipts",
     "downloadReport": "Download Report",
-    "finalize": "Finalize",
+    "finalize": "Finalize…",
     "changesSaved": "Changes saved",
     "saveFailed": "Could not save changes: {{msg}}",
     "scanFailed": "Scan failed: {{msg}}",
@@ -130,7 +130,7 @@
       "title": "Finalize reconciliation?",
       "body": "This will move every receipt file into _matched, _review, or _unmatched subfolders, regenerate the report, and delete your draft. The action cannot be undone.",
       "checkbox": "I understand this action is irreversible",
-      "cta": "Confirm",
+      "cta": "Finalize",
       "cancel": "Cancel"
     },
     "scanModal": {
@@ -164,7 +164,7 @@
       "unknownCurrencyMatch": "Amount match (currency unverified)",
       "filenameMatch": "Filename match — verify amounts",
       "manualMatch": "Manual match",
-      "ruleMatch": "Rule match",
+      "ruleMatch": "Rule match ({{vendor}})",
       "fxMatch": "FX match ({{detail}})",
       "multipleNameAmount_one": "{{count}} receipt matches name & amount",
       "multipleNameAmount_other": "{{count}} receipts match name & amount",
@@ -203,7 +203,23 @@
       "empty": "No reimbursement receipts for this period.",
       "rescanDone": "Reimbursement rescanned",
       "rescanFailed": "Could not rescan reimbursement: {{msg}}"
-    }
+    },
+    "search": "Search",
+    "back": "Back",
+    "saveState": {
+      "saving": "Saving…",
+      "saved": "All changes saved",
+      "failed": "Changes not saved: {{message}}"
+    },
+    "noReceiptMenu": "No Receipt Needed",
+    "previewEmpty": "Select a receipt to preview it.",
+    "openInPreview": "Open in Preview",
+    "lowConfidence": "low confidence",
+    "noCandidates": "No unmatched receipts left to assign.",
+    "finalizedNote": "This month is finalized. Changes here go into the report; re-run the month to sort receipts again.",
+    "scanTitle": "Scanning for new receipts",
+    "rescanFailed": "Could not rescan the receipt: {{message}}",
+    "candidatesTaken": "Every candidate was assigned to another transaction."
   },
   "preview": {
     "unavailable": "Preview not available for this file type.",

@@ -8,6 +8,10 @@
   overflow-y: auto;
 }
 
+.main--review {
+  overflow: hidden;
+}
+
 .setup {
   display: flex;
   flex: 1;

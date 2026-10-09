@@ -5,9 +5,9 @@
 // update, read-only, load-error, run-error.
 
 import { emit } from "@tauri-apps/api/event";
-import { mockIPC } from "@tauri-apps/api/mocks";
+import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
-import type { AppStateView, Missing, Rule, RunEvent, Settings, Summary, UpdateInfo } from "../lib/tauri";
+import type { AppStateView, Draft, Missing, ReceiptMeta, ReviewData, Rule, RunEvent, Settings, Summary, Transaction, UpdateInfo } from "../lib/tauri";
 
 const AVAILABLE_UPDATE: UpdateInfo = { version: "2.1.0", notes: "Fabricated release notes." };
 
@@ -27,6 +27,58 @@ const SUMMARY: Summary = {
   unmatchedReceipts: 3,
   matchRate: 74,
 };
+
+const ROOT = "/Users/example/Documents/Receipts";
+
+function receipt(name: string, cents: number | null, vendor: string | null, date: string | null, currency: string | null = "EUR"): ReceiptMeta {
+  return {
+    file: `${ROOT}/2030/03/receipts/${name}`,
+    amount_cents: cents,
+    confidence: cents === null ? null : "high",
+    currency,
+    vendor,
+    date,
+    provider_used: cents === null ? "error" : "gemini",
+    rel_path: `2030/03/receipts/${name}`,
+  };
+}
+
+function tx(index: number, date: string, description: string, cents: number, status: Transaction["status"], meta: ReceiptMeta[], notes: string): Transaction {
+  return {
+    id: `tx-${String(index).padStart(3, "0")}-${date}-${cents}`,
+    date,
+    description,
+    amount_cents: cents,
+    abs_cents: Math.abs(cents),
+    status,
+    receipt_files: meta.map((m) => m.file),
+    receipt_meta: meta,
+    notes,
+  };
+}
+
+function reviewData(): ReviewData {
+  const acme = receipt("acme-invoice.pdf", 1000, "ACME Corp", "2030-03-01");
+  const globexA = receipt("globex-a.pdf", 2500, "Globex", "2030-03-03");
+  const globexB = receipt("globex-b.pdf", 2500, "Globex", "2030-03-20");
+  const hooli = receipt("hooli.jpg", 4000, "Hooli", "2030-03-09");
+  const initech = receipt("initech-usd.pdf", 5200, "Initech", "2030-03-11", "USD");
+  const unreadable = receipt("scan-0001.pdf", null, null, null, null);
+  return {
+    transactions: [
+      tx(1, "2030-03-01", "ACME CORP", -1000, "MATCHED", [acme], "name_amount_match"),
+      tx(2, "2030-03-04", "GLOBEX ONLINE", -2500, "REVIEW", [globexA, globexB], "2 receipts match amount"),
+      tx(3, "2030-03-05", "EXAMPLE FEE", -100, "MATCHED", [], "bank_fee"),
+      tx(4, "2030-03-10", "HOOLI SERVICES", -4000, "UNMATCHED", [], ""),
+      tx(5, "2030-03-12", "INITECH", -4800, "REVIEW", [initech], "fx_match (USD ±10%)"),
+      tx(6, "2030-03-15", "TRANSFER FROM ACME", 50000, "UNMATCHED", [], ""),
+    ],
+    unmatched_receipts: [hooli, unreadable],
+    reimbursements: [
+      { ...receipt("taxi.pdf", 1250, "Taxi Co", "2030-03-07"), file: `${ROOT}/2030/03/reimbursements/taxi.pdf`, rel_path: "2030/03/reimbursements/taxi.pdf" },
+    ],
+  };
+}
 
 /** Replays a run's progress over a few seconds, stopping when `cancelled` turns true. */
 async function replay(channel: Channel<RunEvent>, scan: boolean, cancelled: () => boolean): Promise<void> {
@@ -71,6 +123,9 @@ export function install(): void {
     : [];
 
   let cancelRequested = false;
+  let draft: Draft = {};
+  let finalized = scenario === "applied";
+  mockConvertFileSrc("macos");
 
   function view(): AppStateView {
     const missing: Missing[] = [];
@@ -130,8 +185,31 @@ export function install(): void {
           return delay(200, rules);
         case "period_status": {
           const exists = scenario === "resume" || scenario === "applied";
-          return { exists, applied: scenario === "applied", has_transactions: exists, has_draft: scenario === "resume" };
+          return { exists, applied: finalized, has_transactions: exists, has_draft: Object.keys(draft).length > 0 };
         }
+        case "get_review":
+          return reviewData();
+        case "get_draft":
+          return draft;
+        case "save_draft":
+          draft = a.draft as Draft;
+          return delay(150, null);
+        case "delete_draft":
+          draft = {};
+          return null;
+        case "finalize":
+          draft = {};
+          finalized = true;
+          return delay(600, null);
+        case "rescan_receipt":
+        case "rescan_reimbursement": {
+          const relPath = String(a.relPath);
+          const all = [...reviewData().transactions.flatMap((t) => t.receipt_meta), ...reviewData().unmatched_receipts, ...reviewData().reimbursements];
+          const found = all.find((r) => r.rel_path === relPath);
+          return delay(900, found ? { ...found, amount_cents: found.amount_cents ?? 1500, confidence: "high", currency: found.currency ?? "EUR" } : null);
+        }
+        case "open_receipt":
+          return null;
         case "pick_statements":
           return delay(300, ["/Users/example/Downloads/extrato-2030-03.pdf"]);
         case "reconcile":

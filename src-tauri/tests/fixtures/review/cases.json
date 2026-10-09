@@ -1,0 +1,344 @@
+{
+  "result": {
+    "transactions": [
+      {
+        "id": "tx-001",
+        "date": "2030-03-01",
+        "description": "ACME CORP",
+        "amount_cents": -1000,
+        "abs_cents": 1000,
+        "status": "MATCHED",
+        "receipt_files": [
+          "/receipts/2030/03/receipts/acme.pdf"
+        ],
+        "receipt_meta": [
+          {
+            "file": "/receipts/2030/03/receipts/acme.pdf",
+            "amount_cents": 1000,
+            "confidence": "high",
+            "currency": "EUR",
+            "vendor": "ACME",
+            "date": null,
+            "provider_used": "gemini"
+          }
+        ],
+        "notes": "name_amount_match"
+      },
+      {
+        "id": "tx-002",
+        "date": "2030-03-02",
+        "description": "GLOBEX ONLINE",
+        "amount_cents": -2500,
+        "abs_cents": 2500,
+        "status": "REVIEW",
+        "receipt_files": [
+          "/receipts/2030/03/receipts/globex-a.pdf",
+          "/receipts/2030/03/receipts/globex-b.pdf"
+        ],
+        "receipt_meta": [
+          {
+            "file": "/receipts/2030/03/receipts/globex-a.pdf",
+            "amount_cents": 2500,
+            "confidence": "high",
+            "currency": "EUR",
+            "vendor": "Globex",
+            "date": null,
+            "provider_used": "gemini"
+          },
+          {
+            "file": "/receipts/2030/03/receipts/globex-b.pdf",
+            "amount_cents": 2500,
+            "confidence": "high",
+            "currency": "EUR",
+            "vendor": "Globex",
+            "date": null,
+            "provider_used": "gemini"
+          }
+        ],
+        "notes": "2 receipts match amount"
+      },
+      {
+        "id": "tx-003",
+        "date": "2030-03-03",
+        "description": "GLOBEX STORE",
+        "amount_cents": -2500,
+        "abs_cents": 2500,
+        "status": "REVIEW",
+        "receipt_files": [
+          "/receipts/2030/03/receipts/globex-a.pdf",
+          "/receipts/2030/03/receipts/globex-b.pdf"
+        ],
+        "receipt_meta": [
+          {
+            "file": "/receipts/2030/03/receipts/globex-a.pdf",
+            "amount_cents": 2500,
+            "confidence": "high",
+            "currency": "EUR",
+            "vendor": "Globex",
+            "date": null,
+            "provider_used": "gemini"
+          },
+          {
+            "file": "/receipts/2030/03/receipts/globex-b.pdf",
+            "amount_cents": 2500,
+            "confidence": "high",
+            "currency": "EUR",
+            "vendor": "Globex",
+            "date": null,
+            "provider_used": "gemini"
+          }
+        ],
+        "notes": "2 receipts match amount"
+      },
+      {
+        "id": "tx-004",
+        "date": "2030-03-04",
+        "description": "HOOLI",
+        "amount_cents": -4000,
+        "abs_cents": 4000,
+        "status": "UNMATCHED",
+        "receipt_files": [],
+        "receipt_meta": [],
+        "notes": ""
+      },
+      {
+        "id": "tx-005",
+        "date": "2030-03-05",
+        "description": "INITECH",
+        "amount_cents": -4800,
+        "abs_cents": 4800,
+        "status": "REVIEW",
+        "receipt_files": [
+          "/receipts/2030/03/receipts/initech.pdf"
+        ],
+        "receipt_meta": [
+          {
+            "file": "/receipts/2030/03/receipts/initech.pdf",
+            "amount_cents": 5200,
+            "confidence": "high",
+            "currency": "USD",
+            "vendor": "Initech",
+            "date": null,
+            "provider_used": "gemini"
+          }
+        ],
+        "notes": "fx_match (USD ±10%)"
+      }
+    ],
+    "receiptsByStatus": {
+      "matched": [
+        "/receipts/2030/03/receipts/acme.pdf"
+      ],
+      "review": [
+        "/receipts/2030/03/receipts/globex-a.pdf",
+        "/receipts/2030/03/receipts/globex-b.pdf",
+        "/receipts/2030/03/receipts/initech.pdf"
+      ],
+      "unmatched": [
+        "/receipts/2030/03/receipts/hooli.pdf"
+      ]
+    },
+    "unmatchedReceipts": [
+      {
+        "file": "/receipts/2030/03/receipts/hooli.pdf",
+        "amount_cents": 4000,
+        "confidence": "high",
+        "currency": "EUR",
+        "vendor": "Hooli",
+        "date": null,
+        "provider_used": "gemini"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "no decisions",
+      "draft": {},
+      "statuses": {
+        "tx-001": "MATCHED",
+        "tx-002": "REVIEW",
+        "tx-003": "REVIEW",
+        "tx-004": "UNMATCHED",
+        "tx-005": "REVIEW"
+      },
+      "pool": [
+        "/receipts/2030/03/receipts/hooli.pdf"
+      ]
+    },
+    {
+      "name": "confirming one candidate leaves the other to the other review",
+      "draft": {
+        "tx-002": {
+          "status": "MATCHED",
+          "receipt_meta": [
+            {
+              "file": "/receipts/2030/03/receipts/globex-a.pdf",
+              "amount_cents": 2500,
+              "confidence": "high",
+              "currency": "EUR",
+              "vendor": "Globex",
+              "date": null,
+              "provider_used": "gemini"
+            }
+          ],
+          "receipt_files": [
+            "/receipts/2030/03/receipts/globex-a.pdf"
+          ],
+          "notes": "2 receipts match amount"
+        }
+      },
+      "statuses": {
+        "tx-002": "MATCHED",
+        "tx-003": "REVIEW"
+      },
+      "pool": [
+        "/receipts/2030/03/receipts/hooli.pdf"
+      ]
+    },
+    {
+      "name": "both reviews confirmed with different candidates",
+      "draft": {
+        "tx-002": {
+          "status": "MATCHED",
+          "receipt_meta": [
+            {
+              "file": "/receipts/2030/03/receipts/globex-a.pdf",
+              "amount_cents": 2500,
+              "confidence": "high",
+              "currency": "EUR",
+              "vendor": "Globex",
+              "date": null,
+              "provider_used": "gemini"
+            }
+          ],
+          "receipt_files": [
+            "/receipts/2030/03/receipts/globex-a.pdf"
+          ],
+          "notes": "amount_match"
+        },
+        "tx-003": {
+          "status": "MATCHED",
+          "receipt_meta": [
+            {
+              "file": "/receipts/2030/03/receipts/globex-b.pdf",
+              "amount_cents": 2500,
+              "confidence": "high",
+              "currency": "EUR",
+              "vendor": "Globex",
+              "date": null,
+              "provider_used": "gemini"
+            }
+          ],
+          "receipt_files": [
+            "/receipts/2030/03/receipts/globex-b.pdf"
+          ],
+          "notes": "amount_match"
+        }
+      },
+      "statuses": {
+        "tx-002": "MATCHED",
+        "tx-003": "MATCHED"
+      },
+      "pool": [
+        "/receipts/2030/03/receipts/hooli.pdf"
+      ]
+    },
+    {
+      "name": "rejecting a match frees its receipt",
+      "draft": {
+        "tx-001": {
+          "status": "UNMATCHED",
+          "receipt_meta": [],
+          "receipt_files": [],
+          "notes": ""
+        }
+      },
+      "statuses": {
+        "tx-001": "UNMATCHED"
+      },
+      "pool": [
+        "/receipts/2030/03/receipts/hooli.pdf",
+        "/receipts/2030/03/receipts/acme.pdf"
+      ]
+    },
+    {
+      "name": "assigning claims a pool receipt",
+      "draft": {
+        "tx-004": {
+          "status": "MATCHED",
+          "receipt_meta": [
+            {
+              "file": "/receipts/2030/03/receipts/hooli.pdf",
+              "amount_cents": 4000,
+              "confidence": "high",
+              "currency": "EUR",
+              "vendor": "Hooli",
+              "date": null,
+              "provider_used": "gemini"
+            }
+          ],
+          "receipt_files": [
+            "/receipts/2030/03/receipts/hooli.pdf"
+          ],
+          "notes": "manual_match"
+        }
+      },
+      "statuses": {
+        "tx-004": "MATCHED"
+      },
+      "pool": []
+    },
+    {
+      "name": "a review marked as needing no receipt frees its candidate",
+      "draft": {
+        "tx-005": {
+          "status": "MATCHED",
+          "receipt_meta": [],
+          "receipt_files": [],
+          "notes": "transfer"
+        }
+      },
+      "statuses": {
+        "tx-005": "MATCHED"
+      },
+      "pool": [
+        "/receipts/2030/03/receipts/hooli.pdf",
+        "/receipts/2030/03/receipts/initech.pdf"
+      ]
+    },
+    {
+      "name": "rejecting every review frees every candidate",
+      "draft": {
+        "tx-002": {
+          "status": "UNMATCHED",
+          "receipt_meta": [],
+          "receipt_files": [],
+          "notes": ""
+        },
+        "tx-003": {
+          "status": "UNMATCHED",
+          "receipt_meta": [],
+          "receipt_files": [],
+          "notes": ""
+        },
+        "tx-005": {
+          "status": "UNMATCHED",
+          "receipt_meta": [],
+          "receipt_files": [],
+          "notes": ""
+        }
+      },
+      "statuses": {
+        "tx-002": "UNMATCHED",
+        "tx-003": "UNMATCHED",
+        "tx-005": "UNMATCHED"
+      },
+      "pool": [
+        "/receipts/2030/03/receipts/hooli.pdf",
+        "/receipts/2030/03/receipts/globex-a.pdf",
+        "/receipts/2030/03/receipts/globex-b.pdf",
+        "/receipts/2030/03/receipts/initech.pdf"
+      ]
+    }
+  ]
+}

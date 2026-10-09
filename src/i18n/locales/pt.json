@@ -107,7 +107,7 @@
     "rerunHint": "Voltar a executar devolve os recibos ordenados à pasta de recibos e volta a ler todos os recibos."
   },
   "review": {
-    "title": "Rever e validar",
+    "title": "Revisão de {{period}}",
     "empty": "Ainda não há dados de reconciliação para este período. Execute uma reconciliação primeiro.",
     "refreshFailed": "Não foi possível atualizar os dados de revisão: {{msg}}",
     "draftSaveFailed": "Não foi possível guardar o rascunho: {{msg}}",
@@ -116,7 +116,7 @@
     "save": "Guardar",
     "scan": "Examinar recibos",
     "downloadReport": "Descarregar relatório",
-    "finalize": "Finalizar",
+    "finalize": "Finalizar…",
     "changesSaved": "Alterações guardadas",
     "saveFailed": "Não foi possível guardar as alterações: {{msg}}",
     "scanFailed": "Verificação falhou: {{msg}}",
@@ -130,7 +130,7 @@
       "title": "Finalizar reconciliação?",
       "body": "Esta operação vai mover todos os recibos para subpastas _matched, _review ou _unmatched, regenerar o relatório e eliminar o rascunho. Esta ação não pode ser revertida.",
       "checkbox": "Compreendo que esta ação é irreversível",
-      "cta": "Confirmar",
+      "cta": "Finalizar",
       "cancel": "Cancelar"
     },
     "scanModal": {
@@ -164,7 +164,7 @@
       "unknownCurrencyMatch": "Valor coincidente (moeda não verificada)",
       "filenameMatch": "Nome de ficheiro — verificar valores",
       "manualMatch": "Associação manual",
-      "ruleMatch": "Regra de correspondência",
+      "ruleMatch": "Regra de associação ({{vendor}})",
       "fxMatch": "Correspondência FX ({{detail}})",
       "multipleNameAmount_one": "{{count}} recibo coincide em nome e valor",
       "multipleNameAmount_other": "{{count}} recibos coincidem em nome e valor",
@@ -203,7 +203,23 @@
       "empty": "Sem recibos de reembolso neste período.",
       "rescanDone": "Reembolso reanalisado",
       "rescanFailed": "Falha ao reanalisar reembolso: {{msg}}"
-    }
+    },
+    "search": "Pesquisar",
+    "back": "Voltar",
+    "saveState": {
+      "saving": "A guardar…",
+      "saved": "Todas as alterações guardadas",
+      "failed": "Alterações não guardadas: {{message}}"
+    },
+    "noReceiptMenu": "Sem recibo necessário",
+    "previewEmpty": "Selecione um recibo para o pré-visualizar.",
+    "openInPreview": "Abrir na Pré-visualização",
+    "lowConfidence": "confiança baixa",
+    "noCandidates": "Não há recibos por associar.",
+    "finalizedNote": "Este mês está finalizado. As alterações aqui entram no relatório; volte a executar o mês para ordenar os recibos novamente.",
+    "scanTitle": "A procurar novos recibos",
+    "rescanFailed": "Não foi possível voltar a ler o recibo: {{message}}",
+    "candidatesTaken": "Todos os candidatos foram associados a outra transação."
   },
   "preview": {
     "unavailable": "Pré-visualização indisponível para este tipo de ficheiro.",
