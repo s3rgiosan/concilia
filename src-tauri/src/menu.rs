@@ -1,0 +1,583 @@
+//! The native menu bar. The frontend sends the localized labels and which items are enabled;
+//! item clicks go back to the main window as `menu` events, except the few handled here.
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use serde::Deserialize;
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, SubmenuBuilder};
+use tauri::{AppHandle, Wry};
+
+/// Event sent to the main window when a menu item is chosen; the payload is `{ "id": … }`.
+pub const MENU_EVENT: &str = "menu";
+
+pub const HELP_URL: &str = "https://github.com/s3rgiosan/concilia#readme";
+
+pub const SETTINGS: &str = "settings";
+pub const CHECK_UPDATES: &str = "check_updates";
+pub const NEW_MONTH: &str = "new_month";
+pub const ADD_STATEMENTS: &str = "add_statements";
+pub const EXPORT_REPORT: &str = "export_report";
+pub const OPEN_REPORT: &str = "open_report";
+pub const REVEAL_PERIOD: &str = "reveal_period";
+pub const UNDO: &str = "undo";
+pub const REDO: &str = "redo";
+pub const FIND: &str = "find";
+pub const FILTER_ALL: &str = "filter_all";
+pub const FILTER_REVIEW: &str = "filter_review";
+pub const FILTER_UNMATCHED: &str = "filter_unmatched";
+pub const FILTER_MATCHED: &str = "filter_matched";
+pub const TOGGLE_SIDEBAR: &str = "toggle_sidebar";
+pub const TOGGLE_INSPECTOR: &str = "toggle_inspector";
+pub const RECONCILE: &str = "reconcile";
+pub const SCAN: &str = "scan";
+pub const RERUN: &str = "rerun";
+pub const FINALIZE: &str = "finalize";
+pub const ACCEPT: &str = "accept";
+pub const REJECT: &str = "reject";
+pub const NO_RECEIPT: &str = "no_receipt";
+pub const NO_RECEIPT_BANK_FEE: &str = "no_receipt_bank_fee";
+pub const NO_RECEIPT_SALARY: &str = "no_receipt_salary";
+pub const NO_RECEIPT_TRANSFER: &str = "no_receipt_transfer";
+pub const NO_RECEIPT_REFUND: &str = "no_receipt_refund";
+pub const NO_RECEIPT_NO_RECEIPT: &str = "no_receipt_no_receipt";
+pub const RESCAN: &str = "rescan";
+pub const QUICK_LOOK: &str = "quick_look";
+pub const OPEN_IN_PREVIEW: &str = "open_in_preview";
+pub const NEXT_PENDING: &str = "next_pending";
+pub const PREVIOUS_PENDING: &str = "previous_pending";
+pub const HELP: &str = "help";
+
+/// Menu titles and the labels of predefined items. `{app}` stands for the app name.
+pub const MENU_FILE: &str = "menu_file";
+pub const MENU_EDIT: &str = "menu_edit";
+pub const MENU_VIEW: &str = "menu_view";
+pub const MENU_MONTH: &str = "menu_month";
+pub const MENU_TRANSACTION: &str = "menu_transaction";
+pub const MENU_GO: &str = "menu_go";
+pub const MENU_WINDOW: &str = "menu_window";
+pub const MENU_HELP: &str = "menu_help";
+pub const ABOUT: &str = "about";
+pub const SERVICES: &str = "services";
+pub const HIDE: &str = "hide";
+pub const HIDE_OTHERS: &str = "hide_others";
+pub const SHOW_ALL: &str = "show_all";
+pub const QUIT: &str = "quit";
+pub const CUT: &str = "cut";
+pub const COPY: &str = "copy";
+pub const PASTE: &str = "paste";
+pub const SELECT_ALL: &str = "select_all";
+pub const MINIMIZE: &str = "minimize";
+pub const ZOOM: &str = "zoom";
+pub const CLOSE_WINDOW: &str = "close_window";
+
+/// Ids of the items and submenus the frontend can enable or disable and that send events.
+pub const ITEM_IDS: &[&str] = &[
+    SETTINGS,
+    CHECK_UPDATES,
+    NEW_MONTH,
+    ADD_STATEMENTS,
+    EXPORT_REPORT,
+    OPEN_REPORT,
+    REVEAL_PERIOD,
+    UNDO,
+    REDO,
+    FIND,
+    FILTER_ALL,
+    FILTER_REVIEW,
+    FILTER_UNMATCHED,
+    FILTER_MATCHED,
+    TOGGLE_SIDEBAR,
+    TOGGLE_INSPECTOR,
+    RECONCILE,
+    SCAN,
+    RERUN,
+    FINALIZE,
+    ACCEPT,
+    REJECT,
+    NO_RECEIPT,
+    NO_RECEIPT_BANK_FEE,
+    NO_RECEIPT_SALARY,
+    NO_RECEIPT_TRANSFER,
+    NO_RECEIPT_REFUND,
+    NO_RECEIPT_NO_RECEIPT,
+    RESCAN,
+    QUICK_LOOK,
+    OPEN_IN_PREVIEW,
+    NEXT_PENDING,
+    PREVIOUS_PENDING,
+    HELP,
+];
+
+/// Keys of labels that are not item ids.
+pub const EXTRA_LABEL_KEYS: &[&str] = &[
+    MENU_FILE,
+    MENU_EDIT,
+    MENU_VIEW,
+    MENU_MONTH,
+    MENU_TRANSACTION,
+    MENU_GO,
+    MENU_WINDOW,
+    MENU_HELP,
+    ABOUT,
+    SERVICES,
+    HIDE,
+    HIDE_OTHERS,
+    SHOW_ALL,
+    QUIT,
+    CUT,
+    COPY,
+    PASTE,
+    SELECT_ALL,
+    MINIMIZE,
+    ZOOM,
+    CLOSE_WINDOW,
+];
+
+/// The English label for a key, or an empty string for an unknown key.
+fn english(key: &str) -> &'static str {
+    match key {
+        SETTINGS => "Settings…",
+        CHECK_UPDATES => "Check for Updates…",
+        NEW_MONTH => "New Month…",
+        ADD_STATEMENTS => "Add Statements…",
+        EXPORT_REPORT => "Export Report…",
+        OPEN_REPORT => "Open Report",
+        REVEAL_PERIOD => "Show in Finder",
+        UNDO => "Undo",
+        REDO => "Redo",
+        FIND => "Find…",
+        FILTER_ALL => "All",
+        FILTER_REVIEW => "Needs Review",
+        FILTER_UNMATCHED => "Unmatched",
+        FILTER_MATCHED => "Matched",
+        TOGGLE_SIDEBAR => "Show/Hide Sidebar",
+        TOGGLE_INSPECTOR => "Show/Hide Inspector",
+        RECONCILE => "Reconcile",
+        SCAN => "Scan for New Receipts",
+        RERUN => "Re-run…",
+        FINALIZE => "Finalize…",
+        ACCEPT => "Accept Receipt",
+        REJECT => "Reject",
+        NO_RECEIPT => "No Receipt Needed",
+        NO_RECEIPT_BANK_FEE => "Bank Fee",
+        NO_RECEIPT_SALARY => "Salary",
+        NO_RECEIPT_TRANSFER => "Transfer",
+        NO_RECEIPT_REFUND => "Refund",
+        NO_RECEIPT_NO_RECEIPT => "No Receipt",
+        RESCAN => "Rescan Receipt",
+        QUICK_LOOK => "Quick Look",
+        OPEN_IN_PREVIEW => "Open in Preview",
+        NEXT_PENDING => "Next Needing Decision",
+        PREVIOUS_PENDING => "Previous Needing Decision",
+        HELP => "Concilia Help",
+        MENU_FILE => "File",
+        MENU_EDIT => "Edit",
+        MENU_VIEW => "View",
+        MENU_MONTH => "Month",
+        MENU_TRANSACTION => "Transaction",
+        MENU_GO => "Go",
+        MENU_WINDOW => "Window",
+        MENU_HELP => "Help",
+        ABOUT => "About {app}",
+        SERVICES => "Services",
+        HIDE => "Hide {app}",
+        HIDE_OTHERS => "Hide Others",
+        SHOW_ALL => "Show All",
+        QUIT => "Quit {app}",
+        CUT => "Cut",
+        COPY => "Copy",
+        PASTE => "Paste",
+        SELECT_ALL => "Select All",
+        MINIMIZE => "Minimize",
+        ZOOM => "Zoom",
+        CLOSE_WINDOW => "Close Window",
+        _ => "",
+    }
+}
+
+/// Menu labels by key (an item id or one of `EXTRA_LABEL_KEYS`). Missing or empty entries
+/// fall back to English.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct MenuLabels(HashMap<String, String>);
+
+impl MenuLabels {
+    pub fn new(labels: HashMap<String, String>) -> MenuLabels {
+        MenuLabels(labels)
+    }
+
+    /// The label for `key` with `{app}` replaced by `app_name`.
+    pub fn label(&self, key: &str, app_name: &str) -> String {
+        let text = self
+            .0
+            .get(key)
+            .map(String::as_str)
+            .filter(|text| !text.is_empty())
+            .unwrap_or_else(|| english(key));
+        text.replace("{app}", app_name)
+    }
+}
+
+/// How a chosen menu item is handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Route {
+    Settings,
+    CheckUpdates,
+    Help,
+    /// Sent to the main window as a `menu` event.
+    Frontend,
+}
+
+pub fn route(id: &str) -> Route {
+    match id {
+        SETTINGS => Route::Settings,
+        CHECK_UPDATES => Route::CheckUpdates,
+        HELP => Route::Help,
+        _ => Route::Frontend,
+    }
+}
+
+/// Keeps only the entries of `enabled` that name a known item.
+pub fn known_states(enabled: HashMap<String, bool>) -> HashMap<String, bool> {
+    enabled
+        .into_iter()
+        .filter(|(id, _)| ITEM_IDS.contains(&id.as_str()))
+        .collect()
+}
+
+enum Handle {
+    Item(MenuItem<Wry>),
+    Submenu(Submenu<Wry>),
+}
+
+impl Handle {
+    fn set_enabled(&self, enabled: bool) -> tauri::Result<()> {
+        match self {
+            Handle::Item(item) => item.set_enabled(enabled),
+            Handle::Submenu(submenu) => submenu.set_enabled(enabled),
+        }
+    }
+}
+
+/// The handles of the current menu's items and the enabled flags the frontend asked for.
+#[derive(Default)]
+pub struct MenuState {
+    inner: Mutex<Inner>,
+}
+
+#[derive(Default)]
+struct Inner {
+    handles: HashMap<String, Handle>,
+    enabled: HashMap<String, bool>,
+}
+
+impl MenuState {
+    fn install(&self, handles: HashMap<String, Handle>) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        for (id, handle) in &handles {
+            if let Some(enabled) = inner.enabled.get(id) {
+                let _ = handle.set_enabled(*enabled);
+            }
+        }
+        inner.handles = handles;
+    }
+
+    fn set_enabled(&self, enabled: HashMap<String, bool>) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        for (id, value) in known_states(enabled) {
+            if let Some(handle) = inner.handles.get(&id) {
+                let _ = handle.set_enabled(value);
+            }
+            inner.enabled.insert(id, value);
+        }
+    }
+}
+
+struct Builder<'a> {
+    app: &'a AppHandle,
+    labels: &'a MenuLabels,
+    name: String,
+    handles: HashMap<String, Handle>,
+}
+
+impl Builder<'_> {
+    fn text(&self, key: &str) -> String {
+        self.labels.label(key, &self.name)
+    }
+
+    fn item(&mut self, id: &str, accelerator: Option<&str>) -> tauri::Result<MenuItem<Wry>> {
+        let item = MenuItem::with_id(self.app, id, self.text(id), true, accelerator)?;
+        self.handles
+            .insert(id.to_string(), Handle::Item(item.clone()));
+        Ok(item)
+    }
+
+    fn submenu(
+        &self,
+        key: &str,
+        items: &[&dyn tauri::menu::IsMenuItem<Wry>],
+    ) -> tauri::Result<Submenu<Wry>> {
+        Submenu::with_items(self.app, self.text(key), true, items)
+    }
+
+    fn separator(&self) -> tauri::Result<PredefinedMenuItem<Wry>> {
+        PredefinedMenuItem::separator(self.app)
+    }
+}
+
+/// Builds the menu bar and the handles of its items.
+fn build(
+    app: &AppHandle,
+    labels: &MenuLabels,
+) -> tauri::Result<(Menu<Wry>, HashMap<String, Handle>)> {
+    let name = app.package_info().name.clone();
+    let mut b = Builder {
+        app,
+        labels,
+        name: name.clone(),
+        handles: HashMap::new(),
+    };
+
+    let about = AboutMetadata {
+        name: Some(name.clone()),
+        version: Some(app.package_info().version.to_string()),
+        ..Default::default()
+    };
+    let check_updates = b.item(CHECK_UPDATES, None)?;
+    let settings = b.item(SETTINGS, Some("CmdOrCtrl+,"))?;
+    let app_menu = Submenu::with_items(
+        app,
+        &name,
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some(&b.text(ABOUT)), Some(about))?,
+            &check_updates,
+            &b.separator()?,
+            &settings,
+            &b.separator()?,
+            &PredefinedMenuItem::services(app, Some(&b.text(SERVICES)))?,
+            &b.separator()?,
+            &PredefinedMenuItem::hide(app, Some(&b.text(HIDE)))?,
+            &PredefinedMenuItem::hide_others(app, Some(&b.text(HIDE_OTHERS)))?,
+            &PredefinedMenuItem::show_all(app, Some(&b.text(SHOW_ALL)))?,
+            &b.separator()?,
+            &PredefinedMenuItem::quit(app, Some(&b.text(QUIT)))?,
+        ],
+    )?;
+
+    let new_month = b.item(NEW_MONTH, Some("CmdOrCtrl+N"))?;
+    let add_statements = b.item(ADD_STATEMENTS, Some("CmdOrCtrl+O"))?;
+    let export_report = b.item(EXPORT_REPORT, Some("CmdOrCtrl+Shift+E"))?;
+    let open_report = b.item(OPEN_REPORT, None)?;
+    let reveal_period = b.item(REVEAL_PERIOD, None)?;
+    let file_menu = b.submenu(
+        MENU_FILE,
+        &[
+            &new_month,
+            &add_statements,
+            &b.separator()?,
+            &export_report,
+            &open_report,
+            &reveal_period,
+            &b.separator()?,
+            &PredefinedMenuItem::close_window(app, Some(&b.text(CLOSE_WINDOW)))?,
+        ],
+    )?;
+
+    let undo = b.item(UNDO, Some("CmdOrCtrl+Z"))?;
+    let redo = b.item(REDO, Some("CmdOrCtrl+Shift+Z"))?;
+    let find = b.item(FIND, Some("CmdOrCtrl+F"))?;
+    let edit_menu = b.submenu(
+        MENU_EDIT,
+        &[
+            &undo,
+            &redo,
+            &b.separator()?,
+            &PredefinedMenuItem::cut(app, Some(&b.text(CUT)))?,
+            &PredefinedMenuItem::copy(app, Some(&b.text(COPY)))?,
+            &PredefinedMenuItem::paste(app, Some(&b.text(PASTE)))?,
+            &PredefinedMenuItem::select_all(app, Some(&b.text(SELECT_ALL)))?,
+            &b.separator()?,
+            &find,
+        ],
+    )?;
+
+    let filter_all = b.item(FILTER_ALL, Some("CmdOrCtrl+1"))?;
+    let filter_review = b.item(FILTER_REVIEW, Some("CmdOrCtrl+2"))?;
+    let filter_unmatched = b.item(FILTER_UNMATCHED, Some("CmdOrCtrl+3"))?;
+    let filter_matched = b.item(FILTER_MATCHED, Some("CmdOrCtrl+4"))?;
+    let toggle_sidebar = b.item(TOGGLE_SIDEBAR, Some("Ctrl+Cmd+S"))?;
+    let toggle_inspector = b.item(TOGGLE_INSPECTOR, Some("CmdOrCtrl+Alt+I"))?;
+    let view_menu = b.submenu(
+        MENU_VIEW,
+        &[
+            &filter_all,
+            &filter_review,
+            &filter_unmatched,
+            &filter_matched,
+            &b.separator()?,
+            &toggle_sidebar,
+            &toggle_inspector,
+        ],
+    )?;
+
+    let reconcile = b.item(RECONCILE, Some("CmdOrCtrl+R"))?;
+    let scan = b.item(SCAN, Some("CmdOrCtrl+Shift+R"))?;
+    let rerun = b.item(RERUN, None)?;
+    let finalize = b.item(FINALIZE, None)?;
+    let month_menu = b.submenu(
+        MENU_MONTH,
+        &[&reconcile, &scan, &b.separator()?, &rerun, &finalize],
+    )?;
+
+    let accept = b.item(ACCEPT, Some("CmdOrCtrl+Enter"))?;
+    let reject = b.item(REJECT, Some("CmdOrCtrl+Backspace"))?;
+    let no_receipt_items = [
+        b.item(NO_RECEIPT_BANK_FEE, None)?,
+        b.item(NO_RECEIPT_SALARY, None)?,
+        b.item(NO_RECEIPT_TRANSFER, None)?,
+        b.item(NO_RECEIPT_REFUND, None)?,
+        b.item(NO_RECEIPT_NO_RECEIPT, None)?,
+    ];
+    let mut no_receipt = SubmenuBuilder::with_id(app, NO_RECEIPT, b.text(NO_RECEIPT));
+    for item in &no_receipt_items {
+        no_receipt = no_receipt.item(item);
+    }
+    let no_receipt = no_receipt.build()?;
+    b.handles
+        .insert(NO_RECEIPT.to_string(), Handle::Submenu(no_receipt.clone()));
+    let rescan = b.item(RESCAN, Some("CmdOrCtrl+Alt+R"))?;
+    let quick_look = b.item(QUICK_LOOK, Some("CmdOrCtrl+Y"))?;
+    let open_in_preview = b.item(OPEN_IN_PREVIEW, Some("CmdOrCtrl+Alt+O"))?;
+    let transaction_menu = b.submenu(
+        MENU_TRANSACTION,
+        &[
+            &accept,
+            &reject,
+            &no_receipt,
+            &b.separator()?,
+            &rescan,
+            &quick_look,
+            &open_in_preview,
+        ],
+    )?;
+
+    let next_pending = b.item(NEXT_PENDING, Some("CmdOrCtrl+]"))?;
+    let previous_pending = b.item(PREVIOUS_PENDING, Some("CmdOrCtrl+["))?;
+    let go_menu = b.submenu(MENU_GO, &[&next_pending, &previous_pending])?;
+
+    let window_menu = b.submenu(
+        MENU_WINDOW,
+        &[
+            &PredefinedMenuItem::minimize(app, Some(&b.text(MINIMIZE)))?,
+            &PredefinedMenuItem::maximize(app, Some(&b.text(ZOOM)))?,
+        ],
+    )?;
+
+    let help = b.item(HELP, None)?;
+    let help_menu = b.submenu(MENU_HELP, &[&help])?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &month_menu,
+            &transaction_menu,
+            &go_menu,
+            &window_menu,
+            &help_menu,
+        ],
+    )?;
+    Ok((menu, b.handles))
+}
+
+/// Sets the menu bar with the given labels and keeps the item handles in `MenuState`.
+pub fn apply(app: &AppHandle, state: &MenuState, labels: &MenuLabels) -> tauri::Result<()> {
+    let (menu, handles) = build(app, labels)?;
+    app.set_menu(menu)?;
+    state.install(handles);
+    Ok(())
+}
+
+/// Rebuilds the menu bar with labels from the frontend.
+#[tauri::command]
+pub fn set_menu(
+    app: AppHandle,
+    state: tauri::State<'_, MenuState>,
+    labels: MenuLabels,
+) -> Result<(), String> {
+    apply(&app, &state, &labels).map_err(|e| e.to_string())
+}
+
+/// Enables or disables items by id; unknown ids are ignored.
+#[tauri::command]
+pub fn set_menu_state(state: tauri::State<'_, MenuState>, enabled: HashMap<String, bool>) {
+    state.set_enabled(enabled);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn every_id_and_key_has_an_english_label() {
+        for key in ITEM_IDS.iter().chain(EXTRA_LABEL_KEYS) {
+            assert!(!english(key).is_empty(), "{key}");
+        }
+    }
+
+    #[test]
+    fn ids_and_keys_are_unique() {
+        let all: Vec<&&str> = ITEM_IDS.iter().chain(EXTRA_LABEL_KEYS).collect();
+        let unique: HashSet<&&str> = all.iter().copied().collect();
+        assert_eq!(all.len(), unique.len());
+    }
+
+    #[test]
+    fn missing_or_empty_labels_fall_back_to_english() {
+        let labels = MenuLabels::new(HashMap::from([
+            (RECONCILE.to_string(), "Conciliar".to_string()),
+            (SCAN.to_string(), String::new()),
+        ]));
+        assert_eq!(labels.label(RECONCILE, "Concilia"), "Conciliar");
+        assert_eq!(labels.label(SCAN, "Concilia"), "Scan for New Receipts");
+        assert_eq!(labels.label(FINALIZE, "Concilia"), "Finalize…");
+    }
+
+    #[test]
+    fn labels_insert_the_app_name() {
+        let labels = MenuLabels::default();
+        assert_eq!(labels.label(QUIT, "Concilia"), "Quit Concilia");
+        assert_eq!(labels.label(ABOUT, "Concilia"), "About Concilia");
+    }
+
+    #[test]
+    fn labels_deserialize_from_a_flat_map() {
+        let labels: MenuLabels = serde_json::from_str(r#"{"menu_file":"Ficheiro"}"#).unwrap();
+        assert_eq!(labels.label(MENU_FILE, "Concilia"), "Ficheiro");
+        assert_eq!(labels.label(MENU_EDIT, "Concilia"), "Edit");
+    }
+
+    #[test]
+    fn state_map_ignores_unknown_ids() {
+        let known = known_states(HashMap::from([
+            (RECONCILE.to_string(), false),
+            ("bogus".to_string(), true),
+        ]));
+        assert_eq!(known, HashMap::from([(RECONCILE.to_string(), false)]));
+    }
+
+    #[test]
+    fn routes_rust_handled_ids() {
+        assert_eq!(route(SETTINGS), Route::Settings);
+        assert_eq!(route(CHECK_UPDATES), Route::CheckUpdates);
+        assert_eq!(route(HELP), Route::Help);
+        assert_eq!(route(RECONCILE), Route::Frontend);
+        assert_eq!(route("anything"), Route::Frontend);
+    }
+}

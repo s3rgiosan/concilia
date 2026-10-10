@@ -3,6 +3,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isAppStateView } from "./guards";
 
 export type Language = "en" | "pt";
@@ -56,6 +57,20 @@ export interface PeriodStatus {
   applied: boolean;
   has_transactions: boolean;
   has_draft: boolean;
+}
+
+/** Where a month stands: no data, receipts or transactions found, matched, or finalized. */
+export type PeriodState = "empty" | "ready" | "in_review" | "finalized";
+
+/** A month folder under the receipts root, as `list_periods` reports it. */
+export interface PeriodSummary {
+  year: string;
+  month: string;
+  status: PeriodState;
+  receipts: number;
+  transactions: number;
+  /** Transactions still needing a decision; only in review. */
+  pending: number;
 }
 
 export type RunEvent =
@@ -190,6 +205,11 @@ export function periodStatus(year: string, month: string): Promise<PeriodStatus>
   return invoke<PeriodStatus>("period_status", { year, month });
 }
 
+/** The month folders under the receipts root, newest first. */
+export function listPeriods(): Promise<PeriodSummary[]> {
+  return invoke<PeriodSummary[]>("list_periods");
+}
+
 /** The statement PDFs picked; empty when the dialog was cancelled. */
 export function pickStatements(): Promise<string[]> {
   return invoke<string[]>("pick_statements");
@@ -294,6 +314,11 @@ export function pendingUpdate(): Promise<UpdateInfo | null> {
 /** Downloads and installs the pending update; the app relaunches when it succeeds. */
 export function installUpdate(): Promise<void> {
   return invoke("install_update");
+}
+
+/** Sets the title of the window this page runs in, as the Window menu and Mission Control show it. */
+export function setWindowTitle(title: string): Promise<void> {
+  return getCurrentWindow().setTitle(title);
 }
 
 export function appVersion(): Promise<string> {

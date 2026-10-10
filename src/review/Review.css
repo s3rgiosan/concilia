@@ -13,16 +13,9 @@
   gap: 10px;
 }
 
-.review__title {
-  flex: 1;
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 .review__search {
   width: 180px;
+  margin-left: auto;
 }
 
 .segmented__count {

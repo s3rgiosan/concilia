@@ -141,6 +141,20 @@ pub fn period_status(
     Ok(pipeline::period_status(&paths))
 }
 
+/// The month folders under the receipts root, newest first.
+#[tauri::command]
+pub async fn list_periods(
+    state: State<'_, Arc<AppState>>,
+) -> CommandResult<Vec<pipeline::PeriodSummary>> {
+    let root = state.receipts_root().ok_or_else(|| {
+        fail(CommandError::new(
+            ErrorKind::NotConfigured,
+            "choose the receipts folder in Settings",
+        ))
+    })?;
+    blocking(move || pipeline::list_periods(&root)).await
+}
+
 /// Asks for bank statement PDFs. Returns their paths; empty when the dialog was cancelled.
 #[tauri::command]
 pub async fn pick_statements(app: AppHandle) -> CommandResult<Vec<String>> {

@@ -35,7 +35,6 @@
     "matching": "Matching",
     "generatingReport": "Generating report",
     "receiptsFound": "{{count}} found",
-    "scanTitle": "Scanning {{period}}",
     "reimbursements": "Reading reimbursements",
     "savedTransactions": "using the saved transactions",
     "cancel": "Cancel",
@@ -43,46 +42,73 @@
     "filesFound_one": "{{count}} file",
     "filesFound_other": "{{count}} files"
   },
-  "results": {
-    "title": "{{period}} reconciled",
-    "subtitle": "{{totalTransactions}} transactions · {{totalReceipts}} receipts",
-    "matched": "Matched",
-    "review": "Review",
-    "unmatched": "Unmatched",
-    "bankFees": "Bank fees",
-    "matchRate": "{{matchRate}}% match rate",
-    "needsAttention": "needs attention",
-    "noReceipt": "no receipt",
-    "autoDetected": "auto-detected",
-    "downloadReport": "Download Report",
-    "reviewAndValidate": "Review & Validate",
-    "newReconciliation": "New Reconciliation",
-    "failed": "Reconciliation failed",
-    "tryAgain": "Try Again",
-    "connectionClosed": "Connection closed unexpectedly. Please try again.",
-    "scanTitle": "{{period}} scanned",
-    "saveReport": "Save Report…",
+  "toolbar": {
+    "showSidebar": "Show Sidebar",
+    "hideSidebar": "Hide Sidebar",
+    "moreActions": "More Actions"
+  },
+  "sidebar": {
+    "months": "Months",
+    "newMonth": "New Month…"
+  },
+  "month": {
+    "status": {
+      "empty": "No receipts",
+      "ready": "Ready",
+      "readyReceipts_one": "Ready · {{count}} receipt",
+      "readyReceipts_other": "Ready · {{count}} receipts",
+      "inReview": "In review",
+      "inReviewPending_one": "In review · {{count}} left",
+      "inReviewPending_other": "In review · {{count}} left",
+      "finalized": "Finalized",
+      "reconciling": "Reconciling…"
+    },
+    "summary": "{{totalTransactions}} transactions · {{totalReceipts}} receipts · {{matchRate}}% matched",
+    "dropHint": "Drop {{month}}'s bank statements here",
+    "statements": "Bank statements",
+    "addStatements": "Add Statements…",
+    "bank": "Bank",
+    "removeStatement": "Remove {{name}}",
+    "notPdf": "Only PDF files can be added.",
+    "receiptsHint": "Put this month's receipts in {{path}}",
+    "showInFinder": "Show in Finder",
     "openReport": "Open Report",
-    "reveal": "Show in Finder",
-    "reportSaved": "Report saved to {{path}}.",
-    "stopped": "The reconciliation was stopped.",
-    "droppedTitle": "Some review decisions were removed because their receipts are gone:"
+    "reconcile": "Reconcile",
+    "rerun": "Re-run…",
+    "stopped": "The reconciliation was stopped."
+  },
+  "newMonth": {
+    "title": "New Month",
+    "create": "Create"
+  },
+  "rerun": {
+    "title": "Re-run {{period}}?",
+    "message": "Sorted receipts move back into the receipts folder and Gemini reads every receipt again.",
+    "confirm": "Re-run"
+  },
+  "welcome": {
+    "title": "Welcome to Concilia",
+    "intro": "Choose the folder that holds your receipts and import a Gemini key. Then add a month's bank statements to reconcile it.",
+    "receiptsFolder": "Receipts folder",
+    "notChosen": "Not chosen",
+    "geminiKey": "Gemini key",
+    "notImported": "Not imported",
+    "imported": "Imported",
+    "import": "Import…",
+    "project": "Google Cloud project",
+    "projectMissing": "Required",
+    "openSettings": "Open Settings",
+    "layoutTitle": "Keep each month's receipts in a folder like this:",
+    "layoutRoot": "Receipts",
+    "layoutNote": "this month's receipts"
+  },
+  "results": {
+    "saveReport": "Save Report…",
+    "reportSaved": "Report saved to {{path}}."
   },
   "form": {
-    "title": "Reconcile a month",
-    "subtitle": "Select the period and upload bank statements",
     "year": "Year",
     "month": "Month",
-    "bankStatements": "Bank Statements",
-    "dropzone": "Drop PDF files here or",
-    "browse": "browse",
-    "addStatement": "Add statement",
-    "run": "Reconcile",
-    "priorApplied": "This month is finalized.",
-    "priorUnfinished": "This month has a reconciliation in progress.",
-    "resumeReview": "Resume Review",
-    "rerunFromScratch": "Re-run from scratch",
-    "rerun": "Re-run",
     "months": {
       "01": "January",
       "02": "February",
@@ -97,14 +123,7 @@
       "11": "November",
       "12": "December"
     },
-    "statements": "Bank statements",
-    "dropHint": "Drop statement PDFs here",
-    "addStatements": "Add Statements…",
-    "bank": "Bank",
-    "removeStatement": "Remove {{name}}",
-    "notPdf": "Only PDF files can be added.",
-    "scan": "Scan for New Receipts",
-    "rerunHint": "Re-running moves sorted receipts back into the receipts folder and reads every receipt again."
+    "scan": "Scan for New Receipts"
   },
   "review": {
     "title": "Review {{period}}",
@@ -205,7 +224,6 @@
       "rescanFailed": "Could not rescan reimbursement: {{msg}}"
     },
     "search": "Search",
-    "back": "Back",
     "saveState": {
       "saving": "Saving…",
       "saved": "All changes saved",
@@ -299,14 +317,6 @@
       "incomplete": "Fill in both keywords of every rule.",
       "editRule": "Edit Rule"
     }
-  },
-  "setup": {
-    "title": "Set up Concilia",
-    "intro": "Finish these steps in Settings before reconciling a month:",
-    "receipts_root": "Choose the folder that holds your receipts.",
-    "service_account": "Import a Google Cloud service account key for Gemini.",
-    "project": "Enter the Google Cloud project to bill.",
-    "openSettings": "Open Settings"
   },
   "update": {
     "available": "Concilia {{version}} is available.",

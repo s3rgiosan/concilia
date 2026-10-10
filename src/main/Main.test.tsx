@@ -2,28 +2,25 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Period } from "../lib/period";
+import { emptySummary, type Period } from "../lib/period";
 import {
-  exportReport,
   getAppState,
   installUpdate,
+  listPeriods,
   onBusyChanged,
   onSettingsChanged,
   onUpdateCheckResult,
   onUpdateProgress,
   openReport,
-  openSettings,
   pendingUpdate,
-  periodStatus,
   pickStatements,
   revealPeriod,
+  setWindowTitle,
   startReconcile,
-  startScan,
   type AppStateView,
-  type PeriodStatus,
+  type PeriodSummary,
   type RunEvent,
   type RunHandle,
-  type ScanResult,
   type Summary,
   type UpdateCheckResult,
   type UpdateProgress,
@@ -34,9 +31,10 @@ import { Main } from "./Main";
 vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),
   cancelRun: vi.fn(),
-  exportReport: vi.fn(),
   getAppState: vi.fn(),
+  importServiceAccount: vi.fn(),
   installUpdate: vi.fn(),
+  listPeriods: vi.fn(),
   onBusyChanged: vi.fn(),
   onSettingsChanged: vi.fn(),
   onUpdateCheckResult: vi.fn(),
@@ -44,21 +42,22 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   openReport: vi.fn(),
   openSettings: vi.fn(),
   pendingUpdate: vi.fn(),
-  periodStatus: vi.fn(),
+  pickReceiptsRoot: vi.fn(),
   pickStatements: vi.fn(),
   revealPeriod: vi.fn(),
+  saveSettings: vi.fn(),
+  setWindowTitle: vi.fn(),
   startReconcile: vi.fn(),
-  startScan: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
 
 vi.mock("../review/Review", () => ({
-  Review: ({ period, onBack, onError }: { period: Period; onBack: () => void; onError: (e: unknown) => void }) => (
-    <section>
-      <h1>{`Review ${period.year}-${period.month}`}</h1>
-      <button type="button" onClick={onBack}>
-        Back to Start
+  Review: ({ period, onChanged, onError }: { period: Period; onChanged?: () => void; onError: (e: unknown) => void }) => (
+    <section aria-label="Review">
+      <p>{`Review ${period.year}-${period.month}`}</p>
+      <button type="button" onClick={onChanged}>
+        Change Review
       </button>
       <button type="button" onClick={() => onError({ kind: "io", message: "draft unreadable" })}>
         Fail Review
@@ -74,180 +73,8 @@ let pushProgress: (progress: UpdateProgress) => void;
 const UNCONFIGURED = makeView({
   settings: makeSettings({ receipts_root: null }),
   service_account: null,
-  missing: ["receipts_root", "service_account", "project"],
+  missing: ["receipts_root", "service_account"],
   configured: false,
-});
-
-const NO_PERIOD: PeriodStatus = { exists: false, applied: false, has_transactions: false, has_draft: false };
-
-/** Paths dropped onto the window, delivered to the start screen. */
-let dropFiles: (paths: string[]) => void;
-let uuid: number;
-
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date(2030, 3, 15));
-  uuid = 0;
-  vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
-    uuid += 1;
-    return `00000000-0000-4000-8000-${String(uuid).padStart(12, "0")}`;
-  });
-  vi.mocked(getCurrentWebview).mockReturnValue({
-    onDragDropEvent: (handler: (event: { payload: { type: "drop"; paths: string[] } }) => void) => {
-      dropFiles = (paths) => handler({ payload: { type: "drop", paths } });
-      return Promise.resolve(() => undefined);
-    },
-  } as unknown as ReturnType<typeof getCurrentWebview>);
-  vi.mocked(periodStatus).mockResolvedValue(NO_PERIOD);
-  vi.mocked(pickStatements).mockResolvedValue([]);
-  vi.mocked(onSettingsChanged).mockImplementation((handler) => {
-    pushSettings = handler;
-    return Promise.resolve(() => undefined);
-  });
-  vi.mocked(onBusyChanged).mockResolvedValue(() => undefined);
-  vi.mocked(onUpdateCheckResult).mockImplementation((handler) => {
-    pushCheckResult = handler;
-    return Promise.resolve(() => undefined);
-  });
-  vi.mocked(onUpdateProgress).mockImplementation((handler) => {
-    pushProgress = handler;
-    return Promise.resolve(() => undefined);
-  });
-  vi.mocked(pendingUpdate).mockResolvedValue(null);
-  vi.mocked(openSettings).mockResolvedValue(undefined);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.useRealTimers();
-  vi.clearAllMocks();
-  vi.restoreAllMocks();
-});
-
-async function renderMain(view: AppStateView = makeView()) {
-  vi.mocked(getAppState).mockResolvedValue(view);
-  const result = render(<Main />);
-  await waitFor(() => expect(getAppState).toHaveBeenCalled());
-  await act(async () => undefined);
-  return result;
-}
-
-describe("setup", () => {
-  it("lists each missing step", async () => {
-    await renderMain(UNCONFIGURED);
-    expect(screen.getByRole("heading", { name: "Set up Concilia" })).toBeTruthy();
-    expect(screen.getByText("Finish these steps in Settings before reconciling a month:")).toBeTruthy();
-    const steps = screen.getAllByRole("listitem").map((li) => li.textContent);
-    expect(steps).toEqual([
-      "Choose the folder that holds your receipts.",
-      "Import a Google Cloud service account key for Gemini.",
-      "Enter the Google Cloud project to bill.",
-    ]);
-  });
-
-  it("lists only what is missing", async () => {
-    await renderMain(makeView({ missing: ["project"], configured: false }));
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Enter the Google Cloud project to bill."]);
-  });
-
-  it("opens Settings", async () => {
-    await renderMain(UNCONFIGURED);
-    fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
-    expect(openSettings).toHaveBeenCalledTimes(1);
-  });
-
-  it("reports a failure to open Settings", async () => {
-    vi.mocked(openSettings).mockRejectedValue({ kind: "internal", message: "no window" });
-    await renderMain(UNCONFIGURED);
-    fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Something went wrong: no window");
-    expect(screen.queryByRole("button", { name: "Try Again" })).toBeNull();
-  });
-
-  it("shows nothing once configured", async () => {
-    await renderMain();
-    expect(screen.queryByRole("heading", { name: "Set up Concilia" })).toBeNull();
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByRole("status")).toBeNull();
-  });
-
-  it("hides the steps when settings change to configured", async () => {
-    await renderMain(UNCONFIGURED);
-    act(() => pushSettings(makeView()));
-    expect(screen.queryByRole("heading", { name: "Set up Concilia" })).toBeNull();
-  });
-});
-
-describe("load error", () => {
-  it("shows the error and loads again on Try Again", async () => {
-    vi.mocked(getAppState).mockRejectedValueOnce({ kind: "keychain", message: "denied" });
-    render(<Main />);
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Concilia can't use the Keychain: denied");
-
-    vi.mocked(getAppState).mockResolvedValueOnce(UNCONFIGURED);
-    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
-    expect(await screen.findByRole("heading", { name: "Set up Concilia" })).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-});
-
-describe("update banner", () => {
-  it("announces a pending update", async () => {
-    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
-    await renderMain();
-    const banner = await screen.findByRole("status");
-    expect(banner.textContent).toContain("Concilia 9.9.9 is available.");
-    expect(screen.getByRole("button", { name: "Install and Relaunch" })).toBeTruthy();
-  });
-
-  it("stays hidden when the pending update check fails", async () => {
-    vi.mocked(pendingUpdate).mockRejectedValue(new Error("offline"));
-    await renderMain();
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("announces an update found by a background check", async () => {
-    await renderMain();
-    act(() => pushCheckResult({ update: null, error: "offline" }));
-    expect(screen.queryByRole("status")).toBeNull();
-    act(() => pushCheckResult({ update: { version: "9.9.10", notes: "Fixes." }, error: null }));
-    expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.10 is available.");
-  });
-
-  it("keeps an announced update when a later check finds none", async () => {
-    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
-    await renderMain();
-    await screen.findByRole("status");
-    act(() => pushCheckResult({ update: null, error: null }));
-    expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.9 is available.");
-  });
-
-  it("shows the install progress", async () => {
-    const install = deferred<void>();
-    vi.mocked(installUpdate).mockReturnValue(install.promise);
-    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
-    await renderMain();
-    fireEvent.click(await screen.findByRole("button", { name: "Install and Relaunch" }));
-    expect(installUpdate).toHaveBeenCalledTimes(1);
-    expect((screen.getByRole("button", { name: "Downloading…" }) as HTMLButtonElement).disabled).toBe(true);
-    act(() => pushProgress({ downloaded: 25, total: 100 }));
-    expect(screen.getByRole("button", { name: "Downloading… 25%" })).toBeTruthy();
-    act(() => pushProgress({ downloaded: 100, total: 100 }));
-    expect(screen.getByRole("button", { name: "Installing…" })).toBeTruthy();
-  });
-
-  it("reports a failed install", async () => {
-    vi.mocked(installUpdate).mockRejectedValue({ kind: "network", message: "offline" });
-    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
-    await renderMain();
-    fireEvent.click(await screen.findByRole("button", { name: "Install and Relaunch" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Concilia can't reach the server. Check your internet connection.");
-    expect((screen.getByRole("button", { name: "Install and Relaunch" }) as HTMLButtonElement).disabled).toBe(false);
-  });
 });
 
 const STATEMENT_PATH = "/Users/example/Downloads/extrato-2030-03.pdf";
@@ -265,37 +92,128 @@ const SUMMARY: Summary = {
   matchRate: 75,
 };
 
-/** A run the test settles by hand, pushing events through the callback it was started with. */
-function fakeRun<T>() {
-  const result = deferred<T>();
-  const cancel = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
-  const handle: RunHandle<T> = { promise: result.promise, cancel };
-  let onEvent: (event: RunEvent) => void = () => undefined;
-  return {
-    result,
-    cancel,
-    start: (callback: (event: RunEvent) => void) => {
-      onEvent = callback;
-      return handle;
+function summary(year: string, month: string, patch: Partial<PeriodSummary> = {}): PeriodSummary {
+  return { ...emptySummary({ year, month }), ...patch };
+}
+
+/** February in review, January finalized; March, the previous month, is missing from the listing. */
+const LISTED: PeriodSummary[] = [
+  summary("2030", "02", { status: "in_review", receipts: 30, transactions: 42, pending: 6 }),
+  summary("2030", "01", { status: "finalized", receipts: 20, transactions: 25 }),
+  summary("2029", "11", { status: "ready", receipts: 12 }),
+];
+
+/** Paths dropped onto the window, delivered to the statements drop zone. */
+let dropFiles: (paths: string[]) => void;
+let uuid: number;
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2030, 3, 15));
+  localStorage.clear();
+  uuid = 0;
+  vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
+    uuid += 1;
+    return `00000000-0000-4000-8000-${String(uuid).padStart(12, "0")}`;
+  });
+  vi.mocked(getCurrentWebview).mockReturnValue({
+    onDragDropEvent: (handler: (event: { payload: { type: "drop"; paths: string[] } }) => void) => {
+      dropFiles = (paths) => handler({ payload: { type: "drop", paths } });
+      return Promise.resolve(() => undefined);
     },
-    push: (event: RunEvent) => act(() => onEvent(event)),
-  };
+  } as unknown as ReturnType<typeof getCurrentWebview>);
+  vi.mocked(listPeriods).mockResolvedValue(LISTED);
+  vi.mocked(pickStatements).mockResolvedValue([]);
+  vi.mocked(setWindowTitle).mockResolvedValue(undefined);
+  vi.mocked(onSettingsChanged).mockImplementation((handler) => {
+    pushSettings = handler;
+    return Promise.resolve(() => undefined);
+  });
+  vi.mocked(onBusyChanged).mockResolvedValue(() => undefined);
+  vi.mocked(onUpdateCheckResult).mockImplementation((handler) => {
+    pushCheckResult = handler;
+    return Promise.resolve(() => undefined);
+  });
+  vi.mocked(onUpdateProgress).mockImplementation((handler) => {
+    pushProgress = handler;
+    return Promise.resolve(() => undefined);
+  });
+  vi.mocked(pendingUpdate).mockResolvedValue(null);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+});
+
+async function renderMain(view: AppStateView = makeView()) {
+  vi.mocked(getAppState).mockResolvedValue(view);
+  const result = render(<Main />);
+  await waitFor(() => expect(getAppState).toHaveBeenCalled());
+  await act(async () => undefined);
+  return result;
 }
 
+/** A run the test settles by hand, pushing events through the callback it was started with. */
 function reconcileRun() {
-  const run = fakeRun<Summary>();
-  vi.mocked(startReconcile).mockImplementation((_year, _month, _statements, _clearCache, onEvent) => run.start(onEvent));
-  return run;
+  const result = deferred<Summary>();
+  const cancel = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+  const handle: RunHandle<Summary> = { promise: result.promise, cancel };
+  let onEvent: (event: RunEvent) => void = () => undefined;
+  vi.mocked(startReconcile).mockImplementation((_year, _month, _statements, _clearCache, callback) => {
+    onEvent = callback;
+    return handle;
+  });
+  return { result, cancel, push: (event: RunEvent) => act(() => onEvent(event)) };
 }
 
-function scanRun() {
-  const run = fakeRun<ScanResult>();
-  vi.mocked(startScan).mockImplementation((_year, _month, onEvent) => run.start(onEvent));
-  return run;
+function button(name: string, scope: HTMLElement = document.body): HTMLButtonElement {
+  return within(scope).getByRole("button", { name }) as HTMLButtonElement;
 }
 
-function button(name: string): HTMLButtonElement {
-  return screen.getByRole("button", { name }) as HTMLButtonElement;
+function toolbar(): HTMLElement {
+  return document.querySelector("header.titlebar") as HTMLElement;
+}
+
+function title(): string {
+  return toolbar().querySelector(".titlebar__title")?.textContent ?? "";
+}
+
+function subtitle(): string {
+  return toolbar().querySelector(".titlebar__subtitle")?.textContent ?? "";
+}
+
+function months(): string[] {
+  const list = screen.queryByRole("listbox", { name: "Months" });
+  if (!list) {
+    return [];
+  }
+  return within(list)
+    .queryAllByRole("option")
+    .map((o) => `${o.getAttribute("aria-selected") === "true" ? "* " : ""}${o.textContent}`);
+}
+
+function selectMonth(name: RegExp) {
+  fireEvent.click(within(screen.getByRole("listbox", { name: "Months" })).getByRole("option", { name }));
+}
+
+/** Picks an item from the toolbar's More Actions menu. */
+function moreAction(label: string) {
+  const select = within(toolbar()).getByLabelText("More Actions") as HTMLSelectElement;
+  const option = within(select)
+    .getAllByRole("option")
+    .find((o) => o.textContent === label) as HTMLOptionElement;
+  fireEvent.change(select, { target: { value: option.value } });
+}
+
+function moreActions(): string[] {
+  const select = within(toolbar()).getByLabelText("More Actions");
+  return within(select)
+    .getAllByRole("option")
+    .filter((o) => !(o as HTMLOptionElement).hidden)
+    .map((o) => `${o.textContent}${(o as HTMLOptionElement).disabled ? " (disabled)" : ""}`);
 }
 
 function steps(): string[] {
@@ -307,166 +225,383 @@ async function addStatement() {
   expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
 }
 
-/** Starts a reconcile of one statement and returns the run to drive. */
+/** Starts a reconcile of one statement for March and returns the run to drive. */
 async function startReconciling() {
   const run = reconcileRun();
   await renderMain();
   await addStatement();
-  fireEvent.click(button("Reconcile"));
+  fireEvent.click(button("Reconcile", toolbar()));
   return run;
 }
 
-/** Reconciles one statement through to the summary. */
-async function reconciled() {
-  const run = await startReconciling();
-  await act(async () => run.result.resolve(SUMMARY));
-  expect(screen.getByRole("heading", { name: "March 2030 reconciled" })).toBeTruthy();
-  return run;
-}
-
-describe("start", () => {
-  it("shows the start screen on the previous month once configured", async () => {
-    await renderMain();
-    expect(screen.getByRole("heading", { name: "Reconcile a month" })).toBeTruthy();
-    expect((screen.getByLabelText("Month") as HTMLSelectElement).value).toBe("03");
-    expect((screen.getByLabelText("Year") as HTMLSelectElement).value).toBe("2030");
-    expect(periodStatus).toHaveBeenCalledWith("2030", "03");
+describe("first run", () => {
+  it("welcomes without the sidebar", async () => {
+    await renderMain(UNCONFIGURED);
+    expect(screen.getByRole("heading", { name: "Welcome to Concilia" })).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Hide Sidebar" })).toBeNull();
+    expect(title()).toBe("");
+    expect(toolbar().classList.contains("titlebar--plain")).toBe(true);
+    expect(listPeriods).not.toHaveBeenCalled();
+    expect(setWindowTitle).toHaveBeenLastCalledWith("Concilia");
+    expect(document.title).toBe("Concilia");
   });
 
-  it("starts on December of the previous year in January", async () => {
-    vi.setSystemTime(new Date(2030, 0, 10));
-    await renderMain();
-    expect((screen.getByLabelText("Month") as HTMLSelectElement).value).toBe("12");
-    expect((screen.getByLabelText("Year") as HTMLSelectElement).value).toBe("2029");
-    expect(periodStatus).toHaveBeenCalledWith("2029", "12");
+  it("shows the months once the settings are complete", async () => {
+    await renderMain(UNCONFIGURED);
+    await act(async () => pushSettings(makeView()));
+    expect(screen.queryByRole("heading", { name: "Welcome to Concilia" })).toBeNull();
+    expect(screen.getByRole("navigation", { name: "Months" })).toBeTruthy();
+    expect(listPeriods).toHaveBeenCalledTimes(1);
+    expect(title()).toBe("March 2030");
+    expect(setWindowTitle).toHaveBeenLastCalledWith("March 2030");
   });
 
-  it("reports a period status that cannot be loaded", async () => {
-    vi.mocked(periodStatus).mockRejectedValue({ kind: "io", message: "unreadable" });
+  it("reports a Welcome error", async () => {
+    const { pickReceiptsRoot } = await import("../lib/tauri");
+    vi.mocked(pickReceiptsRoot).mockRejectedValue({ kind: "internal", message: "no dialog" });
+    await renderMain(UNCONFIGURED);
+    await act(async () => fireEvent.click(button("Choose…")));
+    expect(screen.getByRole("alert").textContent).toBe("Something went wrong: no dialog");
+  });
+});
+
+describe("load error", () => {
+  it("shows the error and loads again on Try Again", async () => {
+    vi.mocked(getAppState).mockRejectedValueOnce({ kind: "keychain", message: "denied" });
+    render(<Main />);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Concilia can't use the Keychain: denied");
+
+    vi.mocked(getAppState).mockResolvedValueOnce(UNCONFIGURED);
+    fireEvent.click(button("Try Again"));
+    expect(await screen.findByRole("heading", { name: "Welcome to Concilia" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("update banner", () => {
+  it("announces a pending update", async () => {
+    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
     await renderMain();
-    expect((await screen.findByRole("alert")).textContent).toBe("Concilia couldn't read or write a file: unreadable");
+    const banner = await screen.findByRole("status");
+    expect(banner.textContent).toContain("Concilia 9.9.9 is available.");
   });
 
-  it("dismisses a message", async () => {
-    vi.mocked(periodStatus).mockRejectedValue({ kind: "io", message: "unreadable" });
+  it("announces an update found by a background check", async () => {
     await renderMain();
-    await screen.findByRole("alert");
+    act(() => pushCheckResult({ update: null, error: "offline" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => pushCheckResult({ update: { version: "9.9.10", notes: "Fixes." }, error: null }));
+    expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.10 is available.");
+  });
+
+  it("shows the install progress and reports a failed install", async () => {
+    const install = deferred<void>();
+    vi.mocked(installUpdate).mockReturnValue(install.promise);
+    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
+    await renderMain();
+    fireEvent.click(await screen.findByRole("button", { name: "Install and Relaunch" }));
+    act(() => pushProgress({ downloaded: 25, total: 100 }));
+    expect(button("Downloading… 25%").disabled).toBe(true);
+    await act(async () => install.reject({ kind: "network", message: "offline" }));
+    expect(screen.getByRole("alert").textContent).toBe("Concilia can't reach the server. Check your internet connection.");
+  });
+});
+
+describe("sidebar", () => {
+  it("lists the months with the previous month added, and selects it", async () => {
+    await renderMain();
+    expect(months()).toEqual([
+      "* MarchNo receipts",
+      "FebruaryIn review · 6 left",
+      "JanuaryFinalized",
+      "NovemberReady · 12 receipts",
+    ]);
+    expect(screen.getByRole("group", { name: "2029" })).toBeTruthy();
+    expect(title()).toBe("March 2030");
+    expect(subtitle()).toBe("No receipts");
+  });
+
+  it("remembers the month selected", async () => {
+    await renderMain();
+    selectMonth(/January/);
+    expect(localStorage.getItem("main.period")).toBe("2030-01");
+    expect(title()).toBe("January 2030");
+    expect(setWindowTitle).toHaveBeenLastCalledWith("January 2030");
+    cleanup();
+
+    await renderMain();
+    expect(title()).toBe("January 2030");
+    expect(months()[2]).toBe("* JanuaryFinalized");
+  });
+
+  it("keeps a remembered month the listing lacks", async () => {
+    localStorage.setItem("main.period", "2025-06");
+    await renderMain();
+    expect(months()).toContain("* JuneNo receipts");
+    expect(screen.getByRole("group", { name: "2025" })).toBeTruthy();
+  });
+
+  it("starts on the previous month when the remembered one is invalid", async () => {
+    localStorage.setItem("main.period", "garbage");
+    await renderMain();
+    expect(title()).toBe("March 2030");
+  });
+
+  it("lists the months again when the window gets focus", async () => {
+    await renderMain();
+    vi.mocked(listPeriods).mockResolvedValue([summary("2030", "03", { status: "ready", receipts: 2 }), ...LISTED]);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(listPeriods).toHaveBeenCalledTimes(2);
+    expect(months()[0]).toBe("* MarchReady · 2 receipts");
+  });
+
+  it("explains a listing that failed and lists again on Try Again", async () => {
+    vi.mocked(listPeriods).mockRejectedValueOnce({ kind: "io", message: "unreadable" });
+    await renderMain();
+    const nav = screen.getByRole("navigation", { name: "Months" });
+    expect(within(nav).getByRole("alert").textContent).toBe("Concilia couldn't read or write a file: unreadableTry Again");
+    await act(async () => fireEvent.click(button("Try Again", nav)));
+    expect(within(nav).queryByRole("alert")).toBeNull();
+    expect(months()).toHaveLength(4);
+  });
+
+  it("ignores a listing that arrives after a newer one", async () => {
+    const slow = deferred<PeriodSummary[]>();
+    vi.mocked(listPeriods).mockReturnValueOnce(slow.promise);
+    await renderMain();
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(months()).toHaveLength(4);
+    await act(async () => slow.resolve([]));
+    expect(months()).toHaveLength(4);
+  });
+
+  it("hides and shows the sidebar, and remembers it", async () => {
+    await renderMain();
+    fireEvent.click(button("Hide Sidebar"));
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+    expect(localStorage.getItem("main.sidebar")).toBe("hidden");
+    expect(toolbar().querySelector(".titlebar__leading--sidebar")).toBeNull();
+    cleanup();
+
+    await renderMain();
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+    fireEvent.click(button("Show Sidebar"));
+    expect(screen.getByRole("navigation", { name: "Months" })).toBeTruthy();
+    expect(toolbar().querySelector(".titlebar__leading--sidebar")).toBeTruthy();
+  });
+
+  it("adds and selects a new month", async () => {
+    await renderMain();
+    fireEvent.click(button("New Month…"));
+    const sheet = screen.getByRole("dialog", { name: "New Month" });
+    fireEvent.change(within(sheet).getByLabelText("Month"), { target: { value: "07" } });
+    fireEvent.change(within(sheet).getByLabelText("Year"), { target: { value: "2028" } });
+    fireEvent.click(button("Create", sheet));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(title()).toBe("July 2028");
+    expect(months()[months().length - 1]).toBe("* JulyNo receipts");
+
+    selectMonth(/March/);
+    expect(months()).toContain("JulyNo receipts");
+  });
+
+  it("closes the New Month sheet on Cancel", async () => {
+    await renderMain();
+    fireEvent.click(button("New Month…"));
+    fireEvent.click(button("Cancel", screen.getByRole("dialog")));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(title()).toBe("March 2030");
+  });
+});
+
+describe("month without a match", () => {
+  it("shows the drop zone, where receipts go and the actions", async () => {
+    await renderMain();
+    expect(screen.getByText("Drop March's bank statements here")).toBeTruthy();
+    expect(screen.getByText("Put this month's receipts in /Users/example/Receipts/2030/03/receipts")).toBeTruthy();
+    expect(button("Reconcile", toolbar()).disabled).toBe(true);
+    expect(moreActions()).toEqual(["Open Report (disabled)", "Show in Finder"]);
+  });
+
+  it("shows the month in Finder from the hint and from More Actions", async () => {
+    vi.mocked(revealPeriod).mockResolvedValue(undefined);
+    await renderMain();
+    await act(async () => fireEvent.click(button("Show in Finder")));
+    await act(async () => moreAction("Show in Finder"));
+    expect(revealPeriod).toHaveBeenCalledTimes(2);
+    expect(revealPeriod).toHaveBeenCalledWith("2030", "03");
+  });
+
+  it("reports a folder that cannot be shown until dismissed or the month changes", async () => {
+    vi.mocked(revealPeriod).mockRejectedValue({ kind: "not_found", message: "No folder for March 2030." });
+    await renderMain();
+    await act(async () => fireEvent.click(button("Show in Finder")));
+    expect(screen.getByRole("alert").textContent).toBe("No folder for March 2030.");
     fireEvent.click(button("Close"));
     expect(screen.queryByRole("alert")).toBeNull();
-  });
 
-  it("clears a message when the period changes", async () => {
-    vi.mocked(periodStatus).mockRejectedValueOnce({ kind: "io", message: "unreadable" });
-    await renderMain();
-    await screen.findByRole("alert");
-    await act(async () => fireEvent.change(screen.getByLabelText("Month"), { target: { value: "02" } }));
+    await act(async () => fireEvent.click(button("Show in Finder")));
+    selectMonth(/November/);
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(periodStatus).toHaveBeenLastCalledWith("2030", "02");
   });
 
-  it("opens the review on Resume Review and returns to the start", async () => {
-    vi.mocked(periodStatus).mockResolvedValue({ exists: true, applied: false, has_transactions: true, has_draft: true });
+  it("keeps each month's statements when moving between months", async () => {
     await renderMain();
-    fireEvent.click(button("Resume Review"));
-    expect(await screen.findByRole("heading", { name: "Review 2030-03" })).toBeTruthy();
-    fireEvent.click(button("Back to Start"));
-    expect(screen.getByRole("heading", { name: "Reconcile a month" })).toBeTruthy();
+    await addStatement();
+    expect(button("Reconcile", toolbar()).disabled).toBe(false);
+    selectMonth(/November/);
+    expect(screen.queryByText("extrato-2030-03.pdf")).toBeNull();
+    expect(screen.queryByText(/Put this month's receipts/)).toBeNull();
+    expect(button("Reconcile", toolbar()).disabled).toBe(true);
+    selectMonth(/March/);
+    expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
+  });
+
+  it("reconciles a month with saved transactions without statements", async () => {
+    vi.mocked(listPeriods).mockResolvedValue([summary("2030", "03", { status: "ready", receipts: 3, transactions: 8 })]);
+    reconcileRun();
+    await renderMain();
+    expect(subtitle()).toBe("Ready · 3 receipts");
+    fireEvent.click(button("Reconcile", toolbar()));
+    expect(startReconcile).toHaveBeenCalledWith("2030", "03", [], false, expect.any(Function));
+  });
+});
+
+describe("month in review", () => {
+  it("opens the review with the month's actions", async () => {
+    await renderMain();
+    selectMonth(/February/);
+    expect(await screen.findByText("Review 2030-02")).toBeTruthy();
+    expect(subtitle()).toBe("In review · 6 left");
+    expect(within(toolbar()).queryByRole("button", { name: "Reconcile" })).toBeNull();
+    expect(moreActions()).toEqual(["Open Report", "Show in Finder", "Re-run…"]);
+  });
+
+  it("opens the report", async () => {
+    vi.mocked(openReport).mockResolvedValue(undefined);
+    await renderMain();
+    selectMonth(/January/);
+    await screen.findByText("Review 2030-01");
+    expect(subtitle()).toBe("Finalized");
+    await act(async () => moreAction("Open Report"));
+    expect(openReport).toHaveBeenCalledWith("2030", "01");
+  });
+
+  it("reports a report that cannot be opened", async () => {
+    vi.mocked(openReport).mockRejectedValue({ kind: "not_found", message: "No report yet." });
+    await renderMain();
+    selectMonth(/January/);
+    await screen.findByText("Review 2030-01");
+    await act(async () => moreAction("Open Report"));
+    expect(screen.getByRole("alert").textContent).toBe("No report yet.");
   });
 
   it("reports an error from the review", async () => {
-    vi.mocked(periodStatus).mockResolvedValue({ exists: true, applied: true, has_transactions: true, has_draft: false });
     await renderMain();
-    fireEvent.click(button("Resume Review"));
+    selectMonth(/February/);
     fireEvent.click(await screen.findByRole("button", { name: "Fail Review" }));
     expect(screen.getByRole("alert").textContent).toBe("Concilia couldn't read or write a file: draft unreadable");
+  });
+
+  it("lists the months again when the review changes the month", async () => {
+    await renderMain();
+    selectMonth(/February/);
+    vi.mocked(listPeriods).mockResolvedValue([summary("2030", "02", { status: "finalized" })]);
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Change Review" })));
+    expect(listPeriods).toHaveBeenCalledTimes(2);
+    expect(subtitle()).toBe("Finalized");
+  });
+
+  it("asks before re-running and re-runs from the saved transactions", async () => {
+    const run = reconcileRun();
+    await renderMain();
+    selectMonth(/February/);
+    await screen.findByText("Review 2030-02");
+    moreAction("Re-run…");
+    const sheet = screen.getByRole("alertdialog", { name: "Re-run February 2030?" });
+    fireEvent.click(button("Cancel", sheet));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(startReconcile).not.toHaveBeenCalled();
+
+    moreAction("Re-run…");
+    fireEvent.click(button("Re-run", screen.getByRole("alertdialog")));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(startReconcile).toHaveBeenCalledWith("2030", "02", [], true, expect.any(Function));
+    run.push({ step: "parsing", count: 0 });
+    expect(steps()[0]).toBe("running: Parsing statements · using the saved transactions");
   });
 });
 
 describe("reconcile", () => {
-  it("runs the statements for the period and follows its progress", async () => {
+  it("follows the run's progress inline, in the toolbar and in the sidebar", async () => {
     const run = await startReconciling();
     expect(startReconcile).toHaveBeenCalledWith("2030", "03", [{ path: STATEMENT_PATH, bank: "cgd" }], false, expect.any(Function));
     expect(screen.getByRole("heading", { name: "Reconciling March 2030" })).toBeTruthy();
-    expect(steps()).toEqual([
-      "pending: Parsing statements",
-      "pending: Scanning receipts",
-      "pending: Extracting receipt data",
-      "pending: Matching",
-      "pending: Reading reimbursements",
-      "pending: Generating report",
-    ]);
+    expect(subtitle()).toBe("Reconciling…");
+    expect(months()[0]).toBe("* MarchReconciling…");
+    expect(within(toolbar()).queryByRole("button", { name: "Reconcile" })).toBeNull();
 
     run.push({ step: "parsing", count: 1 });
     run.push({ step: "receipts_found", count: 40 });
     run.push({ step: "extracting", current: 10, total: 40 });
-    expect(steps()).toEqual([
+    expect(steps().slice(0, 3)).toEqual([
       "done: Parsing statements · 1 file",
       "done: Scanning receipts · 40 found",
       "running: Extracting receipt data · 10 / 40",
-      "pending: Matching",
-      "pending: Reading reimbursements",
-      "pending: Generating report",
     ]);
-    expect((screen.getByRole("progressbar", { name: "Extracting receipt data" }) as HTMLProgressElement).value).toBe(10);
+    expect(subtitle()).toBe("10 / 40");
+    expect(months()[0]).toBe("* March10 / 40");
 
     run.push({ step: "matching" });
-    run.push({ step: "exporting" });
-    expect(steps().slice(3)).toEqual(["done: Matching", "done: Reading reimbursements", "running: Generating report"]);
+    expect(subtitle()).toBe("Reconciling…");
   });
 
-  it("shows the summary when the run succeeds", async () => {
-    await reconciled();
-    expect(screen.getByText("40 transactions · 36 receipts")).toBeTruthy();
-    expect(screen.queryByText("Bank fees")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-    fireEvent.click(button("Review & Validate"));
-    expect(await screen.findByRole("heading", { name: "Review 2030-03" })).toBeTruthy();
-  });
-
-  it("re-runs from scratch with the saved transactions", async () => {
-    vi.mocked(periodStatus).mockResolvedValue({ exists: true, applied: true, has_transactions: true, has_draft: false });
-    const run = reconcileRun();
-    await renderMain();
-    fireEvent.click(button("Re-run"));
-    expect(startReconcile).toHaveBeenCalledWith("2030", "03", [], true, expect.any(Function));
-    run.push({ step: "parsing", count: 0 });
-    expect(steps()[0]).toBe("running: Parsing statements · using the saved transactions");
-  });
-
-  it("reconciles the period picked", async () => {
-    reconcileRun();
-    await renderMain();
-    await act(async () => fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2029" } }));
-    await addStatement();
-    fireEvent.click(button("Reconcile"));
-    expect(startReconcile).toHaveBeenCalledWith("2029", "03", [{ path: STATEMENT_PATH, bank: "cgd" }], false, expect.any(Function));
-    expect(screen.getByRole("heading", { name: "Reconciling March 2029" })).toBeTruthy();
-  });
-
-  it("cancels the run", async () => {
+  it("cancels from the toolbar", async () => {
     const run = await startReconciling();
-    fireEvent.click(button("Cancel"));
+    fireEvent.click(button("Cancel", toolbar()));
     expect(run.cancel).toHaveBeenCalledTimes(1);
-    expect(button("Stopping…").disabled).toBe(true);
+    expect(button("Stopping…", toolbar()).disabled).toBe(true);
   });
 
-  it("says the run was stopped and returns to the start on Try Again", async () => {
+  it("goes straight to the review with the run's figures when it succeeds", async () => {
     const run = await startReconciling();
-    run.push({ step: "parsing", count: 1 });
-    fireEvent.click(button("Cancel"));
-    await act(async () => run.result.reject({ kind: "cancelled", message: "cancelled" }));
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("The reconciliation was stopped.Try Again");
-    expect(alert.className).toContain("banner--info");
-    expect(steps()[0]).toBe("failed: Parsing statements · 1 file");
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    vi.mocked(listPeriods).mockReturnValue(new Promise(() => undefined));
+    await act(async () => run.result.resolve(SUMMARY));
+    expect(screen.getByText("Review 2030-03")).toBeTruthy();
+    expect(subtitle()).toBe("40 transactions · 36 receipts · 75% matched");
+    expect(months()[0]).toBe("* MarchIn review · 10 left");
+    expect(listPeriods).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(within(alert).getByRole("button", { name: "Try Again" }));
-    expect(screen.getByRole("heading", { name: "Reconcile a month" })).toBeTruthy();
-    expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
+    selectMonth(/February/);
+    selectMonth(/March/);
+    expect(subtitle()).toBe("In review · 10 left");
   });
 
-  it("explains a failed run", async () => {
+  it("forgets the statements of a month that ran", async () => {
+    const run = await startReconciling();
+    vi.mocked(listPeriods).mockResolvedValue(LISTED);
+    await act(async () => run.result.resolve(SUMMARY));
+    expect(screen.queryByText("extrato-2030-03.pdf")).toBeNull();
+    expect(button("Reconcile", toolbar()).disabled).toBe(true);
+  });
+
+  it("keeps running while another month is shown", async () => {
+    const run = await startReconciling();
+    selectMonth(/November/);
+    expect(screen.queryByRole("heading", { name: "Reconciling March 2030" })).toBeNull();
+    expect(subtitle()).toBe("Ready · 12 receipts");
+    expect(button("Reconcile", toolbar()).disabled).toBe(true);
+    expect(months()[0]).toBe("MarchReconciling…");
+
+    vi.mocked(listPeriods).mockReturnValue(new Promise(() => undefined));
+    await act(async () => run.result.resolve(SUMMARY));
+    expect(title()).toBe("March 2030");
+    expect(screen.getByText("Review 2030-03")).toBeTruthy();
+  });
+
+  it("explains a failed run and returns to the statements on Try Again", async () => {
     const run = await startReconciling();
     run.push({ step: "parsing", count: 1 });
     await act(async () => run.result.reject({ kind: "parse", message: "no transactions found" }));
@@ -474,14 +609,21 @@ describe("reconcile", () => {
     expect(alert.textContent).toBe("Concilia couldn't read the statement: no transactions foundTry Again");
     expect(alert.className).toContain("banner--error");
     expect(steps()[0]).toBe("failed: Parsing statements · 1 file");
+    expect(within(toolbar()).queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(months()[0]).toBe("* MarchNo receipts");
 
-    const next = reconcileRun();
-    fireEvent.click(button("Try Again"));
-    fireEvent.click(button("Reconcile"));
-    expect(startReconcile).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("alert")).toBeNull();
-    await act(async () => next.result.resolve(SUMMARY));
-    expect(screen.getByRole("heading", { name: "March 2030 reconciled" })).toBeTruthy();
+    fireEvent.click(button("Try Again", alert));
+    expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
+    expect(button("Reconcile", toolbar()).disabled).toBe(false);
+  });
+
+  it("says the run was stopped", async () => {
+    const run = await startReconciling();
+    fireEvent.click(button("Cancel", toolbar()));
+    await act(async () => run.result.reject({ kind: "cancelled", message: "cancelled" }));
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe("The reconciliation was stopped.Try Again");
+    expect(alert.className).toContain("banner--info");
   });
 
   it("cancels a running run when the window closes", async () => {
@@ -491,114 +633,22 @@ describe("reconcile", () => {
   });
 });
 
-describe("scan", () => {
-  const UNFINISHED: PeriodStatus = { exists: true, applied: false, has_transactions: true, has_draft: true };
+describe("window title", () => {
+  it("is not set in the browser preview", async () => {
+    (window as unknown as Record<string, unknown>).__CONCILIA_PREVIEW__ = true;
+    try {
+      await renderMain();
+      expect(document.title).toBe("March 2030");
+      expect(setWindowTitle).not.toHaveBeenCalled();
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__CONCILIA_PREVIEW__;
+    }
+  });
 
-  it("scans the period and lists the decisions it dropped", async () => {
-    vi.mocked(periodStatus).mockResolvedValue(UNFINISHED);
-    const run = scanRun();
+  it("logs a title that cannot be set", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(setWindowTitle).mockRejectedValue(new Error("denied"));
     await renderMain();
-    fireEvent.click(button("Scan for New Receipts"));
-    expect(startScan).toHaveBeenCalledWith("2030", "03", expect.any(Function));
-    expect(startReconcile).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: "Scanning March 2030" })).toBeTruthy();
-    expect(steps()).toEqual([
-      "pending: Scanning receipts",
-      "pending: Extracting receipt data",
-      "pending: Matching",
-      "pending: Reading reimbursements",
-    ]);
-
-    run.push({ step: "receipts_found", count: 2 });
-    expect(steps()[0]).toBe("done: Scanning receipts · 2 found");
-
-    await act(async () =>
-      run.result.resolve({
-        summary: { ...SUMMARY, bankFees: 2 },
-        dropped_decisions: [{ txId: "tx-001", description: "ACME CORP", removedReceiptFiles: ["acme.pdf"] }],
-      }),
-    );
-    expect(screen.getByRole("heading", { name: "March 2030 scanned" })).toBeTruthy();
-    expect(screen.getByText("Bank fees")).toBeTruthy();
-    const banner = screen.getByRole("status");
-    expect(banner.textContent).toContain("Some review decisions were removed because their receipts are gone:");
-    expect(within(banner).getByRole("listitem").textContent).toBe("ACME CORP (acme.pdf)");
-  });
-
-  it("explains a failed scan", async () => {
-    vi.mocked(periodStatus).mockResolvedValue(UNFINISHED);
-    const run = scanRun();
-    await renderMain();
-    fireEvent.click(button("Scan for New Receipts"));
-    await act(async () => run.result.reject({ kind: "finalized", message: "finalized" }));
-    expect(screen.getByRole("alert").textContent).toBe("This month is finalized. Re-run it to scan for receipts again.Try Again");
-  });
-});
-
-describe("summary actions", () => {
-  it("saves the report", async () => {
-    vi.mocked(exportReport).mockResolvedValue("/Users/example/Downloads/2030-03.xlsx");
-    await reconciled();
-    await act(async () => fireEvent.click(button("Save Report…")));
-    expect(exportReport).toHaveBeenCalledWith("2030", "03");
-    expect(screen.getByRole("status").textContent).toBe("Report saved to /Users/example/Downloads/2030-03.xlsx.");
-  });
-
-  it("says nothing when saving is cancelled", async () => {
-    vi.mocked(exportReport).mockResolvedValue(null);
-    await reconciled();
-    await act(async () => fireEvent.click(button("Save Report…")));
-    expect(exportReport).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("reports a report that cannot be saved", async () => {
-    vi.mocked(exportReport).mockRejectedValue({ kind: "io", message: "disk full" });
-    await reconciled();
-    await act(async () => fireEvent.click(button("Save Report…")));
-    expect(screen.getByRole("alert").textContent).toBe("Concilia couldn't read or write a file: disk full");
-  });
-
-  it("opens the report", async () => {
-    vi.mocked(openReport).mockResolvedValue(undefined);
-    await reconciled();
-    await act(async () => fireEvent.click(button("Open Report")));
-    expect(openReport).toHaveBeenCalledWith("2030", "03");
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("reports a report that cannot be opened", async () => {
-    vi.mocked(openReport).mockRejectedValue({ kind: "not_found", message: "no report yet" });
-    await reconciled();
-    await act(async () => fireEvent.click(button("Open Report")));
-    expect(screen.getByRole("alert").textContent).toBe("no report yet");
-  });
-
-  it("shows the period in Finder", async () => {
-    vi.mocked(revealPeriod).mockResolvedValue(undefined);
-    await reconciled();
-    await act(async () => fireEvent.click(button("Show in Finder")));
-    expect(revealPeriod).toHaveBeenCalledWith("2030", "03");
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("reports a folder that cannot be shown", async () => {
-    vi.mocked(revealPeriod).mockRejectedValue(new Error("no folder"));
-    await reconciled();
-    await act(async () => fireEvent.click(button("Show in Finder")));
-    expect(screen.getByRole("alert").textContent).toBe("Something went wrong: no folder");
-  });
-
-  it("starts a new reconciliation with no statements and no message", async () => {
-    vi.mocked(exportReport).mockResolvedValue("/Users/example/Downloads/2030-03.xlsx");
-    await reconciled();
-    await act(async () => fireEvent.click(button("Save Report…")));
-    fireEvent.click(button("New Reconciliation"));
-    expect(screen.getByRole("heading", { name: "Reconcile a month" })).toBeTruthy();
-    expect(screen.queryByText("extrato-2030-03.pdf")).toBeNull();
-    expect(screen.getByText("Drop statement PDFs here")).toBeTruthy();
-    expect(screen.queryByRole("status")).toBeNull();
-    expect(button("Reconcile").disabled).toBe(true);
+    expect(log).toHaveBeenCalledWith("could not set the window title", expect.any(Error));
   });
 });

@@ -7,7 +7,21 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
-import type { AppStateView, Draft, Missing, ReceiptMeta, ReviewData, Rule, RunEvent, Settings, Summary, Transaction, UpdateInfo } from "../lib/tauri";
+import type {
+  AppStateView,
+  Draft,
+  Missing,
+  PeriodState,
+  PeriodSummary,
+  ReceiptMeta,
+  ReviewData,
+  Rule,
+  RunEvent,
+  Settings,
+  Summary,
+  Transaction,
+  UpdateInfo,
+} from "../lib/tauri";
 
 const AVAILABLE_UPDATE: UpdateInfo = { version: "2.1.0", notes: "Fabricated release notes." };
 
@@ -80,6 +94,36 @@ function reviewData(): ReviewData {
   };
 }
 
+/** "2030-03" for the month `offset` months before `now`. */
+function monthKey(now: Date, offset: number): string {
+  const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * The month folders the receipts root holds, keyed "YYYY-MM", relative to today so the previous
+ * month is always the first. `resume` and `applied` put the previous month in review or
+ * finalized; the other configured scenarios leave it with receipts waiting for statements.
+ */
+function initialPeriods(scenario: string, now: Date): Map<string, PeriodSummary> {
+  const first: Record<string, PeriodState> = { resume: "in_review", applied: "finalized" };
+  const rows: [number, PeriodState, number, number, number][] = [
+    [1, first[scenario] ?? "ready", 38, first[scenario] ? 42 : 0, scenario === "resume" ? 6 : 0],
+    [2, "in_review", 31, 40, 4],
+    [3, "finalized", 27, 35, 0],
+    [4, "finalized", 22, 30, 0],
+    [10, "finalized", 19, 28, 0],
+    [13, "empty", 0, 0, 0],
+  ];
+  const periods = new Map<string, PeriodSummary>();
+  for (const [offset, status, receipts, transactions, pending] of rows) {
+    const key = monthKey(now, offset);
+    const [year, month] = key.split("-");
+    periods.set(key, { year, month, status, receipts, transactions, pending });
+  }
+  return periods;
+}
+
 /** Replays a run's progress over a few seconds, stopping when `cancelled` turns true. */
 async function replay(channel: Channel<RunEvent>, scan: boolean, cancelled: () => boolean): Promise<void> {
   const send = (event: RunEvent) => channel.onmessage(event);
@@ -124,7 +168,16 @@ export function install(): void {
 
   let cancelRequested = false;
   let draft: Draft = {};
-  let finalized = scenario === "applied";
+  const periods = initialPeriods(scenario, new Date());
+
+  /** Sets the status of the month named by `args`, creating its entry when it has none. */
+  function setPeriod(a: Record<string, unknown>, patch: Partial<PeriodSummary>) {
+    const year = String(a.year);
+    const month = String(a.month);
+    const key = `${year}-${month}`;
+    const current = periods.get(key) ?? { year, month, status: "empty", receipts: 0, transactions: 0, pending: 0 };
+    periods.set(key, { ...current, ...patch });
+  }
   mockConvertFileSrc("macos");
 
   function view(): AppStateView {
@@ -183,9 +236,12 @@ export function install(): void {
         case "save_rules":
           rules = a.rules as Rule[];
           return delay(200, rules);
+        case "list_periods":
+          return delay(150, [...periods.values()].sort((a, b) => `${b.year}${b.month}`.localeCompare(`${a.year}${a.month}`)));
         case "period_status": {
-          const exists = scenario === "resume" || scenario === "applied";
-          return { exists, applied: finalized, has_transactions: exists, has_draft: Object.keys(draft).length > 0 };
+          const status = periods.get(`${String(a.year)}-${String(a.month)}`)?.status ?? "empty";
+          const exists = status === "in_review" || status === "finalized";
+          return { exists, applied: status === "finalized", has_transactions: exists, has_draft: Object.keys(draft).length > 0 };
         }
         case "get_review":
           return reviewData();
@@ -199,7 +255,7 @@ export function install(): void {
           return null;
         case "finalize":
           draft = {};
-          finalized = true;
+          setPeriod(a, { status: "finalized", pending: 0 });
           return delay(600, null);
         case "rescan_receipt":
         case "rescan_reimbursement": {
@@ -220,6 +276,12 @@ export function install(): void {
             if (scenario === "run-error") {
               throw { kind: "unauthorized", message: "token exchange failed (400)" };
             }
+            setPeriod(a, {
+              status: "in_review",
+              receipts: SUMMARY.totalReceipts,
+              transactions: SUMMARY.totalTransactions,
+              pending: SUMMARY.review + SUMMARY.unmatched,
+            });
             return cmd === "scan_receipts"
               ? {
                   summary: SUMMARY,

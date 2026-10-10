@@ -33,9 +33,9 @@ export function RunProgress({
   const { t } = useTranslation();
   return (
     <section className="run" aria-labelledby="run-title">
-      <h1 id="run-title" className="start__title">
+      <h2 id="run-title" className="run__title">
         {title}
-      </h1>
+      </h2>
       <ol className="steps-list form-group">
         {steps.map((step) => (
           <li key={step.id} className={`step step--${step.status}`}>
@@ -58,7 +58,7 @@ export function RunProgress({
         ))}
       </ol>
       {running ? (
-        <footer className="start__actions">
+        <footer className="run__actions">
           <span className="grow" />
           <button type="button" onClick={onCancel} disabled={cancelling}>
             {cancelling ? t("progress.cancelling") : t("progress.cancel")}

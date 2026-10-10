@@ -1,179 +1,345 @@
 import "./Main.css";
-import { lazy, Suspense, useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
+import { ActionPopUpButton, type PopUpAction } from "../components/PopUpButton";
+import { Toolbar } from "../components/Toolbar";
 import { errorKind, friendlyError } from "../lib/errors";
 import { useAppState } from "../lib/hooks/useAppState";
-import { useRun } from "../lib/hooks/useRun";
-import { defaultPeriod, periodLabel, type Period } from "../lib/period";
-import { buildSteps, type RunKind } from "../lib/steps";
+import { useRun, type RunState } from "../lib/hooks/useRun";
+import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import {
-  exportReport,
-  openReport,
-  revealPeriod,
-  startReconcile,
-  startScan,
-  type DroppedDecision,
-  type Summary,
-} from "../lib/tauri";
+  defaultPeriod,
+  emptySummary,
+  isReviewable,
+  mergePeriods,
+  parsePeriodKey,
+  periodKey,
+  periodLabel,
+  statusLine,
+  type Period,
+} from "../lib/period";
+import { isPreview } from "../lib/preview";
+import { buildSteps } from "../lib/steps";
+import { listPeriods, openReport, revealPeriod, setWindowTitle, startReconcile, type PeriodSummary, type Summary } from "../lib/tauri";
+import { NewMonthSheet } from "./NewMonthSheet";
+import { RerunSheet } from "./RerunSheet";
 import { RunProgress } from "./RunProgress";
-import { RunSummary } from "./RunSummary";
-import { SetupEmptyState } from "./SetupEmptyState";
-import { StartScreen, type Statement } from "./StartScreen";
+import { Sidebar, type RunningMonth } from "./Sidebar";
+import { Statements, type Statement } from "./Statements";
 import { UpdateBanner } from "./UpdateBanner";
+import { Welcome } from "./Welcome";
 
 const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.Review })));
 
-type Screen = "start" | "run" | "review";
+/** Width of the sidebar, in pixels. */
+export const SIDEBAR_WIDTH = 220;
 
-/** A run's result, whichever kind it was. */
-interface Outcome {
-  summary: Summary;
-  dropped: DroppedDecision[];
+type SheetKind = "new-month" | "rerun";
+
+/** The listing with `period` marked as in review after a run produced `summary`. */
+function withReviewed(listed: PeriodSummary[], period: Period, summary: Summary): PeriodSummary[] {
+  const key = periodKey(period);
+  const entry: PeriodSummary = {
+    ...emptySummary(period),
+    status: "in_review",
+    receipts: summary.totalReceipts,
+    transactions: summary.totalTransactions,
+    pending: summary.review + summary.unmatched,
+  };
+  return [...listed.filter((p) => periodKey(p) !== key), entry];
 }
 
-/** The main window: setup steps until the app is configured, then the reconciliation flow. */
+/** "4 / 38" while receipts are being read, otherwise null. */
+function runProgress(state: RunState<Summary>): string | null {
+  if (state.phase !== "running") {
+    return null;
+  }
+  const last = state.events[state.events.length - 1];
+  return last?.step === "extracting" ? `${last.current} / ${last.total}` : null;
+}
+
+/**
+ * The main window: a toolbar, the months in a sidebar and the selected month in the detail area,
+ * by where the month stands. Before the app is configured it shows the welcome steps instead.
+ */
 export function Main() {
   const { t } = useTranslation();
-  const { state, error: loadError, reload } = useAppState();
-  const [screen, setScreen] = useState<Screen>("start");
-  const [period, setPeriod] = useState<Period>(() => defaultPeriod(new Date()));
-  const [statements, setStatements] = useState<Statement[]>([]);
-  const [kind, setKind] = useState<RunKind>("reconcile");
-  const [message, setMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
-  const run = useRun<Outcome>();
+  const { state, error: loadError, replace, reload } = useAppState();
+  const fallback = useMemo(() => defaultPeriod(new Date()), []);
+  const [storedKey, setStoredKey] = useSafeStorage("main.period", periodKey(fallback));
+  const selected = useMemo(() => parsePeriodKey(storedKey) ?? fallback, [storedKey, fallback]);
+  const key = periodKey(selected);
+  const [sidebarSetting, setSidebarSetting] = useSafeStorage("main.sidebar", "shown");
+  const [listed, setListed] = useState<PeriodSummary[] | null>(null);
+  const [listError, setListError] = useState<unknown>(null);
+  const [created, setCreated] = useState<Period[]>([]);
+  const [statements, setStatements] = useState<Record<string, Statement[]>>({});
+  const [runPeriod, setRunPeriod] = useState<Period | null>(null);
+  const [lastRun, setLastRun] = useState<{ key: string; summary: Summary } | null>(null);
+  const [message, setMessage] = useState<unknown>(null);
+  const [sheet, setSheet] = useState<SheetKind | null>(null);
+  const run = useRun<Summary>();
 
-  const report = useCallback((e: unknown) => setMessage({ tone: "error", text: friendlyError(e, t) }), [t]);
+  const configured = state?.configured === true;
+  const root = state?.settings.receipts_root ?? null;
+  const sidebarShown = sidebarSetting !== "hidden";
+
+  /** Counts listings, so only the latest one lands. */
+  const listing = useRef(0);
+  const refresh = useCallback(() => {
+    listing.current += 1;
+    const mine = listing.current;
+    listPeriods().then(
+      (list) => {
+        if (listing.current === mine) {
+          setListed(list);
+          setListError(null);
+        }
+      },
+      (e) => {
+        if (listing.current === mine) {
+          setListError(e);
+        }
+      },
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!configured) {
+      return;
+    }
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [configured, root, refresh]);
+
+  const periods = useMemo(() => mergePeriods(listed ?? [], [fallback, selected, ...created]), [listed, fallback, selected, created]);
+  const summary = periods.find((p) => periodKey(p) === key) ?? emptySummary(selected);
+  const label = periodLabel(selected, t);
+
+  const windowTitle = configured ? label : "Concilia";
+  useEffect(() => {
+    document.title = windowTitle;
+    if (!isPreview()) {
+      setWindowTitle(windowTitle).catch((e) => console.error("could not set the window title", e));
+    }
+  }, [windowTitle]);
+
+  const select = useCallback(
+    (period: Period) => {
+      setStoredKey(periodKey(period));
+      setMessage(null);
+      setLastRun(null);
+    },
+    [setStoredKey],
+  );
 
   function reconcile(clearCache: boolean) {
+    const target = selected;
+    const files = (statements[periodKey(target)] ?? []).map(({ path, bank }) => ({ path, bank }));
+    setSheet(null);
     setMessage(null);
-    setKind("reconcile");
-    setScreen("run");
-    const files = statements.map(({ path, bank }) => ({ path, bank }));
-    run.start((onEvent) => {
-      const handle = startReconcile(period.year, period.month, files, clearCache, onEvent);
-      return { ...handle, promise: handle.promise.then((summary) => ({ summary, dropped: [] })) };
+    setLastRun(null);
+    setRunPeriod(target);
+    run.start((onEvent) => startReconcile(target.year, target.month, files, clearCache, onEvent));
+  }
+
+  const { state: runState, reset: resetRun } = run;
+  useEffect(() => {
+    if (runState.phase !== "succeeded" || !runPeriod) {
+      return;
+    }
+    const done = periodKey(runPeriod);
+    const result = runState.result;
+    setListed((prev) => withReviewed(prev ?? [], runPeriod, result));
+    setStatements((prev) => {
+      const next = { ...prev };
+      delete next[done];
+      return next;
     });
+    setStoredKey(done);
+    setLastRun({ key: done, summary: result });
+    setRunPeriod(null);
+    resetRun();
+    refresh();
+  }, [runState, runPeriod, resetRun, refresh, setStoredKey]);
+
+  function tryAgain() {
+    resetRun();
+    setRunPeriod(null);
   }
 
-  function scan() {
-    setMessage(null);
-    setKind("scan");
-    setScreen("run");
-    run.start((onEvent) => {
-      const handle = startScan(period.year, period.month, onEvent);
-      return {
-        ...handle,
-        promise: handle.promise.then((result) => ({ summary: result.summary, dropped: result.dropped_decisions })),
-      };
-    });
-  }
+  const reveal = () => {
+    revealPeriod(selected.year, selected.month).catch(setMessage);
+  };
+  const runHere = runPeriod !== null && periodKey(runPeriod) === key && runState.phase !== "idle";
+  const running = runState.phase === "running";
+  const monthStatements = statements[key] ?? [];
+  const runningMonth: RunningMonth | null = runPeriod && running ? { key: periodKey(runPeriod), progress: runProgress(runState) } : null;
+  const listReady = listed !== null || listError !== null;
+  const reviewable = isReviewable(summary);
 
-  function startOver() {
-    run.reset();
-    setStatements([]);
-    setMessage(null);
-    setScreen("start");
-  }
-
-  function saveReport() {
-    exportReport(period.year, period.month).then((path) => {
-      if (path) {
-        setMessage({ tone: "info", text: t("results.reportSaved", { path }) });
-      }
-    }, report);
-  }
-
-  const label = periodLabel(period, t);
-  let body = null;
+  let detail: ReactNode = null;
+  let subtitle: string | undefined;
+  let trailing: ReactNode = null;
   if (state && !state.configured) {
-    body = <SetupEmptyState missing={state.missing} onError={report} />;
-  } else if (state && screen === "review") {
-    body = (
-      <Suspense fallback={null}>
-        <Review period={period} onBack={() => setScreen("start")} onError={report} />
-      </Suspense>
-    );
-  } else if (state && screen === "run" && run.state.phase !== "idle") {
-    const outcome = run.state.phase === "succeeded" ? "succeeded" : run.state.phase === "failed" ? "failed" : null;
-    const steps = buildSteps(kind, run.state.events, outcome, t);
-    if (run.state.phase === "succeeded") {
-      body = (
-        <RunSummary
-          title={t(kind === "scan" ? "results.scanTitle" : "results.title", { period: label })}
-          summary={run.state.result.summary}
-          dropped={run.state.result.dropped}
-          hasReport={true}
-          onReview={() => setScreen("review")}
-          onSaveReport={saveReport}
-          onOpenReport={() => openReport(period.year, period.month).catch(report)}
-          onReveal={() => revealPeriod(period.year, period.month).catch(report)}
-          onNew={startOver}
+    detail = <Welcome state={state} period={fallback} onState={replace} onError={setMessage} />;
+  } else if (state && runHere) {
+    const failed = runState.phase === "failed" ? runState.error : null;
+    const cancelled = failed !== null && errorKind(failed) === "cancelled";
+    const outcome = failed !== null ? "failed" : null;
+    subtitle = runningMonth?.progress ?? t("month.status.reconciling");
+    detail = (
+      <div className="run-panel">
+        <RunProgress
+          title={t("progress.title", { period: label })}
+          steps={buildSteps("reconcile", runState.events, outcome, t)}
+          running={running}
+          cancelling={runState.phase === "running" && runState.cancelling}
+          onCancel={run.cancel}
         />
+        {failed !== null ? (
+          <div className={`banner ${cancelled ? "banner--info" : "banner--error"}`} role="alert">
+            <Icon name="warning" size={14} />
+            <span className="grow">{cancelled ? t("month.stopped") : friendlyError(failed, t)}</span>
+            <button type="button" className="banner__action" onClick={tryAgain}>
+              {t("common.tryAgain")}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+    if (runState.phase === "running") {
+      trailing = (
+        <button type="button" onClick={run.cancel} disabled={runState.cancelling}>
+          {runState.cancelling ? t("progress.cancelling") : t("progress.cancel")}
+        </button>
+      );
+    }
+  } else if (state && listReady) {
+    subtitle = lastRun?.key === key ? t("month.summary", { ...lastRun.summary }) : statusLine(summary, t).label;
+    const actions: PopUpAction[] = [
+      {
+        label: t("month.openReport"),
+        onSelect: () => {
+          openReport(selected.year, selected.month).catch(setMessage);
+        },
+        disabled: !reviewable,
+      },
+      { label: t("month.showInFinder"), onSelect: reveal },
+    ];
+    if (reviewable) {
+      actions.push({ label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
+    }
+    const more = <ActionPopUpButton label={t("toolbar.moreActions")} actions={actions} />;
+    if (reviewable) {
+      trailing = more;
+      detail = (
+        <Suspense fallback={null}>
+          <Review key={key} period={selected} onChanged={refresh} onError={setMessage} />
+        </Suspense>
       );
     } else {
-      const failed = run.state.phase === "failed" ? run.state.error : null;
-      body = (
+      trailing = (
         <>
-          <RunProgress
-            title={t(kind === "scan" ? "progress.scanTitle" : "progress.title", { period: label })}
-            steps={steps}
-            running={run.state.phase === "running"}
-            cancelling={run.state.phase === "running" && run.state.cancelling}
-            onCancel={run.cancel}
+          {more}
+          <button
+            type="button"
+            className="default"
+            disabled={running || (monthStatements.length === 0 && summary.transactions === 0)}
+            onClick={() => reconcile(false)}
+          >
+            {t("month.reconcile")}
+          </button>
+        </>
+      );
+      detail = (
+        <Statements
+          period={selected}
+          summary={summary}
+          receiptsRoot={root}
+          statements={monthStatements}
+          onStatements={(next) => setStatements((prev) => ({ ...prev, [key]: next }))}
+          onReveal={reveal}
+          onError={setMessage}
+        />
+      );
+    }
+  }
+
+  const showSidebar = configured && sidebarShown;
+  const toggle = configured ? (
+    <button
+      type="button"
+      className="icon titlebar__button"
+      aria-label={sidebarShown ? t("toolbar.hideSidebar") : t("toolbar.showSidebar")}
+      title={sidebarShown ? t("toolbar.hideSidebar") : t("toolbar.showSidebar")}
+      aria-expanded={sidebarShown}
+      onClick={() => setSidebarSetting(sidebarShown ? "hidden" : "shown")}
+    >
+      <Icon name="sidebar" size={16} />
+    </button>
+  ) : null;
+
+  return (
+    <div className="main">
+      <Toolbar
+        leading={toggle}
+        leadingWidth={showSidebar ? SIDEBAR_WIDTH : undefined}
+        title={configured ? label : undefined}
+        subtitle={subtitle}
+        trailing={trailing}
+        separator={configured}
+      />
+      <div className="main__body">
+        {showSidebar ? (
+          <Sidebar
+            periods={periods}
+            selected={key}
+            onSelect={select}
+            running={runningMonth}
+            error={listError}
+            onRetry={refresh}
+            onNewMonth={() => setSheet("new-month")}
+            width={SIDEBAR_WIDTH}
           />
-          {failed !== null ? (
-            <div className={`banner ${errorKind(failed) === "cancelled" ? "banner--info" : "banner--error"}`} role="alert">
+        ) : null}
+        <main className={`detail ${configured && reviewable && !runHere ? "detail--review" : ""}`}>
+          <UpdateBanner onError={setMessage} />
+          {loadError ? (
+            <div className="banner banner--error" role="alert">
               <Icon name="warning" size={14} />
-              <span className="grow">{errorKind(failed) === "cancelled" ? t("results.stopped") : friendlyError(failed, t)}</span>
-              <button type="button" className="banner__action" onClick={() => setScreen("start")}>
-                {t("results.tryAgain")}
+              <span className="grow">{friendlyError(loadError, t)}</span>
+              <button type="button" className="banner__action" onClick={reload}>
+                {t("common.tryAgain")}
               </button>
             </div>
           ) : null}
-        </>
-      );
-    }
-  } else if (state) {
-    body = (
-      <StartScreen
-        period={period}
-        onPeriod={(next) => {
-          setMessage(null);
-          setPeriod(next);
-        }}
-        statements={statements}
-        onStatements={setStatements}
-        onReconcile={reconcile}
-        onResume={() => setScreen("review")}
-        onScan={scan}
-        onError={report}
-      />
-    );
-  }
-
-  return (
-    <div className={`main ${screen === "review" && state?.configured ? "main--review" : ""}`}>
-      <UpdateBanner onError={report} />
-      {loadError ? (
-        <div className="banner banner--error" role="alert">
-          <Icon name="warning" size={14} />
-          <span className="grow">{friendlyError(loadError, t)}</span>
-          <button type="button" className="banner__action" onClick={reload}>
-            {t("common.tryAgain")}
-          </button>
-        </div>
+          {message !== null ? (
+            <div className="banner banner--error" role="alert">
+              <Icon name="warning" size={14} />
+              <span className="grow">{friendlyError(message, t)}</span>
+              <button type="button" className="icon" aria-label={t("common.close")} onClick={() => setMessage(null)}>
+                <Icon name="xmark" size={12} />
+              </button>
+            </div>
+          ) : null}
+          {detail}
+        </main>
+      </div>
+      {sheet === "new-month" ? (
+        <NewMonthSheet
+          initial={selected}
+          onCancel={() => setSheet(null)}
+          onCreate={(period) => {
+            setCreated((prev) => [...prev, period]);
+            select(period);
+            setSheet(null);
+          }}
+        />
       ) : null}
-      {message ? (
-        <div className={`banner banner--${message.tone}`} role={message.tone === "error" ? "alert" : "status"}>
-          <Icon name={message.tone === "error" ? "warning" : "check"} size={14} />
-          <span className="grow">{message.text}</span>
-          <button type="button" className="icon" aria-label={t("common.close")} onClick={() => setMessage(null)}>
-            <Icon name="xmark" size={12} />
-          </button>
-        </div>
-      ) : null}
-      {body}
+      {sheet === "rerun" ? <RerunSheet period={label} onCancel={() => setSheet(null)} onConfirm={() => reconcile(true)} /> : null}
     </div>
   );
 }

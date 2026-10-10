@@ -23,6 +23,7 @@ export const SYMBOL_NAMES = [
   "drop",
   "globe",
   "sparkles",
+  "sidebar",
 ] as const;
 
 export type IconName = (typeof SYMBOL_NAMES)[number];

@@ -126,11 +126,11 @@ async function advance(ms: number) {
 }
 
 async function renderReview() {
-  const onBack = vi.fn();
+  const onChanged = vi.fn();
   const onError = vi.fn();
-  const result = render(<Review period={PERIOD} onBack={onBack} onError={onError} />);
+  const result = render(<Review period={PERIOD} onChanged={onChanged} onError={onError} />);
   await settle();
-  return { ...result, onBack, onError };
+  return { ...result, onChanged, onError };
 }
 
 function button(name: string, scope: HTMLElement = document.body): HTMLButtonElement {
@@ -201,22 +201,25 @@ describe("loading", () => {
     expect(getReview).toHaveBeenCalledWith("2030", "03");
     expect(getDraft).toHaveBeenCalledWith("2030", "03");
     expect(periodStatus).toHaveBeenCalledWith("2030", "03");
-    expect(screen.getByRole("heading", { name: "Review March 2030" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Review March 2030" })).toBeTruthy();
   });
 
   it("shows nothing while loading", () => {
     vi.mocked(getReview).mockReturnValue(new Promise(() => undefined));
-    const { container } = render(<Review period={PERIOD} onBack={vi.fn()} onError={vi.fn()} />);
+    const { container } = render(<Review period={PERIOD} onError={vi.fn()} />);
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows a load error with Back", async () => {
-    vi.mocked(getReview).mockRejectedValue({ kind: "not_found", message: "No reconciliation for March 2030." });
-    const { onBack } = await renderReview();
-    expect(screen.getByRole("alert").textContent).toBe("No reconciliation for March 2030.Back");
-    expect(screen.queryByRole("heading")).toBeNull();
-    fireEvent.click(button("Back"));
-    expect(onBack).toHaveBeenCalledTimes(1);
+  it("shows a load error and loads again on Try Again", async () => {
+    vi.mocked(getReview).mockRejectedValueOnce({ kind: "not_found", message: "No reconciliation for March 2030." });
+    await renderReview();
+    expect(screen.getByRole("alert").textContent).toBe("No reconciliation for March 2030.Try Again");
+    expect(screen.queryByRole("region", { name: "Review March 2030" })).toBeNull();
+    fireEvent.click(button("Try Again"));
+    await settle();
+    expect(getReview).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(descriptions()).toEqual(["ACME CORP", "GLOBEX SHOP", "INITECH SERVICES", "HOOLI PAYROLL"]);
   });
 
   it("lists transactions by date with every undecided one open", async () => {
@@ -247,12 +250,6 @@ describe("loading", () => {
     await renderReview();
     const section = screen.getByRole("region", { name: "Reimbursements (1)" });
     expect(within(section).getByText("Total: €5.00")).toBeTruthy();
-  });
-
-  it("goes back", async () => {
-    const { onBack } = await renderReview();
-    fireEvent.click(button("Back"));
-    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -588,7 +585,7 @@ describe("scan for new receipts", () => {
 
   it("reloads and reports dropped decisions when the scan succeeds", async () => {
     const run = scanRun();
-    await renderReview();
+    const { onChanged } = await renderReview();
     fireEvent.click(button("Scan for New Receipts"));
     await settle();
     vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_ACME, TX_INITECH] }));
@@ -599,6 +596,7 @@ describe("scan for new receipts", () => {
     await settle();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(getReview).toHaveBeenCalledTimes(2);
+    expect(onChanged).toHaveBeenCalledTimes(1);
     expect(descriptions()).toEqual(["ACME CORP", "INITECH SERVICES"]);
     const banner = screen.getByText("1 pending decision was dropped because its receipt was removed: GLOBEX SHOP").closest<HTMLElement>(".banner")!;
     fireEvent.click(button("Dismiss", banner));
@@ -718,7 +716,7 @@ describe("finalize", () => {
   it("saves pending changes, finalizes and reloads", async () => {
     const done = deferred<void>();
     vi.mocked(finalize).mockReturnValue(done.promise);
-    await renderReview();
+    const { onChanged } = await renderReview();
     fireEvent.click(button("Accept", receipt(row("INITECH SERVICES"), "INITECH")));
     const sheet = await confirmFinalize();
     expect(button("Working…", sheet).disabled).toBe(true);
@@ -733,6 +731,7 @@ describe("finalize", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.getByText("Changes applied and report updated")).toBeTruthy();
     expect(getReview).toHaveBeenCalledTimes(2);
+    expect(onChanged).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/This month is finalized/)).toBeTruthy();
   });
 

@@ -45,8 +45,11 @@ const FILTERS: Filter[] = ["all", "review", "unmatched", "matched"];
 
 type Loaded = { data: ReviewData; draft: Draft; applied: boolean };
 
-/** The review of a month's matches: decisions save as a draft until Finalize applies them. */
-export function Review({ period, onBack, onError }: { period: Period; onBack: () => void; onError: (e: unknown) => void }) {
+/**
+ * The review of a month's matches: decisions save as a draft until Finalize applies them.
+ * `onChanged` runs after a scan or Finalize changes what the month holds.
+ */
+export function Review({ period, onChanged, onError }: { period: Period; onChanged?: () => void; onError: (e: unknown) => void }) {
   const { t } = useTranslation();
   const { year, month } = period;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -153,8 +156,9 @@ export function Review({ period, onBack, onError }: { period: Period; onBack: ()
       setDropped(scanState.result.dropped);
       resetScan();
       load();
+      onChanged?.();
     }
-  }, [scanState, resetScan, load]);
+  }, [scanState, resetScan, load, onChanged]);
 
   function saveReport() {
     autosave
@@ -177,6 +181,7 @@ export function Review({ period, onBack, onError }: { period: Period; onBack: ()
         setConfirmFinalize(false);
         setNotice(t("review.changesApplied"));
         load();
+        onChanged?.();
       })
       .catch(onError)
       .finally(() => setFinalizing(false));
@@ -215,8 +220,8 @@ export function Review({ period, onBack, onError }: { period: Period; onBack: ()
         <div className="banner banner--error" role="alert">
           <Icon name="warning" size={14} />
           <span className="grow">{friendlyError(loadError, t)}</span>
-          <button type="button" className="banner__action" onClick={onBack}>
-            {t("review.back")}
+          <button type="button" className="banner__action" onClick={load}>
+            {t("common.tryAgain")}
           </button>
         </div>
       </section>
@@ -230,14 +235,8 @@ export function Review({ period, onBack, onError }: { period: Period; onBack: ()
   const busy = finalizing || scan.state.phase === "running";
 
   return (
-    <section className="review" aria-labelledby="review-title">
+    <section className="review" aria-label={t("review.title", { period: periodLabel(period, t) })}>
       <header className="review__toolbar">
-        <button type="button" onClick={onBack}>
-          {t("review.back")}
-        </button>
-        <h1 id="review-title" className="review__title">
-          {t("review.title", { period: periodLabel(period, t) })}
-        </h1>
         <div className="segmented" role="group" aria-label={t("review.title", { period: periodLabel(period, t) })}>
           {FILTERS.map((key) => (
             <button

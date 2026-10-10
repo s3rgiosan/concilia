@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
     convertFileSrc: vi.fn((path: string, protocol: string) => `${protocol}://localhost/${encodeURIComponent(path)}`),
     listen: vi.fn(),
     getVersion: vi.fn(),
+    setTitle: vi.fn(),
     Channel,
   };
 });
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, convertFileSrc: mocks.convertFileSrc, Channel: mocks.Channel }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ setTitle: mocks.setTitle }) }));
 
 const api = await import("./tauri");
 
@@ -60,6 +62,7 @@ describe("command wrappers", () => {
     ["getRules", () => api.getRules(), "get_rules"],
     ["saveRules", () => api.saveRules(rules), "save_rules", { rules }],
     ["periodStatus", () => api.periodStatus("2030", "03"), "period_status", { year: "2030", month: "03" }],
+    ["listPeriods", () => api.listPeriods(), "list_periods"],
     ["pickStatements", () => api.pickStatements(), "pick_statements"],
     ["cancelRun", () => api.cancelRun("2030", "03"), "cancel_run", { year: "2030", month: "03" }],
     ["getReview", () => api.getReview("2030", "03"), "get_review", { year: "2030", month: "03" }],
@@ -161,6 +164,14 @@ describe("appVersion", () => {
   it("reads the app version", async () => {
     mocks.getVersion.mockResolvedValue("2.0.0");
     await expect(api.appVersion()).resolves.toBe("2.0.0");
+  });
+});
+
+describe("setWindowTitle", () => {
+  it("sets the current window's title", async () => {
+    mocks.setTitle.mockResolvedValue(undefined);
+    await api.setWindowTitle("March 2030");
+    expect(mocks.setTitle).toHaveBeenCalledWith("March 2030");
   });
 });
 

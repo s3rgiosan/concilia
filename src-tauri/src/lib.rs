@@ -11,6 +11,7 @@ pub mod fsutil;
 pub mod gemini;
 pub mod locks;
 pub mod matcher;
+pub mod menu;
 pub mod model;
 pub mod period;
 pub mod pipeline;
@@ -26,78 +27,33 @@ pub mod windows;
 
 use std::sync::Arc;
 
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager, Wry};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::app::{AppState, BUSY_CHANGED_EVENT};
 use crate::config::{ConfigStore, RulesStore};
+use crate::menu::{MenuLabels, MenuState, Route};
 use crate::poppler::Poppler;
 use crate::secrets::{SecretStore, ServiceAccountStore};
 use crate::updates::{UpdateCheckResult, UpdateManager, UPDATE_CHECK_RESULT_EVENT};
 
-const MENU_SETTINGS: &str = "settings";
-const MENU_CHECK_UPDATES: &str = "check-updates";
-
-fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
-    let name = app.package_info().name.clone();
-    let settings = MenuItem::with_id(app, MENU_SETTINGS, "Settings…", true, Some("CmdOrCtrl+,"))?;
-    let check_updates = MenuItem::with_id(
-        app,
-        MENU_CHECK_UPDATES,
-        "Check for Updates…",
-        true,
-        None::<&str>,
-    )?;
-    let about = AboutMetadata {
-        name: Some(name.clone()),
-        version: Some(app.package_info().version.to_string()),
-        ..Default::default()
-    };
-    let app_menu = Submenu::with_items(
-        app,
-        &name,
-        true,
-        &[
-            &PredefinedMenuItem::about(app, None, Some(about))?,
-            &check_updates,
-            &PredefinedMenuItem::separator(app)?,
-            &settings,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::services(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::show_all(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, None)?,
-        ],
-    )?;
-    let edit_menu = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
-        ],
-    )?;
-    let window_menu = Submenu::with_items(
-        app,
-        "Window",
-        true,
-        &[
-            &PredefinedMenuItem::minimize(app, None)?,
-            &PredefinedMenuItem::maximize(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
-        ],
-    )?;
-    Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
+fn handle_menu_event(app: &AppHandle, id: &str) {
+    match menu::route(id) {
+        Route::Settings => windows::open_settings(app),
+        Route::CheckUpdates => check_for_updates_from_menu(app),
+        Route::Help => {
+            if let Err(error) = app.opener().open_url(menu::HELP_URL, None::<&str>) {
+                log::warn!("could not open the help page: {error}");
+            }
+        }
+        Route::Frontend => {
+            let _ = app.emit_to(
+                windows::MAIN_LABEL,
+                menu::MENU_EVENT,
+                serde_json::json!({ "id": id }),
+            );
+        }
+    }
 }
 
 /// Focuses the main window and sends it the outcome of a check run now.
@@ -163,6 +119,9 @@ pub fn run() {
             commands::get_rules,
             commands::save_rules,
             commands::period_status,
+            commands::list_periods,
+            menu::set_menu,
+            menu::set_menu_state,
             commands::pick_statements,
             commands::reconcile,
             commands::scan_receipts,
@@ -183,12 +142,7 @@ pub fn run() {
             commands::pending_update,
             commands::install_update,
         ])
-        .menu(build_menu)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            MENU_SETTINGS => windows::open_settings(app),
-            MENU_CHECK_UPDATES => check_for_updates_from_menu(app),
-            _ => {}
-        })
+        .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .setup(|app| {
             let handle = app.handle().clone();
             let config_dir = app.path().app_config_dir()?;
@@ -231,6 +185,12 @@ pub fn run() {
 
             app.manage(state);
             app.manage(updates);
+
+            let menu_state = MenuState::default();
+            if let Err(error) = menu::apply(&handle, &menu_state, &MenuLabels::default()) {
+                log::error!("menu unavailable: {error}");
+            }
+            app.manage(menu_state);
             Ok(())
         })
         .run(tauri::generate_context!())

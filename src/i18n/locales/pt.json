@@ -35,7 +35,6 @@
     "matching": "A associar",
     "generatingReport": "A gerar relatório",
     "receiptsFound": "{{count}} encontrados",
-    "scanTitle": "A analisar {{period}}",
     "reimbursements": "A ler reembolsos",
     "savedTransactions": "a usar as transações guardadas",
     "cancel": "Cancelar",
@@ -43,46 +42,73 @@
     "filesFound_one": "{{count}} ficheiro",
     "filesFound_other": "{{count}} ficheiros"
   },
-  "results": {
-    "title": "{{period}} reconciliado",
-    "subtitle": "{{totalTransactions}} transações · {{totalReceipts}} recibos",
-    "matched": "Associados",
-    "review": "Revisão",
-    "unmatched": "Sem associação",
-    "bankFees": "Comissões bancárias",
-    "matchRate": "{{matchRate}}% taxa de associação",
-    "needsAttention": "requer atenção",
-    "noReceipt": "sem recibo",
-    "autoDetected": "detetado automaticamente",
-    "downloadReport": "Descarregar relatório",
-    "reviewAndValidate": "Rever e validar",
-    "newReconciliation": "Nova reconciliação",
-    "failed": "Erro na reconciliação",
-    "tryAgain": "Tentar novamente",
-    "connectionClosed": "A ligação foi interrompida inesperadamente. Tente novamente.",
-    "scanTitle": "{{period}} analisado",
-    "saveReport": "Guardar relatório…",
+  "toolbar": {
+    "showSidebar": "Mostrar barra lateral",
+    "hideSidebar": "Ocultar barra lateral",
+    "moreActions": "Mais ações"
+  },
+  "sidebar": {
+    "months": "Meses",
+    "newMonth": "Novo mês…"
+  },
+  "month": {
+    "status": {
+      "empty": "Sem recibos",
+      "ready": "Pronto",
+      "readyReceipts_one": "Pronto · {{count}} recibo",
+      "readyReceipts_other": "Pronto · {{count}} recibos",
+      "inReview": "Em revisão",
+      "inReviewPending_one": "Em revisão · falta {{count}}",
+      "inReviewPending_other": "Em revisão · faltam {{count}}",
+      "finalized": "Finalizado",
+      "reconciling": "A reconciliar…"
+    },
+    "summary": "{{totalTransactions}} transações · {{totalReceipts}} recibos · {{matchRate}}% associados",
+    "dropHint": "Largue aqui os extratos bancários de {{month}}",
+    "statements": "Extratos bancários",
+    "addStatements": "Adicionar extratos…",
+    "bank": "Banco",
+    "removeStatement": "Remover {{name}}",
+    "notPdf": "Só é possível adicionar ficheiros PDF.",
+    "receiptsHint": "Coloque os recibos deste mês em {{path}}",
+    "showInFinder": "Mostrar no Finder",
     "openReport": "Abrir relatório",
-    "reveal": "Mostrar no Finder",
-    "reportSaved": "Relatório guardado em {{path}}.",
-    "stopped": "A reconciliação foi parada.",
-    "droppedTitle": "Algumas decisões de revisão foram removidas porque os recibos já não existem:"
+    "reconcile": "Reconciliar",
+    "rerun": "Voltar a executar…",
+    "stopped": "A reconciliação foi parada."
+  },
+  "newMonth": {
+    "title": "Novo mês",
+    "create": "Criar"
+  },
+  "rerun": {
+    "title": "Voltar a executar {{period}}?",
+    "message": "Os recibos ordenados voltam para a pasta de recibos e o Gemini lê novamente todos os recibos.",
+    "confirm": "Voltar a executar"
+  },
+  "welcome": {
+    "title": "Bem-vindo ao Concilia",
+    "intro": "Escolha a pasta onde guarda os recibos e importe uma chave do Gemini. Depois, adicione os extratos bancários de um mês para o reconciliar.",
+    "receiptsFolder": "Pasta de recibos",
+    "notChosen": "Não escolhida",
+    "geminiKey": "Chave do Gemini",
+    "notImported": "Não importada",
+    "imported": "Importada",
+    "import": "Importar…",
+    "project": "Projeto da Google Cloud",
+    "projectMissing": "Obrigatório",
+    "openSettings": "Abrir definições",
+    "layoutTitle": "Guarde os recibos de cada mês numa pasta como esta:",
+    "layoutRoot": "Recibos",
+    "layoutNote": "recibos deste mês"
+  },
+  "results": {
+    "saveReport": "Guardar relatório…",
+    "reportSaved": "Relatório guardado em {{path}}."
   },
   "form": {
-    "title": "Reconciliar um mês",
-    "subtitle": "Selecionar o período e carregar extratos bancários",
     "year": "Ano",
     "month": "Mês",
-    "bankStatements": "Extratos Bancários",
-    "dropzone": "Largar ficheiros PDF aqui ou",
-    "browse": "selecionar",
-    "addStatement": "Adicionar extrato",
-    "run": "Reconciliar",
-    "priorApplied": "Este mês está finalizado.",
-    "priorUnfinished": "Este mês tem uma reconciliação em curso.",
-    "resumeReview": "Continuar revisão",
-    "rerunFromScratch": "Executar novamente",
-    "rerun": "Voltar a executar",
     "months": {
       "01": "Janeiro",
       "02": "Fevereiro",
@@ -97,14 +123,7 @@
       "11": "Novembro",
       "12": "Dezembro"
     },
-    "statements": "Extratos bancários",
-    "dropHint": "Largue aqui os PDF dos extratos",
-    "addStatements": "Adicionar extratos…",
-    "bank": "Banco",
-    "removeStatement": "Remover {{name}}",
-    "notPdf": "Só é possível adicionar ficheiros PDF.",
-    "scan": "Procurar novos recibos",
-    "rerunHint": "Voltar a executar devolve os recibos ordenados à pasta de recibos e volta a ler todos os recibos."
+    "scan": "Procurar novos recibos"
   },
   "review": {
     "title": "Revisão de {{period}}",
@@ -205,7 +224,6 @@
       "rescanFailed": "Falha ao reanalisar reembolso: {{msg}}"
     },
     "search": "Pesquisar",
-    "back": "Voltar",
     "saveState": {
       "saving": "A guardar…",
       "saved": "Todas as alterações guardadas",
@@ -299,14 +317,6 @@
       "incomplete": "Preencha as duas palavras-chave de todas as regras.",
       "editRule": "Editar regra"
     }
-  },
-  "setup": {
-    "title": "Configurar o Concilia",
-    "intro": "Conclua estes passos nas Definições antes de reconciliar um mês:",
-    "receipts_root": "Escolha a pasta onde guarda os recibos.",
-    "service_account": "Importe uma chave de conta de serviço da Google Cloud para o Gemini.",
-    "project": "Indique o projeto da Google Cloud a faturar.",
-    "openSettings": "Abrir definições"
   },
   "update": {
     "available": "O Concilia {{version}} está disponível.",
