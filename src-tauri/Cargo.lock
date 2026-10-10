@@ -658,7 +658,6 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "calamine",
- "concilia",
  "futures",
  "indexmap 2.14.2",
  "jsonwebtoken",
@@ -676,14 +675,12 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-log",
  "tauri-plugin-opener",
- "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
- "uuid",
  "wiremock",
 ]
 
@@ -4893,16 +4890,6 @@ dependencies = [
  "url",
  "windows",
  "zbus",
-]
-
-[[package]]
-name = "tauri-plugin-process"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74ae3d8549ae564c0397377373e262f340908eb23a5b9fbe03f2a00007dc0038"
-dependencies = [
- "tauri",
- "tauri-plugin",
 ]
 
 [[package]]

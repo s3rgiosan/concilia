@@ -18,7 +18,7 @@ afterEach(() => {
 describe("NewMonthSheet", () => {
   function renderSheet(existing: string[] = []) {
     const onCancel = vi.fn();
-    const onCreate = vi.fn();
+    const onCreate = vi.fn().mockResolvedValue(undefined);
     render(<NewMonthSheet initial={{ year: "2030", month: "03" }} existing={new Set(existing)} onCancel={onCancel} onCreate={onCreate} />);
     return { onCancel, onCreate };
   }
@@ -62,6 +62,15 @@ describe("NewMonthSheet", () => {
     expect(create.disabled).toBe(true);
     fireEvent.click(create);
     expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it("stays open with the reason when creating fails", async () => {
+    const { onCreate } = renderSheet();
+    onCreate.mockRejectedValueOnce(new Error("disk full"));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(await screen.findByText(/disk full/)).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "New Month" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Create" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("cancels", () => {

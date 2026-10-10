@@ -78,7 +78,6 @@ describe("command wrappers", () => {
     ["getReview", () => api.getReview("2030", "03"), "get_review", { year: "2030", month: "03" }],
     ["getDraft", () => api.getDraft("2030", "03"), "get_draft", { year: "2030", month: "03" }],
     ["saveDraft", () => api.saveDraft("2030", "03", draft), "save_draft", { year: "2030", month: "03", draft }],
-    ["deleteDraft", () => api.deleteDraft("2030", "03"), "delete_draft", { year: "2030", month: "03" }],
     ["finalize", () => api.finalize("2030", "03"), "finalize", { year: "2030", month: "03" }],
     [
       "rescanReceipt",
@@ -103,6 +102,8 @@ describe("command wrappers", () => {
     ["revealPeriod", () => api.revealPeriod("2030", "03"), "reveal_period", { year: "2030", month: "03" }],
     ["openSettings", () => api.openSettings(), "open_settings"],
     ["openKeyHelp", () => api.openKeyHelp(), "open_key_help"],
+    ["periodSummary", () => api.periodSummary("2030", "03"), "period_summary", { year: "2030", month: "03" }],
+    ["setMenuItemText", () => api.setMenuItemText("reject", "Remove Match"), "set_menu_item_text", { id: "reject", text: "Remove Match" }],
     ["createPeriod", () => api.createPeriod("2030", "03"), "create_period", { year: "2030", month: "03" }],
     ["checkForUpdates", () => api.checkForUpdates(), "check_for_updates"],
     ["pendingUpdate", () => api.pendingUpdate(), "pending_update"],

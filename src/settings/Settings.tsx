@@ -5,9 +5,10 @@ import { ErrorText } from "../components/ErrorText";
 import { Icon, type IconName } from "../components/Icon";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
+import { useWindowTitle } from "../lib/hooks/useWindowTitle";
 import { isTextField } from "../lib/popUpMenu";
 import { isPreview } from "../lib/preview";
-import { onMenu, saveSettings, setWindowTitle, subscribe, type Settings as SettingsData } from "../lib/tauri";
+import { onMenu, saveSettings, subscribe, type Settings as SettingsData } from "../lib/tauri";
 import { FolderTab } from "./FolderTab";
 import { GeminiTab } from "./GeminiTab";
 import { GeneralTab } from "./GeneralTab";
@@ -45,12 +46,7 @@ export function Settings() {
     setShownPane(pane);
     setSwitched(true);
   }
-  useEffect(() => {
-    document.title = paneTitle;
-    if (!isPreview()) {
-      setWindowTitle(paneTitle).catch((e) => console.error("could not set the window title", e));
-    }
-  }, [paneTitle]);
+  useWindowTitle(paneTitle);
 
   /** What Edit › Undo does outside a text field: set by the Rules pane while it can undo a removal. */
   const undoRule = useRef<(() => void) | null>(null);
@@ -118,7 +114,7 @@ export function Settings() {
 
   /** Moves between the pane switcher's tabs with ← and →, wrapping at the ends. */
   function onTabKeyDown(e: KeyboardEvent<HTMLElement>) {
-    let step = 0;
+    let step: number;
     switch (e.key) {
       case "ArrowRight":
         step = 1;

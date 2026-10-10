@@ -107,7 +107,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .register_asynchronous_uri_scheme_protocol(protocol::SCHEME, protocol::handle)
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
@@ -122,8 +121,10 @@ pub fn run() {
             commands::period_status,
             commands::list_periods,
             commands::create_period,
+            commands::period_summary,
             menu::set_menu,
             menu::set_menu_state,
+            menu::set_menu_item_text,
             commands::pick_statements,
             commands::reconcile,
             commands::scan_receipts,
@@ -132,7 +133,6 @@ pub fn run() {
             commands::get_review,
             commands::get_draft,
             commands::save_draft,
-            commands::delete_draft,
             commands::finalize,
             commands::rescan_receipt,
             commands::rescan_reimbursement,
@@ -178,10 +178,9 @@ pub fn run() {
                 let _ = busy_handle.emit(BUSY_CHANGED_EVENT, serde_json::json!({ "busy": busy }));
             });
 
-            let updates = Arc::new(UpdateManager::new(
-                Arc::new(updates::PluginSource::new(handle.clone())),
-                Arc::new(|_| {}),
-            ));
+            let updates = Arc::new(UpdateManager::new(Arc::new(updates::PluginSource::new(
+                handle.clone(),
+            ))));
             let schedule_state = Arc::clone(&state);
             tauri::async_runtime::spawn(updates::run_schedule(Arc::clone(&updates), move || {
                 schedule_state.settings().check_for_updates

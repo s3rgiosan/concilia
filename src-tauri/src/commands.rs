@@ -30,7 +30,7 @@ use crate::windows;
 const RUN_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 fn period(year: &str, month: &str) -> CommandResult<Period> {
-    Period::parse(year, month).map_err(fail)
+    Ok(Period::parse(year, month)?)
 }
 
 fn receipts_root(state: &AppState) -> CommandResult<PathBuf> {
@@ -52,7 +52,7 @@ async fn blocking<T: Send + 'static>(
 ) -> CommandResult<T> {
     tauri::async_runtime::spawn_blocking(work)
         .await
-        .map_err(|e| fail(CommandError::internal(e)))
+        .map_err(CommandError::internal)
 }
 
 #[tauri::command]
@@ -73,7 +73,9 @@ pub fn save_settings(
 /// Asks for the receipts folder. Returns its path, or none when the dialog was cancelled.
 #[tauri::command]
 pub async fn pick_receipts_root(app: AppHandle) -> CommandResult<Option<String>> {
-    let picked = blocking(move || app.dialog().file().blocking_pick_folder()).await?;
+    let picked = blocking(move || app.dialog().file().blocking_pick_folder())
+        .await
+        .map_err(fail)?;
     Ok(picked
         .and_then(|p| p.into_path().ok())
         .map(|p| p.to_string_lossy().into_owned()))
@@ -94,7 +96,8 @@ pub async fn import_service_account(
             .add_filter("JSON", &["json"])
             .blocking_pick_file()
     })
-    .await?;
+    .await
+    .map_err(fail)?;
     let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
         return Ok(None);
     };
@@ -127,7 +130,10 @@ pub async fn test_gemini_connection(state: State<'_, Arc<AppState>>) -> CommandR
 #[tauri::command]
 pub async fn poppler_status(state: State<'_, Arc<AppState>>) -> CommandResult<PopplerStatus> {
     let poppler = state.poppler.clone();
-    blocking(move || poppler.status()).await?.map_err(fail)
+    blocking(move || poppler.status())
+        .await
+        .map_err(fail)?
+        .map_err(fail)
 }
 
 #[tauri::command]
@@ -146,7 +152,8 @@ pub fn period_status(
     year: String,
     month: String,
 ) -> CommandResult<pipeline::PeriodStatus> {
-    let paths = state.period_paths(&period(&year, &month)?).map_err(fail)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let paths = state.period_paths(&period).map_err(fail)?;
     Ok(pipeline::period_status(&paths))
 }
 
@@ -156,7 +163,23 @@ pub async fn list_periods(
     state: State<'_, Arc<AppState>>,
 ) -> CommandResult<Vec<pipeline::PeriodSummary>> {
     let root = receipts_root(&state).map_err(fail)?;
-    blocking(move || pipeline::list_periods(&root)).await
+    blocking(move || pipeline::list_periods(&root))
+        .await
+        .map_err(fail)
+}
+
+/// One month's entry for the month list.
+#[tauri::command]
+pub async fn period_summary(
+    state: State<'_, Arc<AppState>>,
+    year: String,
+    month: String,
+) -> CommandResult<pipeline::PeriodSummary> {
+    let period = period(&year, &month).map_err(fail)?;
+    let root = receipts_root(&state).map_err(fail)?;
+    blocking(move || pipeline::period_summary(&root, &period))
+        .await
+        .map_err(fail)
 }
 
 /// Asks for bank statement PDFs. Returns their paths; empty when the dialog was cancelled.
@@ -168,7 +191,8 @@ pub async fn pick_statements(app: AppHandle) -> CommandResult<Vec<String>> {
             .add_filter("PDF", &["pdf"])
             .blocking_pick_files()
     })
-    .await?;
+    .await
+    .map_err(fail)?;
     Ok(picked
         .unwrap_or_default()
         .into_iter()
@@ -239,8 +263,7 @@ fn statement_files(statements: Vec<StatementInput>) -> CommandResult<Vec<Stateme
                 bank: s.bank.parse::<Bank>()?,
             })
         })
-        .collect::<CommandResult<Vec<_>>>()
-        .map_err(fail)
+        .collect()
 }
 
 #[tauri::command]
@@ -252,8 +275,8 @@ pub async fn reconcile(
     clear_cache: bool,
     on_event: Channel<RunEvent>,
 ) -> CommandResult<Summary> {
-    let period = period(&year, &month)?;
-    let files = statement_files(statements)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let files = statement_files(statements).map_err(fail)?;
     let job = start_job(&state, &period, RunKind::Reconcile).map_err(fail)?;
     let token = job.guard.token().clone();
     let progress = progress_sender(on_event, token.clone());
@@ -280,7 +303,7 @@ pub async fn scan_receipts(
     month: String,
     on_event: Channel<RunEvent>,
 ) -> CommandResult<pipeline::ScanOutcome> {
-    let period = period(&year, &month)?;
+    let period = period(&year, &month).map_err(fail)?;
     let job = start_job(&state, &period, RunKind::Scan).map_err(fail)?;
     let token = job.guard.token().clone();
     let progress = progress_sender(on_event, token.clone());
@@ -308,8 +331,8 @@ pub async fn add_statements(
     statements: Vec<StatementInput>,
     on_event: Channel<RunEvent>,
 ) -> CommandResult<AddStatementsResult> {
-    let period = period(&year, &month)?;
-    let files = statement_files(statements)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let files = statement_files(statements).map_err(fail)?;
     let job = start_job(&state, &period, RunKind::AddStatements).map_err(fail)?;
     let token = job.guard.token().clone();
     let progress = progress_sender(on_event, token.clone());
@@ -335,7 +358,8 @@ pub fn cancel_run(
     year: String,
     month: String,
 ) -> CommandResult<bool> {
-    Ok(state.locks.cancel(&period(&year, &month)?))
+    let period = period(&year, &month).map_err(fail)?;
+    Ok(state.locks.cancel(&period))
 }
 
 #[tauri::command]
@@ -344,7 +368,8 @@ pub fn get_review(
     year: String,
     month: String,
 ) -> CommandResult<Value> {
-    let paths = state.period_paths(&period(&year, &month)?).map_err(fail)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let paths = state.period_paths(&period).map_err(fail)?;
     pipeline::review_data(&paths).map_err(fail)
 }
 
@@ -354,16 +379,18 @@ pub fn get_draft(
     year: String,
     month: String,
 ) -> CommandResult<Draft> {
-    let paths = state.period_paths(&period(&year, &month)?).map_err(fail)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let paths = state.period_paths(&period).map_err(fail)?;
     pipeline::read_draft(&paths).map_err(fail)
 }
 
 fn ensure_not_finalizing(state: &AppState, period: &Period) -> CommandResult<()> {
-    if state.locks.running(period) == Some(RunKind::Finalize) {
-        return Err(fail(CommandError::new(
+    let running = state.locks.running(period);
+    if running == Some(RunKind::Finalize) {
+        return Err(CommandError::new(
             ErrorKind::Busy,
             "the period is being finalized",
-        )));
+        ));
     }
     Ok(())
 }
@@ -375,22 +402,10 @@ pub fn save_draft(
     month: String,
     draft: Draft,
 ) -> CommandResult<()> {
-    let period = period(&year, &month)?;
-    ensure_not_finalizing(&state, &period)?;
+    let period = period(&year, &month).map_err(fail)?;
+    ensure_not_finalizing(&state, &period).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
     pipeline::save_draft(&paths, &draft).map_err(fail)
-}
-
-#[tauri::command]
-pub fn delete_draft(
-    state: State<'_, Arc<AppState>>,
-    year: String,
-    month: String,
-) -> CommandResult<()> {
-    let period = period(&year, &month)?;
-    ensure_not_finalizing(&state, &period)?;
-    let paths = state.period_paths(&period).map_err(fail)?;
-    pipeline::delete_draft(&paths).map_err(fail)
 }
 
 #[tauri::command]
@@ -399,14 +414,16 @@ pub async fn finalize(
     year: String,
     month: String,
 ) -> CommandResult<()> {
-    let period = period(&year, &month)?;
+    let period = period(&year, &month).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
     let guard = state
         .locks
         .try_exclusive(&period, RunKind::Finalize)
         .map_err(fail)?;
     let language = state.settings().report_language();
-    let result = blocking(move || pipeline::finalize(&paths, language)).await?;
+    let result = blocking(move || pipeline::finalize(&paths, language))
+        .await
+        .map_err(fail)?;
     drop(guard);
     result.map_err(fail)
 }
@@ -479,7 +496,7 @@ pub async fn export_report(
     year: String,
     month: String,
 ) -> CommandResult<Option<String>> {
-    let period = period(&year, &month)?;
+    let period = period(&year, &month).map_err(fail)?;
     let report = write_report(&state, &period).await.map_err(fail)?;
     let name = format!("{year}-{month}.xlsx");
     let target = blocking(move || {
@@ -489,7 +506,8 @@ pub async fn export_report(
             .set_file_name(name)
             .blocking_save_file()
     })
-    .await?;
+    .await
+    .map_err(fail)?;
     let Some(target) = target.and_then(|p| p.into_path().ok()) else {
         return Ok(None);
     };
@@ -516,9 +534,8 @@ pub async fn open_report(
     year: String,
     month: String,
 ) -> CommandResult<()> {
-    let report = write_report(&state, &period(&year, &month)?)
-        .await
-        .map_err(fail)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let report = write_report(&state, &period).await.map_err(fail)?;
     open(&app, &report)
 }
 
@@ -531,7 +548,8 @@ pub fn open_receipt(
     month: String,
     rel_path: String,
 ) -> CommandResult<()> {
-    let paths = state.period_paths(&period(&year, &month)?).map_err(fail)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let paths = state.period_paths(&period).map_err(fail)?;
     let file = pipeline::resolve_period_file(&paths, RescanKind::Receipt, &rel_path)
         .or_else(|_| pipeline::resolve_period_file(&paths, RescanKind::Reimbursement, &rel_path))
         .map_err(fail)?;
@@ -545,7 +563,7 @@ pub fn create_period(
     year: String,
     month: String,
 ) -> CommandResult<pipeline::PeriodSummary> {
-    let period = period(&year, &month)?;
+    let period = period(&year, &month).map_err(fail)?;
     let root = receipts_root(&state).map_err(fail)?;
     pipeline::ensure_period_dirs(&root, &period).map_err(fail)?;
     Ok(pipeline::period_summary(&root, &period))
@@ -560,7 +578,8 @@ pub fn reveal_period(
     month: String,
 ) -> CommandResult<()> {
     let root = receipts_root(&state).map_err(fail)?;
-    let paths = pipeline::ensure_period_dirs(&root, &period(&year, &month)?).map_err(fail)?;
+    let period = period(&year, &month).map_err(fail)?;
+    let paths = pipeline::ensure_period_dirs(&root, &period).map_err(fail)?;
     app.opener()
         .reveal_item_in_dir(&paths.dir)
         .map_err(|e| fail(CommandError::new(ErrorKind::Io, e.to_string())))

@@ -21,7 +21,7 @@ static WHITESPACE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\s+").expect("whitespace pattern compiles"));
 
 /// Parses one line, or returns none when it is not a transaction row.
-pub fn parse_line(line: &str) -> Option<RawTransaction> {
+fn parse_line(line: &str) -> Option<RawTransaction> {
     let captures = TX_LINE.captures(line)?;
     let posted = &captures[1];
     let description = WHITESPACE.replace_all(&captures[3], " ").trim().to_string();

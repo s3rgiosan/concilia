@@ -143,7 +143,6 @@
   "review": {
     "title": "Revisão de {{period}}",
     "transactions": "Transações",
-    "noTransactions": "Sem transações",
     "noResults": "Sem resultados para “{{query}}”",
     "empty": {
       "doneTitle": "Todas as transações têm uma decisão",
@@ -413,7 +412,9 @@
       "not_pdf": "Só é possível adicionar extratos em PDF.",
       "file_missing": "O ficheiro do recibo já não está na pasta de recibos.",
       "receipt_outside_period": "Esse ficheiro não é um recibo deste mês.",
-      "read_timeout": "O Gemini demorou demasiado tempo a ler o recibo. Tente novamente."
+      "read_timeout": "O Gemini demorou demasiado tempo a ler o recibo. Tente novamente.",
+      "no_statements": "Escolha pelo menos um extrato bancário para adicionar.",
+      "outside_root": "Essa localização está fora da pasta de recibos."
     }
   },
   "menu": {

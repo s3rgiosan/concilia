@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { Sheet, SheetNote } from "../components/Sheet";
@@ -35,7 +35,7 @@ export function RulesTab({
 }: {
   onError: (e: unknown) => void;
   readOnly: boolean;
-  registerUndo: MutableRefObject<(() => void) | null>;
+  registerUndo: RefObject<(() => void) | null>;
 }) {
   const { t } = useTranslation();
   const [rules, setRules] = useState<Rule[] | null>(null);

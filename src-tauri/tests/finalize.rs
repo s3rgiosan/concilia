@@ -679,6 +679,30 @@ fn a_failed_move_undoes_the_moves_already_made() {
     assert_unchanged(&f, &before);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_failure_after_the_files_are_replaced_restores_everything() {
+    let f = Fixture::new();
+    let before = prepare_rollback(&f);
+    // The marker is written last; a folder in its place makes that step fail.
+    std::fs::create_dir(f.paths.applied_marker()).unwrap();
+
+    let error = f.finalize().unwrap_err();
+
+    assert!(matches!(error, PipelineError::Io(_)), "{error:?}");
+    assert!(f.listing("_matched").is_empty());
+    assert!(f.listing("_unmatched").is_empty());
+    assert_eq!(f.read("acme.pdf"), "acme.pdf");
+    assert_eq!(f.read("hooli.png"), "hooli.png");
+    assert_eq!(
+        std::fs::read(f.paths.match_result()).unwrap(),
+        before.result
+    );
+    assert_eq!(std::fs::read(f.paths.report()).unwrap(), before.report);
+    assert!(f.paths.draft().is_file());
+    assert!(f.temporary_files_in_docs().is_empty());
+}
+
 #[test]
 fn an_invalid_draft_changes_nothing() {
     let f = Fixture::new();

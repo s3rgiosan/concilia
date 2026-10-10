@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use crate::gemini::client::{GeminiError, ServiceAccount};
 
 /// Account name of the stored item; the service is the bundle identifier.
-pub const ITEM_ACCOUNT: &str = "service-account";
+const ITEM_ACCOUNT: &str = "service-account";
 /// Debug builds keep the key in this file in the config folder.
 pub const DEV_FILE_NAME: &str = "service-account.dev.json";
 
@@ -111,14 +111,14 @@ impl SecretStore for FileStore {
 }
 
 /// In-memory store for tests.
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 #[derive(Default)]
 pub struct MemoryStore {
     value: Mutex<Option<String>>,
     pub fail: Mutex<bool>,
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 impl MemoryStore {
     pub fn with_value(value: &str) -> MemoryStore {
         MemoryStore {
@@ -140,7 +140,7 @@ impl MemoryStore {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 impl SecretStore for MemoryStore {
     fn read(&self) -> Result<Option<String>, SecretError> {
         self.check()?;

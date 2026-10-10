@@ -69,7 +69,7 @@
 .sidebar--overlay {
   position: absolute;
   inset: 0 auto 0 0;
-  z-index: 20;
+  z-index: var(--z-sidebar-overlay);
   border-right-color: var(--separator);
   background: color-mix(in srgb, var(--window-solid) 82%, transparent);
   box-shadow: 0 0 24px rgb(0 0 0 / 18%);

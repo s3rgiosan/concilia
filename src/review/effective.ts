@@ -1,5 +1,6 @@
 // The review state the user sees: the match result with pending decisions applied.
 
+import { fileName } from "../lib/paths";
 import type { Draft, ReceiptMeta, ReviewData, Status, Transaction } from "../lib/tauri";
 
 /** Notes of transactions the user marked as needing no receipt. */
@@ -195,7 +196,7 @@ export function visibleReimbursements(receipts: ReceiptMeta[], filter: Filter, s
     return [];
   }
   const needle = search.trim().toLowerCase();
-  return receipts.filter((r) => !needle || `${r.vendor ?? ""} ${r.file.split("/").pop() ?? ""}`.toLowerCase().includes(needle));
+  return receipts.filter((r) => !needle || `${r.vendor ?? ""} ${fileName(r.file)}`.toLowerCase().includes(needle));
 }
 
 export interface FinalizeCounts {
@@ -239,6 +240,7 @@ export function finalizeCounts(data: Pick<ReviewData, "transactions" | "unmatche
 export function patchReceipt(data: ReviewData, meta: ReceiptMeta): ReviewData {
   const patch = (m: ReceiptMeta) => (m.file === meta.file ? { ...meta, rel_path: meta.rel_path ?? m.rel_path } : m);
   return {
+    ...data,
     transactions: data.transactions.map((tx) => ({ ...tx, receipt_meta: tx.receipt_meta.map(patch) })),
     unmatched_receipts: data.unmatched_receipts.map(patch),
     reimbursements: data.reimbursements.map(patch),

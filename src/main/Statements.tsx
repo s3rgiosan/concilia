@@ -2,6 +2,7 @@ import { useImperativeHandle, useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { PopUpButton } from "../components/PopUpButton";
+import { fileName } from "../lib/paths";
 import { useFileDrop } from "../lib/hooks/useFileDrop";
 import type { Period } from "../lib/period";
 import { popUpMenu } from "../lib/popUpMenu";
@@ -12,10 +13,6 @@ export const BANKS = [{ value: "cgd", label: "CGD" }];
 
 export interface Statement extends StatementInput {
   id: string;
-}
-
-export function fileName(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
 }
 
 export function isPdf(path: string): boolean {

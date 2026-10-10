@@ -10,7 +10,7 @@ use crate::fsutil::write_json;
 use crate::gemini::client::{DEFAULT_LOCATION, DEFAULT_MODEL};
 use crate::model::{Language, Rule};
 
-pub const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 1;
 pub const FILE_NAME: &str = "config.json";
 pub const RULES_FILE_NAME: &str = "rules.json";
 /// Debug builds use their own files so they never touch a release build's settings.

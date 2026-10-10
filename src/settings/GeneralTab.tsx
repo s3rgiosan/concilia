@@ -76,7 +76,7 @@ type CheckState =
   | { kind: "checking" }
   | { kind: "current" }
   | { kind: "available"; update: UpdateInfo }
-  | { kind: "failed" }
+  | { kind: "failed"; error: unknown }
   | { kind: "install_failed" };
 
 /** The Check Now button with its one-line result, or the install button once a release is found. */
@@ -91,12 +91,12 @@ function UpdateCheck() {
       .then((update) => setState(update ? { kind: "available", update } : { kind: "current" }))
       .catch((e) => {
         console.error(e);
-        setState({ kind: "failed" });
+        setState({ kind: "failed", error: e });
       });
   }
 
   let dot: string | null = null;
-  let text = "";
+  let text: ReactNode = "";
   switch (state.kind) {
     case "checking":
       dot = "gray";
@@ -112,7 +112,14 @@ function UpdateCheck() {
       break;
     case "failed":
       dot = "red";
-      text = t("settings.general.statusFailed");
+      text = (
+        <>
+          {t("settings.general.statusFailed")}
+          <span className="error-detail">
+            <ErrorText error={state.error} />
+          </span>
+        </>
+      );
       break;
     case "install_failed":
       dot = "red";
@@ -126,7 +133,7 @@ function UpdateCheck() {
     <>
       <span className="value value--status" role="status">
         {dot ? <span className={`dot dot--${dot}`} aria-hidden="true" /> : null}
-        {text}
+        <span>{text}</span>
       </span>
       {state.kind === "available" ? (
         <button type="button" onClick={install} disabled={busy}>

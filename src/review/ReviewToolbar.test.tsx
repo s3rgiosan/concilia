@@ -60,7 +60,6 @@ describe("ReviewToolbar", () => {
       (el) => el.getAttribute("aria-label") ?? el.textContent,
     );
     expect(order.slice(4)).toEqual(["Scan for New Receipts", "Export Report…", "More Actions", "Finalize…", "Search"]);
-    expect(screen.queryByRole("button", { name: /Inspector|Details/ })).toBeNull();
     expect(menuItems()).toEqual(["Add Statements…", "Open Report"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Add Statements…" }));
     expect(props.onAddStatements).toHaveBeenCalledTimes(1);

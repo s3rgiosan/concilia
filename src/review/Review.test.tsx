@@ -639,7 +639,6 @@ describe("details", () => {
   it("stays in place, with no button to hide it", async () => {
     await renderReview();
     expect(details()).toBeTruthy();
-    expect(within(toolbar()).queryByRole("button", { name: /Inspector|Details/ })).toBeNull();
   });
 
   it("marks a decision as manual in the list and the header", async () => {

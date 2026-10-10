@@ -1,5 +1,5 @@
-//! String helpers that follow JavaScript's definitions, so stored data and matching behave the
-//! same as in files written by earlier versions.
+//! String helpers that follow JavaScript's definitions of whitespace and string length, so stored
+//! data and matching give the same results.
 
 /// Whitespace as JavaScript's `\s` and `String.prototype.trim` define it.
 pub fn is_js_whitespace(c: char) -> bool {

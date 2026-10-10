@@ -7,7 +7,7 @@ export interface Sample {
 }
 
 /** Receipts read before an estimate shows. */
-export const MIN_DONE = 3;
+const MIN_DONE = 3;
 
 /** How many recent samples the rate is measured over, so a burst of cached receipts fades out. */
 export const WINDOW = 10;

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
+import { fileName } from "../lib/paths";
 import { receiptUrl, type ReceiptMeta } from "../lib/tauri";
-import { fileName, isImage } from "./receipts";
+import { isImage } from "./receipts";
 
 /** A receipt's file shown inline: an image, or a PDF in a frame. */
 export function ReceiptPreview({ receipt }: { receipt: ReceiptMeta | null }) {

@@ -79,7 +79,7 @@ pub fn euros_to_cents(euros: f64) -> i64 {
 }
 
 /// Builds the deterministic transaction ID `tx-<index padded to 3>-<date>-<cents>`.
-pub fn make_transaction_id(index: usize, iso_date: &str, amount_cents: i64) -> String {
+fn make_transaction_id(index: usize, iso_date: &str, amount_cents: i64) -> String {
     format!("tx-{index:03}-{iso_date}-{amount_cents}")
 }
 

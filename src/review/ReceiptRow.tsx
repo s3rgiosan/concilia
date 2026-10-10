@@ -1,12 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { ActionPopUpButton } from "../components/PopUpButton";
+import { fileName } from "../lib/paths";
 import { shortDate } from "../lib/dates";
 import { formatMoney } from "../lib/money";
 import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import type { ReceiptMeta } from "../lib/tauri";
 import type { Mismatch } from "./effective";
-import { fileName, receiptTitle } from "./receipts";
+import { receiptTitle } from "./receipts";
 
 /**
  * A receipt in the details column: vendor, amount, date and file, with a note when its amount

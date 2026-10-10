@@ -30,6 +30,8 @@ export const ERROR_CODES = [
   "file_missing",
   "receipt_outside_period",
   "read_timeout",
+  "no_statements",
+  "outside_root",
 ] as const;
 
 function isKnownCode(code: string | undefined): code is (typeof ERROR_CODES)[number] {

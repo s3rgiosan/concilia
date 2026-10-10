@@ -194,7 +194,6 @@ describe("labels", () => {
     const { rerender } = setup({ ...STATEMENTS_SCREEN, sidebarShown: false });
     await flush();
     expect(labels()).toMatchObject({ toggle_sidebar: "Show Sidebar" });
-    expect(labels()).not.toHaveProperty("toggle_inspector");
     rerender({ m: STATEMENTS_SCREEN });
     await flush();
     expect(labels()).toMatchObject({ toggle_sidebar: "Hide Sidebar" });

@@ -22,9 +22,9 @@ use crate::model::{
     Transaction,
 };
 
-pub const FX_TOLERANCE_PERCENT: i64 = 10;
-pub const FILENAME_MIN_WORD_LEN: usize = 4;
-pub const DATE_WINDOW_DAYS: i64 = 45;
+const FX_TOLERANCE_PERCENT: i64 = 10;
+const FILENAME_MIN_WORD_LEN: usize = 4;
+const DATE_WINDOW_DAYS: i64 = 45;
 
 /// Words too common in receipt file names and descriptions to say anything about a match.
 const STOP_WORDS: &[&str] = &[
@@ -51,7 +51,7 @@ const STOP_WORDS: &[&str] = &[
 
 /// Significant lowercase words: letters, digits and Latin-1 letters, at least four
 /// characters, stop words removed.
-pub fn extract_words(text: &str) -> Vec<String> {
+fn extract_words(text: &str) -> Vec<String> {
     let cleaned: String = text
         .chars()
         .map(|c| {

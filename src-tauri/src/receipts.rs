@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::text::{is_js_whitespace, js_len, js_trim};
 
 /// File extensions treated as receipts, compared case-insensitively.
-pub const RECEIPT_EXTENSIONS: &[&str] = &["pdf", "jpg", "jpeg", "png"];
+const RECEIPT_EXTENSIONS: &[&str] = &["pdf", "jpg", "jpeg", "png"];
 
 /// Folders Finalize sorts receipts into; the walk skips them at the top level only.
 pub const STATUS_FOLDERS: &[&str] = &["_matched", "_review", "_unmatched"];
@@ -45,11 +45,11 @@ pub fn walk(root: &Path) -> Vec<String> {
     out
 }
 
-/// Whether text from a PDF's text layer is worth sending instead of a page image: more than
-/// ten characters, at least one digit, and, past fifty letters, no single letter making up
+/// Whether text from a PDF's text layer is worth sending to Gemini: more than ten characters, at least one digit, and, past fifty letters, no single letter making up
 /// more than 60% of them (a sign of a broken font encoding).
 pub fn is_usable_pdf_text(text: &str) -> bool {
-    if js_len(js_trim(text)) <= 10 {
+    let length = js_len(js_trim(text));
+    if length <= 10 {
         return false;
     }
     let stripped: String = text.chars().filter(|c| !is_js_whitespace(*c)).collect();

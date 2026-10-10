@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import i18n from "../i18n";
+import commandsSource from "../../src-tauri/src/commands.rs?raw";
+import errorSource from "../../src-tauri/src/error.rs?raw";
+import pipelineSource from "../../src-tauri/src/pipeline.rs?raw";
 import { ERROR_CODES, ERROR_KINDS, errorDetail, errorKind, friendlyError, isCommandError } from "./errors";
 
 const t = i18n.t;
@@ -83,6 +86,21 @@ describe("friendlyError", () => {
       }
     } finally {
       await i18n.changeLanguage("en");
+    }
+  });
+
+  it("lists every code the backend sets", () => {
+    const sources = [commandsSource, errorSource, pipelineSource];
+    const sent = new Set<string>();
+    for (const source of sources) {
+      for (const match of source.matchAll(/coded\(\s*ErrorKind::\w+,\s*"([a-z_]+)"/g)) {
+        sent.add(match[1]);
+      }
+    }
+    expect(sent.size).toBeGreaterThan(0);
+    for (const code of sent) {
+      expect(ERROR_CODES as readonly string[], code).toContain(code);
+      expect(i18n.exists(`errors.codes.${code}`), code).toBe(true);
     }
   });
 

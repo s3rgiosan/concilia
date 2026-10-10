@@ -27,7 +27,6 @@ describe("menuCommand", () => {
   it("leaves other items to the window", () => {
     expect(menuCommand("reconcile")).toBeNull();
     expect(menuCommand("toggle_sidebar")).toBeNull();
-    expect(menuCommand("toggle_inspector")).toBeNull();
     expect(menuCommand("filter_review")).toBeNull();
     expect(menuCommand("open_report")).toBeNull();
   });

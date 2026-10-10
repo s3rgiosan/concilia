@@ -119,7 +119,7 @@ export function SheetNote({ tone = "error", children }: { tone?: "error" | "warn
 }
 
 /**
- * A window-modal sheet that slides down from the top of the window, like macOS sheets. Esc
+ * A window-modal sheet that slides down from the top of the window. Esc
  * cancels (unless busy), Return activates the default button, and Tab cycles within the sheet.
  * The rest of the window is inert while it shows, and focus returns to where it was when it
  * closes. On a destructive sheet Cancel is the default button and takes initial focus, so Return

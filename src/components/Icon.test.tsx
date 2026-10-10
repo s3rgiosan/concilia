@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-// @ts-expect-error type error without @types/node package
 import { readFileSync } from "node:fs";
 import { Icon, SYMBOL_NAMES } from "./Icon";
 

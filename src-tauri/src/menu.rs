@@ -11,7 +11,7 @@ use tauri::menu::{
 };
 use tauri::{AppHandle, Wry};
 
-use crate::error::{CommandError, CommandResult};
+use crate::error::{fail, CommandError, CommandResult};
 use crate::windows;
 
 /// Event sent to the main window when a menu item is chosen; the payload is `{ "id": … }`.
@@ -261,7 +261,7 @@ fn undo_redo_enabled(settings_focused: bool, requested: Option<bool>) -> bool {
 }
 
 /// Keeps only the entries of `enabled` that name a known item.
-pub fn known_states(enabled: HashMap<String, bool>) -> HashMap<String, bool> {
+fn known_states(enabled: HashMap<String, bool>) -> HashMap<String, bool> {
     enabled
         .into_iter()
         .filter(|(id, _)| ITEM_IDS.contains(&id.as_str()))
@@ -278,6 +278,13 @@ impl Handle {
         match self {
             Handle::Item(item) => item.set_enabled(enabled),
             Handle::Submenu(submenu) => submenu.set_enabled(enabled),
+        }
+    }
+
+    fn set_text(&self, text: &str) -> tauri::Result<()> {
+        match self {
+            Handle::Item(item) => item.set_text(text),
+            Handle::Submenu(submenu) => submenu.set_text(text),
         }
     }
 }
@@ -326,6 +333,16 @@ impl MenuState {
                 let _ = handle.set_enabled(enabled);
             }
         }
+    }
+
+    /// Sets the text of the item `id`. Returns false when the menu has no such item.
+    fn set_text(&self, id: &str, text: &str) -> tauri::Result<bool> {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(handle) = inner.handles.get(id) else {
+            return Ok(false);
+        };
+        handle.set_text(text)?;
+        Ok(true)
     }
 
     fn set_enabled(&self, enabled: HashMap<String, bool>) {
@@ -567,7 +584,20 @@ pub fn set_menu(
     state: tauri::State<'_, MenuState>,
     labels: MenuLabels,
 ) -> CommandResult<()> {
-    apply(&app, &state, &labels).map_err(CommandError::internal)
+    apply(&app, &state, &labels).map_err(|e| fail(CommandError::internal(e)))
+}
+
+/// Changes the text of one menu item without rebuilding the menu; unknown ids are ignored.
+#[tauri::command]
+pub fn set_menu_item_text(
+    state: tauri::State<'_, MenuState>,
+    id: String,
+    text: String,
+) -> CommandResult<()> {
+    state
+        .set_text(&id, &text)
+        .map(|_| ())
+        .map_err(|e| fail(CommandError::internal(e)))
 }
 
 /// Enables or disables items by id; unknown ids are ignored.

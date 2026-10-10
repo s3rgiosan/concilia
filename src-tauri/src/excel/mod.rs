@@ -18,7 +18,7 @@ use crate::review::NO_RECEIPT_NOTES;
 use crate::text::js_len;
 use strings::{strings, Strings};
 
-pub const MONEY_FORMAT: &str = "#,##0.00";
+const MONEY_FORMAT: &str = "#,##0.00";
 const MIN_WIDTH: usize = 10;
 const MAX_WIDTH: usize = 50;
 
@@ -157,7 +157,7 @@ fn detail(notes: &str) -> &str {
 }
 
 /// The matcher's note code as a label in the report's language. Unknown codes are kept.
-pub fn format_notes(notes: &str, s: &Strings) -> String {
+fn format_notes(notes: &str, s: &Strings) -> String {
     match notes {
         "" => return String::new(),
         "bank_fee" => return s.bank_fee_auto.to_string(),

@@ -13,12 +13,10 @@
   --separator: rgb(0 0 0 / 10%);
   --fill: rgb(0 0 0 / 5%);
   --fill-strong: rgb(0 0 0 / 9%);
-  --control-bg: #fff;
   --window-bg: #ececec;
   --group-bg: rgb(255 255 255 / 75%);
   --accent: #0a84ff;
   --accent-text: #fff;
-  --selection: rgb(10 132 255 / 18%);
   /* Selected rows: the accent with white text in a focused list, a grey fill otherwise. */
   --selected-bg: var(--accent);
   --selected-text: #fff;
@@ -51,7 +49,6 @@
   --control-fill-check: rgb(0 0 0 / 10%);
   --field-bg: #fff;
   --field-border: rgb(0 0 0 / 15%);
-  --radius-field: 8px;
   --radius-row: 8px;
   --radius-group: 12px;
   --radius-panel: 18px;
@@ -59,15 +56,19 @@
 
   --red: #ff3b30;
   --orange: #ff9500;
-  --yellow: #ffcc00;
   --green: #34c759;
   --blue: #007aff;
   --gray: #8e8e93;
 
-  /* Reconciliation statuses, also used as the report's cell fills. */
-  --status-matched: var(--green);
-  --status-review: var(--orange);
-  --status-unmatched: var(--red);
+  /* Stacking order, lowest first. */
+  --z-sticky: 1;
+  --z-resize-handle: 2;
+  --z-titlebar: 3;
+  --z-drop-overlay: 5;
+  --z-sidebar-overlay: 8;
+  --z-sheet: 10;
+  --z-quicklook: 20;
+  --z-menu: 50;
 
   /*
    * Motion. Panes, sheets and Quick Look settle along a fast-out curve with no overshoot; they
@@ -94,11 +95,9 @@
     --separator: rgb(255 255 255 / 12%);
     --fill: rgb(255 255 255 / 7%);
     --fill-strong: rgb(255 255 255 / 12%);
-    --control-bg: rgb(255 255 255 / 8%);
-    --window-bg: #232325;
+      --window-bg: #232325;
     --group-bg: rgb(255 255 255 / 5%);
-    --selection: rgb(10 132 255 / 30%);
-    --selected-bg-inactive: rgb(255 255 255 / 12%);
+      --selected-bg-inactive: rgb(255 255 255 / 12%);
     --toolbar-glass: rgb(255 255 255 / 9%);
     --toolbar-glass-strong: rgb(255 255 255 / 16%);
     --toolbar-glass-pressed: rgb(255 255 255 / 24%);
@@ -115,8 +114,7 @@
 
     --red: #ff453a;
     --orange: #ff9f0a;
-    --yellow: #ffd60a;
-    --green: #30d158;
+      --green: #30d158;
     --blue: #0a84ff;
     --gray: #98989d;
   }
@@ -128,13 +126,11 @@
     --label-secondary: -apple-system-secondary-label;
     --label-tertiary: -apple-system-tertiary-label;
     --separator: -apple-system-separator;
-    --control-bg: -apple-system-control-background;
-    --content-bg: -apple-system-control-background;
+      --content-bg: -apple-system-control-background;
     --window-bg: -apple-system-window-background;
     --red: -apple-system-red;
     --orange: -apple-system-orange;
-    --yellow: -apple-system-yellow;
-    --green: -apple-system-green;
+      --green: -apple-system-green;
     --blue: -apple-system-blue;
     --gray: -apple-system-gray;
   }
@@ -208,10 +204,9 @@ html.vibrant .titlebar__heading {
 }
 
 /*
- * Controls, drawn to match AppKit on macOS 26 and 27 (measured with scripts/appkit-reference.swift):
- * 24 pt push buttons, pop-ups and segmented controls with a 6 pt radius and a flat fill; 26 pt
- * text and search fields with a 1 pt border; 16 pt checkboxes. WebKit's built-in form styles do
- * not match AppKit, so every control here is styled explicitly.
+ * Controls: 24 pt push buttons, pop-ups and segmented controls with a 6 pt radius and a flat
+ * fill; 26 pt text and search fields with a 1 pt border; 16 pt checkboxes. Every control is
+ * styled explicitly because WebKit's built-in form styles differ from the macOS look.
  */
 button,
 input,
@@ -352,7 +347,7 @@ textarea:focus-visible {
   opacity: 0.55;
 }
 
-/* Search field: a text field with a magnifying glass, not a capsule. */
+/* Search field: a text field with a magnifying glass. */
 .search {
   display: flex;
   align-items: center;
@@ -437,7 +432,7 @@ textarea:focus-visible {
   opacity: 0.45;
 }
 
-/* Segmented control: a grey track; the selected segment is a darker grey, not a white pill. */
+/* Segmented control: a grey track; the selected segment is a darker grey. */
 .segmented {
   display: inline-flex;
   align-self: flex-start;
@@ -665,10 +660,6 @@ button.link:hover {
   background: var(--orange);
 }
 
-.dot--yellow {
-  background: var(--yellow);
-}
-
 .dot--green {
   background: var(--green);
 }
@@ -893,12 +884,12 @@ code {
 /* Window toolbar ---------------------------------------------------------- */
 
 /*
- * 52 pt, like an NSToolbar in a unified title bar. On macOS the leading area starts after the
+ * 52 pt unified title bar. On macOS the leading area starts after the
  * traffic lights, which tauri.conf.json centres in this height.
  */
 .titlebar {
   position: relative;
-  z-index: 3;
+  z-index: var(--z-titlebar);
   display: flex;
   flex: none;
   align-items: stretch;
@@ -1091,33 +1082,14 @@ button.icon.toolbar-group__item {
   width: 32px;
 }
 
-button.toolbar-group__item--text {
-  -webkit-appearance: none;
-  appearance: none;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-button.toolbar-group__item--text:hover:not(:disabled),
 .toolbar-group .action-popup:hover:not(:disabled) {
   background: var(--fill);
-}
-
-button.toolbar-group__item--text:active:not(:disabled) {
-  background: var(--fill-strong);
-}
-
-button.toolbar-group__item--text:disabled {
-  opacity: 0.45;
 }
 
 /* Divider between a pane and the next; dragging it or ←/→ resizes the pane. */
 .resize-handle {
   position: relative;
-  z-index: 2;
+  z-index: var(--z-resize-handle);
   flex: none;
   width: 0;
   outline: none;
@@ -1176,7 +1148,7 @@ button.toolbar-group__item--text:disabled {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: var(--z-sheet);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -1320,11 +1292,6 @@ button.toolbar-group__item--text:disabled {
   min-width: 0;
 }
 
-.sheet__status {
-  min-width: 0;
-  white-space: nowrap;
-}
-
 .spinner {
   display: inline-block;
   width: 12px;
@@ -1441,10 +1408,10 @@ button.pull-down:disabled {
   color: var(--label-secondary);
 }
 
-/* The HTML menu the browser preview and the tests show in place of a native menu. */
+/* The HTML menu the browser preview and the tests show. */
 .html-menu {
   position: fixed;
-  z-index: 50;
+  z-index: var(--z-menu);
   display: flex;
   flex-direction: column;
   min-width: 180px;

@@ -1,8 +1,5 @@
+import { fileName } from "../lib/paths";
 import type { ReceiptMeta } from "../lib/tauri";
-
-export function fileName(path: string): string {
-  return path.split("/").pop() ?? path;
-}
 
 /** What a receipt is called in lists: its vendor, or its file name when the vendor is unknown. */
 export function receiptTitle(receipt: Pick<ReceiptMeta, "file" | "vendor">): string {

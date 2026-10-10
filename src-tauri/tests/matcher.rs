@@ -85,7 +85,7 @@ fn strings(items: &[&str]) -> Vec<String> {
 #[test]
 fn matches_transaction_to_receipt_with_same_abs_amount() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA LOJA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA LOJA", -5000)],
         &[eur("/r/a.pdf", 5000)],
     );
     let t = &result.transactions[0];
@@ -97,7 +97,7 @@ fn matches_transaction_to_receipt_with_same_abs_amount() {
 #[test]
 fn rejects_any_cent_difference_for_eur_receipts() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5001)],
     );
     assert_eq!(result.transactions[0].status, Status::Unmatched);
@@ -108,7 +108,7 @@ fn rejects_any_cent_difference_for_eur_receipts() {
 #[test]
 fn marks_as_review_when_multiple_receipts_match() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5000), eur("/r/b.pdf", 5000)],
     );
     let t = &result.transactions[0];
@@ -121,8 +121,8 @@ fn marks_as_review_when_multiple_receipts_match() {
 fn does_not_consume_receipts_for_review_items() {
     let result = run(
         &[
-            tx("tx-001", "2024-12-15", "COMPRA A", -5000),
-            tx("tx-002", "2024-12-16", "COMPRA B", -5000),
+            tx("tx-001", "2030-12-15", "COMPRA A", -5000),
+            tx("tx-002", "2030-12-16", "COMPRA B", -5000),
         ],
         &[eur("/r/a.pdf", 5000), eur("/r/b.pdf", 5000)],
     );
@@ -135,7 +135,7 @@ fn does_not_consume_receipts_for_review_items() {
 #[test]
 fn marks_as_unmatched_when_no_receipt_fits() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 9900)],
     );
     assert_eq!(result.transactions[0].status, Status::Unmatched);
@@ -143,7 +143,7 @@ fn marks_as_unmatched_when_no_receipt_fits() {
 
 #[test]
 fn marks_as_unmatched_when_no_receipts_at_all() {
-    let result = run(&[tx("tx-001", "2024-12-15", "COMPRA", -5000)], &[]);
+    let result = run(&[tx("tx-001", "2030-12-15", "COMPRA", -5000)], &[]);
     assert_eq!(result.transactions[0].status, Status::Unmatched);
 }
 
@@ -152,7 +152,7 @@ fn marks_as_unmatched_when_no_receipts_at_all() {
 #[test]
 fn auto_matches_comissao_as_bank_fee() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMISSÃO DE DÉBITO", -250)],
+        &[tx("tx-001", "2030-12-15", "COMISSÃO DE DÉBITO", -250)],
         &[],
     );
     let t = &result.transactions[0];
@@ -162,7 +162,7 @@ fn auto_matches_comissao_as_bank_fee() {
 
 #[test]
 fn auto_matches_monthly_fee_as_bank_fee() {
-    let result = run(&[tx("tx-001", "2024-12-15", "MONTHLY FEE", -500)], &[]);
+    let result = run(&[tx("tx-001", "2030-12-15", "MONTHLY FEE", -500)], &[]);
     assert_eq!(result.transactions[0].status, Status::Matched);
     assert_eq!(result.transactions[0].notes, "bank_fee");
 }
@@ -170,7 +170,7 @@ fn auto_matches_monthly_fee_as_bank_fee() {
 #[test]
 fn bank_fee_takes_priority_over_amount_match() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "JUROS CREDORES", -500)],
+        &[tx("tx-001", "2030-12-15", "JUROS CREDORES", -500)],
         &[eur("/r/a.pdf", 500)],
     );
     let t = &result.transactions[0];
@@ -185,8 +185,8 @@ fn bank_fee_takes_priority_over_amount_match() {
 fn consumed_receipt_is_not_reused() {
     let result = run(
         &[
-            tx("tx-001", "2024-12-15", "COMPRA A", -5000),
-            tx("tx-002", "2024-12-16", "COMPRA B", -5000),
+            tx("tx-001", "2030-12-15", "COMPRA A", -5000),
+            tx("tx-002", "2030-12-16", "COMPRA B", -5000),
         ],
         &[eur("/r/a.pdf", 5000)],
     );
@@ -200,8 +200,8 @@ fn consumed_receipt_is_not_reused() {
 fn separates_receipts_into_matched_review_unmatched() {
     let result = run(
         &[
-            tx("tx-001", "2024-12-15", "COMPRA A", -5000),
-            tx("tx-002", "2024-12-16", "COMPRA B", -3000),
+            tx("tx-001", "2030-12-15", "COMPRA A", -5000),
+            tx("tx-002", "2030-12-16", "COMPRA B", -3000),
         ],
         &[eur("/r/matched.pdf", 5000), eur("/r/unmatched.pdf", 9900)],
     );
@@ -219,7 +219,7 @@ fn separates_receipts_into_matched_review_unmatched() {
 #[test]
 fn puts_review_receipts_in_review_bucket() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5000), eur("/r/b.pdf", 5000)],
     );
     assert_eq!(result.receipts_by_status.review.len(), 2);
@@ -231,7 +231,7 @@ fn puts_review_receipts_in_review_bucket() {
 #[test]
 fn treats_receipts_with_null_amount_as_unmatched() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[broken("/r/broken.pdf")],
     );
     assert_eq!(result.transactions[0].status, Status::Unmatched);
@@ -244,7 +244,7 @@ fn treats_receipts_with_null_amount_as_unmatched() {
 #[test]
 fn matches_valid_receipt_when_null_amount_receipt_appears_first() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[broken("/r/broken.pdf"), eur("/r/valid.pdf", 5000)],
     );
     assert_eq!(result.transactions[0].status, Status::Matched);
@@ -263,7 +263,7 @@ fn matches_valid_receipt_when_null_amount_receipt_appears_first() {
 #[test]
 fn includes_receipt_meta_for_matched_transactions() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA LOJA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA LOJA", -5000)],
         &[eur("/r/a.pdf", 5000)],
     );
     let t = &result.transactions[0];
@@ -276,7 +276,7 @@ fn includes_receipt_meta_for_matched_transactions() {
 #[test]
 fn includes_receipt_meta_for_review_transactions() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5000), eur("/r/b.pdf", 5000)],
     );
     let t = &result.transactions[0];
@@ -287,7 +287,7 @@ fn includes_receipt_meta_for_review_transactions() {
 #[test]
 fn has_empty_receipt_meta_for_bank_fees() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMISSÃO DE DÉBITO", -250)],
+        &[tx("tx-001", "2030-12-15", "COMISSÃO DE DÉBITO", -250)],
         &[],
     );
     assert!(result.transactions[0].receipt_meta.is_empty());
@@ -296,7 +296,7 @@ fn has_empty_receipt_meta_for_bank_fees() {
 #[test]
 fn has_empty_receipt_meta_for_unmatched_transactions() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 9900)],
     );
     assert!(result.transactions[0].receipt_meta.is_empty());
@@ -305,7 +305,7 @@ fn has_empty_receipt_meta_for_unmatched_transactions() {
 #[test]
 fn preserves_extra_receipt_properties_in_receipt_meta() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5000)],
     );
     assert_eq!(
@@ -317,8 +317,8 @@ fn preserves_extra_receipt_properties_in_receipt_meta() {
 #[test]
 fn usd_receipt_with_exact_amount_goes_to_fx_review_not_amount_match() {
     // The name must overlap for the FX pass to include the receipt.
-    let r = receipt("/r/Zenith invoice.pdf", Some(5000), None, Some("USD"));
-    let result = run(&[tx("tx-001", "2024-12-15", "ZENITH", -5000)], &[r]);
+    let r = receipt("/r/Globex invoice.pdf", Some(5000), None, Some("USD"));
+    let result = run(&[tx("tx-001", "2030-12-15", "GLOBEX", -5000)], &[r]);
     assert_eq!(result.transactions[0].status, Status::Review);
     assert_notes_match(&result.transactions[0].notes, "fx_match");
 }
@@ -326,7 +326,7 @@ fn usd_receipt_with_exact_amount_goes_to_fx_review_not_amount_match() {
 #[test]
 fn eur_receipt_matches_by_amount_in_pass_2() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5000)],
     );
     assert_eq!(result.transactions[0].status, Status::Matched);
@@ -338,7 +338,7 @@ fn eur_receipt_matches_by_amount_in_pass_2() {
 #[test]
 fn returns_unmatched_receipts_as_full_objects() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/unmatched.pdf", 9900)],
     );
     assert_eq!(result.unmatched_receipts.len(), 1);
@@ -349,7 +349,7 @@ fn returns_unmatched_receipts_as_full_objects() {
 #[test]
 fn returns_empty_array_when_all_receipts_matched() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5000)],
     );
     assert_eq!(result.unmatched_receipts.len(), 0);
@@ -358,7 +358,7 @@ fn returns_empty_array_when_all_receipts_matched() {
 #[test]
 fn excludes_review_receipts_from_unmatched_receipts() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5000), eur("/r/b.pdf", 5000)],
     );
     assert_eq!(result.unmatched_receipts.len(), 0);
@@ -367,7 +367,7 @@ fn excludes_review_receipts_from_unmatched_receipts() {
 #[test]
 fn includes_null_amount_receipts_in_unmatched_receipts() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[broken("/r/broken.pdf")],
     );
     assert_eq!(result.unmatched_receipts.len(), 1);
@@ -379,23 +379,23 @@ fn includes_null_amount_receipts_in_unmatched_receipts() {
 #[test]
 fn disambiguates_multiple_amount_candidates_by_filename() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "MELODY PREMIUM", -1700)],
+        &[tx("tx-001", "2030-12-15", "INITECH PREMIUM", -1500)],
         &[
-            eur("/r/Melody Premium.pdf", 1700),
-            eur("/r/random-receipt.pdf", 1700),
+            eur("/r/Initech Premium.pdf", 1500),
+            eur("/r/random-receipt.pdf", 1500),
         ],
     );
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Matched);
-    assert_eq!(t.receipt_files, strings(&["/r/Melody Premium.pdf"]));
+    assert_eq!(t.receipt_files, strings(&["/r/Initech Premium.pdf"]));
     assert_eq!(t.notes, "name_amount_match");
 }
 
 #[test]
 fn falls_back_to_review_when_no_name_disambiguates() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "MELODY PREMIUM", -1700)],
-        &[eur("/r/a.pdf", 1700), eur("/r/b.pdf", 1700)],
+        &[tx("tx-001", "2030-12-15", "INITECH PREMIUM", -1500)],
+        &[eur("/r/a.pdf", 1500), eur("/r/b.pdf", 1500)],
     );
     assert_eq!(result.transactions[0].status, Status::Review);
 }
@@ -406,8 +406,8 @@ fn eur_receipt_matched_in_pass_2_non_eur_left_for_fx() {
     let usd_receipt = receipt("/r/CloudCo.pdf", Some(1700), None, Some("USD"));
     let result = run(
         &[
-            tx("tx-001", "2024-12-15", "SOME PURCHASE", -1700),
-            tx("tx-002", "2024-12-16", "CLOUDCO", -1600),
+            tx("tx-001", "2030-12-15", "SOME PURCHASE", -1700),
+            tx("tx-002", "2030-12-16", "CLOUDCO", -1600),
         ],
         &[usd_receipt, eur_receipt],
     );
@@ -424,7 +424,7 @@ fn eur_receipt_matched_in_pass_2_non_eur_left_for_fx() {
 fn disambiguates_fx_candidates_by_filename() {
     let r1 = receipt("/r/CloudCo Invoice.pdf", Some(4707), None, Some("USD"));
     let r2 = receipt("/r/some-other.pdf", Some(4500), None, Some("USD"));
-    let result = run(&[tx("tx-001", "2024-12-15", "CLOUDCO", -4312)], &[r1, r2]);
+    let result = run(&[tx("tx-001", "2030-12-15", "CLOUDCO", -4312)], &[r1, r2]);
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Review);
     assert_eq!(t.receipt_files.len(), 1);
@@ -440,7 +440,7 @@ fn matches_usd_receipt_to_eur_transaction_within_10_percent_as_review_when_name_
         receipt("/r/invoice.pdf", Some(4707), None, Some("USD")),
         "CloudCo",
     );
-    let result = run(&[tx("tx-001", "2024-12-15", "CLOUDCO", -4312)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "CLOUDCO", -4312)], &[r]);
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Review);
     assert_eq!(t.receipt_files, strings(&["/r/invoice.pdf"]));
@@ -453,7 +453,7 @@ fn does_not_fx_match_when_no_name_overlap_receipt_stays_unmatched() {
         receipt("/r/hostprovider-invoice.pdf", Some(1700), None, Some("USD")),
         "HostProvider",
     );
-    let result = run(&[tx("tx-001", "2024-12-15", "JANE DOE", -1650)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "JANE DOE", -1650)], &[r]);
     assert_eq!(result.transactions[0].status, Status::Unmatched);
     assert_eq!(result.receipts_by_status.unmatched.len(), 1);
 }
@@ -461,7 +461,7 @@ fn does_not_fx_match_when_no_name_overlap_receipt_stays_unmatched() {
 #[test]
 fn does_not_fx_match_eur_receipts() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur("/r/a.pdf", 5400)],
     );
     assert_eq!(result.transactions[0].status, Status::Unmatched);
@@ -470,14 +470,14 @@ fn does_not_fx_match_eur_receipts() {
 #[test]
 fn does_not_fx_match_receipts_without_currency() {
     let r = receipt("/r/a.pdf", Some(5400), None, None);
-    let result = run(&[tx("tx-001", "2024-12-15", "COMPRA", -5000)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "COMPRA", -5000)], &[r]);
     assert_eq!(result.transactions[0].status, Status::Unmatched);
 }
 
 #[test]
 fn does_not_fx_match_when_difference_exceeds_10_percent() {
     let r = receipt("/r/a.pdf", Some(5750), None, Some("USD"));
-    let result = run(&[tx("tx-001", "2024-12-15", "COMPRA", -5000)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "COMPRA", -5000)], &[r]);
     assert_eq!(result.transactions[0].status, Status::Unmatched);
 }
 
@@ -486,7 +486,7 @@ fn prefers_exact_match_over_fx_match() {
     let eur_receipt = eur("/r/eur.pdf", 5000);
     let usd_receipt = receipt("/r/usd.pdf", Some(5200), None, Some("USD"));
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -5000)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -5000)],
         &[eur_receipt, usd_receipt],
     );
     let t = &result.transactions[0];
@@ -499,8 +499,8 @@ fn prefers_exact_match_over_fx_match() {
 fn does_not_fx_match_already_consumed_receipts() {
     let result = run(
         &[
-            tx("tx-001", "2024-12-15", "COMPRA A", -5000),
-            tx("tx-002", "2024-12-16", "COMPRA B", -4800),
+            tx("tx-001", "2030-12-15", "COMPRA A", -5000),
+            tx("tx-002", "2030-12-16", "COMPRA B", -4800),
         ],
         &[eur("/r/eur.pdf", 5000)],
     );
@@ -513,7 +513,7 @@ fn shows_multiple_fx_candidates_in_notes_when_both_have_name_overlap() {
     let r1 = with_vendor(receipt("/r/a.pdf", Some(5200), None, Some("USD")), "ShopCo");
     let r2 = with_vendor(receipt("/r/b.pdf", Some(5300), None, Some("GBP")), "ShopCo");
     let result = run(
-        &[tx("tx-001", "2024-12-15", "SHOPCO PURCHASE", -5000)],
+        &[tx("tx-001", "2030-12-15", "SHOPCO PURCHASE", -5000)],
         &[r1, r2],
     );
     let t = &result.transactions[0];
@@ -525,7 +525,7 @@ fn shows_multiple_fx_candidates_in_notes_when_both_have_name_overlap() {
 #[test]
 fn fx_matched_receipts_go_to_review_bucket() {
     let r = receipt("/r/CloudCo.pdf", Some(4707), None, Some("USD"));
-    let result = run(&[tx("tx-001", "2024-12-15", "CLOUDCO", -4312)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "CLOUDCO", -4312)], &[r]);
     assert!(result
         .receipts_by_status
         .review
@@ -544,7 +544,7 @@ fn does_not_auto_match_an_exact_cents_receipt_with_unknown_currency() {
         receipt("/r/ACME invoice.pdf", Some(4500), None, None),
         "Acme",
     );
-    let result = run(&[tx("tx-001", "2024-12-15", "ACME CORP", -4500)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "ACME CORP", -4500)], &[r]);
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Review);
     assert_eq!(t.notes, "unknown_currency_match");
@@ -557,7 +557,7 @@ fn does_not_consume_an_unknown_currency_receipt_matched_to_review() {
         receipt("/r/ACME invoice.pdf", Some(4500), None, None),
         "Acme",
     );
-    let result = run(&[tx("tx-001", "2024-12-15", "ACME CORP", -4500)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "ACME CORP", -4500)], &[r]);
     assert!(result
         .receipts_by_status
         .review
@@ -569,7 +569,7 @@ fn does_not_consume_an_unknown_currency_receipt_matched_to_review() {
 fn routes_unknown_currency_exact_amount_match_to_review_even_without_name_overlap() {
     let r = receipt("/r/unknown.pdf", Some(4500), None, None);
     let result = run(
-        &[tx("tx-001", "2024-12-15", "SHOPCO PURCHASE", -4500)],
+        &[tx("tx-001", "2030-12-15", "SHOPCO PURCHASE", -4500)],
         &[r],
     );
     let t = &result.transactions[0];
@@ -580,7 +580,7 @@ fn routes_unknown_currency_exact_amount_match_to_review_even_without_name_overla
 #[test]
 fn still_auto_matches_an_explicit_eur_receipt() {
     let r = with_vendor(eur("/r/ACME invoice.pdf", 4500), "Acme");
-    let result = run(&[tx("tx-001", "2024-12-15", "ACME CORP", -4500)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "ACME CORP", -4500)], &[r]);
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Matched);
     assert_eq!(t.notes, "name_amount_match");
@@ -591,7 +591,7 @@ fn prefers_an_unambiguous_eur_match_over_an_unknown_currency_candidate_at_the_sa
     let eur_receipt = eur("/r/eur.pdf", 4500);
     let unknown_receipt = receipt("/r/unknown.pdf", Some(4500), None, None);
     let result = run(
-        &[tx("tx-001", "2024-12-15", "COMPRA", -4500)],
+        &[tx("tx-001", "2030-12-15", "COMPRA", -4500)],
         &[eur_receipt, unknown_receipt],
     );
     let t = &result.transactions[0];
@@ -609,12 +609,12 @@ fn prefers_an_unambiguous_eur_match_over_an_unknown_currency_candidate_at_the_sa
 #[test]
 fn matches_receipt_filename_to_transaction_description() {
     let r = receipt(
-        "/r/CloudCo Invoice 2025 Oct.pdf",
+        "/r/CloudCo Invoice 2030 Oct.pdf",
         Some(4707),
         None,
         Some("USD"),
     );
-    let result = run(&[tx("tx-001", "2024-12-15", "CLOUDCO", -4086)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "CLOUDCO", -4086)], &[r]);
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Review);
     assert_notes_match(&t.notes, "filename_match");
@@ -624,7 +624,7 @@ fn matches_receipt_filename_to_transaction_description() {
 fn does_not_filename_match_short_words() {
     // "ABC" is under four characters and "COMPRA" is a stop word.
     let result = run(
-        &[tx("tx-001", "2024-12-15", "ABC COMPRA", -9999)],
+        &[tx("tx-001", "2030-12-15", "ABC COMPRA", -9999)],
         &[eur("/r/ABC report.pdf", 5000)],
     );
     assert_eq!(result.transactions[0].status, Status::Unmatched);
@@ -633,7 +633,7 @@ fn does_not_filename_match_short_words() {
 #[test]
 fn prefers_name_amount_match_over_filename_only_match() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "CLOUDCO", -4086)],
+        &[tx("tx-001", "2030-12-15", "CLOUDCO", -4086)],
         &[eur("/r/CloudCo.pdf", 4086)],
     );
     assert_eq!(result.transactions[0].status, Status::Matched);
@@ -644,8 +644,8 @@ fn prefers_name_amount_match_over_filename_only_match() {
 fn does_not_filename_match_consumed_receipts() {
     let result = run(
         &[
-            tx("tx-001", "2024-12-15", "COMPRA QUALQUER", -4086),
-            tx("tx-002", "2024-12-16", "CLOUDCO", -9999),
+            tx("tx-001", "2030-12-15", "COMPRA QUALQUER", -4086),
+            tx("tx-002", "2030-12-16", "CLOUDCO", -9999),
         ],
         &[eur("/r/CloudCo.pdf", 4086)],
     );
@@ -656,7 +656,7 @@ fn does_not_filename_match_consumed_receipts() {
 #[test]
 fn filename_match_receipts_go_to_review_bucket() {
     let r = receipt("/r/CloudCo Invoice.pdf", Some(4707), None, Some("USD"));
-    let result = run(&[tx("tx-001", "2024-12-15", "CLOUDCO", -4086)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "CLOUDCO", -4086)], &[r]);
     assert!(result
         .receipts_by_status
         .review
@@ -666,12 +666,12 @@ fn filename_match_receipts_go_to_review_bucket() {
 #[test]
 fn filename_matches_receipt_outside_fx_tolerance() {
     let r = receipt(
-        "/r/CloudCo Invoice 2025 Oct.pdf",
+        "/r/CloudCo Invoice 2030 Oct.pdf",
         Some(4707),
         None,
         Some("USD"),
     );
-    let result = run(&[tx("tx-001", "2024-12-15", "CLOUDCO", -4086)], &[r]);
+    let result = run(&[tx("tx-001", "2030-12-15", "CLOUDCO", -4086)], &[r]);
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Review);
     assert_notes_match(&t.notes, "filename_match");
@@ -680,7 +680,7 @@ fn filename_matches_receipt_outside_fx_tolerance() {
 #[test]
 fn filename_matches_receipt_with_null_amount() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "CLOUDCO", -4086)],
+        &[tx("tx-001", "2030-12-15", "CLOUDCO", -4086)],
         &[broken("/r/CloudCo Invoice.pdf")],
     );
     let t = &result.transactions[0];
@@ -691,8 +691,8 @@ fn filename_matches_receipt_with_null_amount() {
 #[test]
 fn does_not_filename_match_eur_receipt_when_amount_differs_beyond_tolerance() {
     let result = run(
-        &[tx("tx-001", "2024-12-15", "MELODY PREMIUM", -1200)],
-        &[eur("/r/Melody Premium Jan.pdf", 999)],
+        &[tx("tx-001", "2030-12-15", "INITECH PREMIUM", -1100)],
+        &[eur("/r/Initech Premium Jan.pdf", 800)],
     );
     assert_eq!(result.transactions[0].status, Status::Unmatched);
 }
@@ -701,8 +701,8 @@ fn does_not_filename_match_eur_receipt_when_amount_differs_beyond_tolerance() {
 fn filename_matches_eur_receipt_when_amount_equals_exactly() {
     // Pass 1 (name and amount) catches it before the filename pass.
     let result = run(
-        &[tx("tx-001", "2024-12-15", "MELODY PREMIUM", -1000)],
-        &[eur("/r/Melody Premium Jan.pdf", 1000)],
+        &[tx("tx-001", "2030-12-15", "INITECH PREMIUM", -1000)],
+        &[eur("/r/Initech Premium Jan.pdf", 1000)],
     );
     assert_eq!(result.transactions[0].status, Status::Matched);
     assert_eq!(result.transactions[0].notes, "name_amount_match");
@@ -712,10 +712,10 @@ fn filename_matches_eur_receipt_when_amount_equals_exactly() {
 
 #[test]
 fn matches_via_rule_when_vendor_and_description_keywords_match() {
-    let rules = [rule("1", "postbox", "paywave")];
+    let rules = [rule("1", "acme", "hooli")];
     let result = match_transactions(
-        &[tx("tx-001", "2024-12-15", "PAYWAVE.NET CHARGE", -1200)],
-        &[with_vendor(eur("/r/postbox.pdf", 999), "Postbox Pty Ltd")],
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &[with_vendor(eur("/r/acme.pdf", 800), "Acme Pty Ltd")],
         &rules,
     );
     let t = &result.transactions[0];
@@ -725,10 +725,10 @@ fn matches_via_rule_when_vendor_and_description_keywords_match() {
 
 #[test]
 fn does_not_apply_rule_when_vendor_keyword_does_not_match() {
-    let rules = [rule("1", "postbox", "paywave")];
+    let rules = [rule("1", "acme", "hooli")];
     let result = match_transactions(
-        &[tx("tx-001", "2024-12-15", "PAYWAVE.NET CHARGE", -1200)],
-        &[with_vendor(eur("/r/other.pdf", 1200), "Other Corp")],
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &[with_vendor(eur("/r/other.pdf", 1100), "Other Corp")],
         &rules,
     );
     assert_eq!(result.transactions[0].status, Status::Matched);
@@ -737,10 +737,10 @@ fn does_not_apply_rule_when_vendor_keyword_does_not_match() {
 
 #[test]
 fn matches_via_rule_using_filename_when_vendor_is_null() {
-    let rules = [rule("1", "postbox", "paywave")];
+    let rules = [rule("1", "acme", "hooli")];
     let result = match_transactions(
-        &[tx("tx-001", "2024-12-15", "PAYWAVE.NET CHARGE", -1200)],
-        &[eur("/r/postbox_invoice.pdf", 999)],
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &[eur("/r/acme_invoice.pdf", 800)],
         &rules,
     );
     let t = &result.transactions[0];
@@ -750,16 +750,16 @@ fn matches_via_rule_using_filename_when_vendor_is_null() {
 
 #[test]
 fn matches_via_rule_when_receipt_has_null_amount_cents() {
-    let rules = [rule("1", "postbox", "paywave")];
+    let rules = [rule("1", "acme", "hooli")];
     let r = ReceiptMeta {
         confidence: None,
         ..with_vendor(
-            receipt("/r/postbox.pdf", None, None, Some("EUR")),
-            "Postbox Pty Ltd",
+            receipt("/r/acme.pdf", None, None, Some("EUR")),
+            "Acme Pty Ltd",
         )
     };
     let result = match_transactions(
-        &[tx("tx-001", "2024-12-15", "PAYWAVE.NET CHARGE", -1200)],
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
         &[r],
         &rules,
     );
@@ -770,20 +770,20 @@ fn matches_via_rule_when_receipt_has_null_amount_cents() {
 
 #[test]
 fn rule_takes_priority_over_amount_match() {
-    let rules = [rule("1", "postbox", "paywave")];
+    let rules = [rule("1", "acme", "hooli")];
     let receipts = [
-        with_vendor(eur("/r/postbox.pdf", 999), "Postbox Pty Ltd"),
-        with_vendor(eur("/r/exact.pdf", 1200), "Someone Else"),
+        with_vendor(eur("/r/acme.pdf", 800), "Acme Pty Ltd"),
+        with_vendor(eur("/r/exact.pdf", 1100), "Someone Else"),
     ];
     let result = match_transactions(
-        &[tx("tx-001", "2024-12-15", "PAYWAVE.NET CHARGE", -1200)],
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
         &receipts,
         &rules,
     );
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Matched);
     assert!(t.notes.starts_with("rule_match"));
-    assert_eq!(t.receipt_files, strings(&["/r/postbox.pdf"]));
+    assert_eq!(t.receipt_files, strings(&["/r/acme.pdf"]));
 }
 
 // matchTransactions > date tiebreaker
@@ -795,31 +795,31 @@ fn dated_eur(file: &str, amount_cents: i64, date: Option<&str>) -> ReceiptMeta {
 #[test]
 fn picks_the_closer_dated_receipt_when_name_amount_has_2_candidates() {
     let result = run(
-        &[tx("tx-001", "2025-11-14", "COGITO SUBSCRIPTION", -2000)],
+        &[tx("tx-001", "2030-11-14", "GLOBEX SUBSCRIPTION", -2000)],
         &[
             with_vendor(
-                dated_eur("/r/cogito-oct.pdf", 2000, Some("2025-10-14")),
-                "Cogito",
+                dated_eur("/r/globex-oct.pdf", 2000, Some("2030-10-14")),
+                "Globex",
             ),
             with_vendor(
-                dated_eur("/r/cogito-nov.pdf", 2000, Some("2025-11-13")),
-                "Cogito",
+                dated_eur("/r/globex-nov.pdf", 2000, Some("2030-11-13")),
+                "Globex",
             ),
         ],
     );
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Matched);
-    assert_eq!(t.receipt_files, strings(&["/r/cogito-nov.pdf"]));
+    assert_eq!(t.receipt_files, strings(&["/r/globex-nov.pdf"]));
     assert_eq!(t.notes, "name_amount_date_match");
 }
 
 #[test]
 fn picks_the_closer_dated_receipt_when_amount_only_has_2_candidates() {
     let result = run(
-        &[tx("tx-001", "2025-11-14", "COMPRA", -2000)],
+        &[tx("tx-001", "2030-11-14", "COMPRA", -2000)],
         &[
-            dated_eur("/r/a.pdf", 2000, Some("2025-09-01")),
-            dated_eur("/r/b.pdf", 2000, Some("2025-11-10")),
+            dated_eur("/r/a.pdf", 2000, Some("2030-09-01")),
+            dated_eur("/r/b.pdf", 2000, Some("2030-11-10")),
         ],
     );
     let t = &result.transactions[0];
@@ -831,12 +831,12 @@ fn picks_the_closer_dated_receipt_when_amount_only_has_2_candidates() {
 #[test]
 fn falls_back_to_review_when_both_candidates_are_outside_the_date_window() {
     let result = run(
-        &[tx("tx-001", "2025-11-14", "COGITO", -2000)],
+        &[tx("tx-001", "2030-11-14", "GLOBEX", -2000)],
         &[
-            with_vendor(dated_eur("/r/old.pdf", 2000, Some("2024-01-01")), "Cogito"),
+            with_vendor(dated_eur("/r/old.pdf", 2000, Some("2029-01-01")), "Globex"),
             with_vendor(
-                dated_eur("/r/older.pdf", 2000, Some("2023-06-01")),
-                "Cogito",
+                dated_eur("/r/older.pdf", 2000, Some("2028-06-01")),
+                "Globex",
             ),
         ],
     );
@@ -848,10 +848,10 @@ fn falls_back_to_review_when_both_candidates_are_outside_the_date_window() {
 #[test]
 fn falls_back_to_review_when_no_candidate_has_a_date() {
     let result = run(
-        &[tx("tx-001", "2025-11-14", "COGITO", -2000)],
+        &[tx("tx-001", "2030-11-14", "GLOBEX", -2000)],
         &[
-            with_vendor(dated_eur("/r/a.pdf", 2000, None), "Cogito"),
-            with_vendor(dated_eur("/r/b.pdf", 2000, None), "Cogito"),
+            with_vendor(dated_eur("/r/a.pdf", 2000, None), "Globex"),
+            with_vendor(dated_eur("/r/b.pdf", 2000, None), "Globex"),
         ],
     );
     assert_eq!(result.transactions[0].status, Status::Review);
@@ -860,10 +860,10 @@ fn falls_back_to_review_when_no_candidate_has_a_date() {
 #[test]
 fn treats_two_candidates_with_identical_date_proximity_as_ambiguous() {
     let result = run(
-        &[tx("tx-001", "2025-11-14", "COGITO", -2000)],
+        &[tx("tx-001", "2030-11-14", "GLOBEX", -2000)],
         &[
-            with_vendor(dated_eur("/r/a.pdf", 2000, Some("2025-11-13")), "Cogito"),
-            with_vendor(dated_eur("/r/b.pdf", 2000, Some("2025-11-15")), "Cogito"),
+            with_vendor(dated_eur("/r/a.pdf", 2000, Some("2030-11-13")), "Globex"),
+            with_vendor(dated_eur("/r/b.pdf", 2000, Some("2030-11-15")), "Globex"),
         ],
     );
     assert_eq!(result.transactions[0].status, Status::Review);
@@ -872,10 +872,10 @@ fn treats_two_candidates_with_identical_date_proximity_as_ambiguous() {
 #[test]
 fn orders_review_candidates_by_date_proximity_closest_first() {
     let result = run(
-        &[tx("tx-001", "2025-11-14", "COGITO", -2000)],
+        &[tx("tx-001", "2030-11-14", "GLOBEX", -2000)],
         &[
-            with_vendor(dated_eur("/r/far.pdf", 2000, Some("2024-01-01")), "Cogito"),
-            with_vendor(dated_eur("/r/near.pdf", 2000, Some("2024-02-01")), "Cogito"),
+            with_vendor(dated_eur("/r/far.pdf", 2000, Some("2029-01-01")), "Globex"),
+            with_vendor(dated_eur("/r/near.pdf", 2000, Some("2029-02-01")), "Globex"),
         ],
     );
     let t = &result.transactions[0];
@@ -907,7 +907,7 @@ fn outputs_valid_json_match_result() {
         currency: None,
         ..eur("/r/a.pdf", 5000)
     };
-    let result = run(&[tx("tx-001", "2025-01-15", "COMPRA LOJA", -5000)], &[r]);
+    let result = run(&[tx("tx-001", "2030-01-15", "COMPRA LOJA", -5000)], &[r]);
     let json = serde_json::to_value(&result).unwrap();
     assert!(json["transactions"].is_array());
     assert!(json["receiptsByStatus"].is_object());
@@ -917,7 +917,7 @@ fn outputs_valid_json_match_result() {
 #[test]
 fn matches_a_transaction_to_a_receipt_by_amount() {
     let result = run(
-        &[tx("tx-001", "2025-01-15", "COMPRA", -4599)],
+        &[tx("tx-001", "2030-01-15", "COMPRA", -4599)],
         &[eur("/r/receipt.pdf", 4599)],
     );
     let t = &result.transactions[0];
@@ -929,7 +929,7 @@ fn matches_a_transaction_to_a_receipt_by_amount() {
 #[test]
 fn returns_unmatched_when_no_receipt_matches() {
     let r = receipt("/r/other.pdf", Some(1000), None, None);
-    let result = run(&[tx("tx-001", "2025-01-15", "COMPRA", -9999)], &[r]);
+    let result = run(&[tx("tx-001", "2030-01-15", "COMPRA", -9999)], &[r]);
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Unmatched);
     assert!(t.receipt_files.is_empty());
@@ -947,7 +947,7 @@ fn handles_empty_transactions_and_receipts() {
 #[test]
 fn includes_receipts_by_status_with_correct_categorization() {
     let result = run(
-        &[tx("tx-001", "2025-01-15", "COMPRA A", -5000)],
+        &[tx("tx-001", "2030-01-15", "COMPRA A", -5000)],
         &[eur("/r/matched.pdf", 5000), eur("/r/extra.pdf", 9999)],
     );
     assert_eq!(

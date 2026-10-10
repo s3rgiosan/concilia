@@ -15,9 +15,9 @@ pub const UPDATE_PROGRESS_EVENT: &str = "update-progress";
 pub const UPDATE_CHECK_RESULT_EVENT: &str = "update-check-result";
 
 /// The first scheduled check runs this long after launch.
-pub const FIRST_CHECK_DELAY: Duration = Duration::from_secs(60);
+const FIRST_CHECK_DELAY: Duration = Duration::from_secs(60);
 /// Scheduled checks after the first are this far apart.
-pub const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// How long a check may take before it fails.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
@@ -94,34 +94,28 @@ pub trait PendingUpdate: Send + Sync {
     async fn download_and_install(&self, progress: ProgressSink<'_>) -> Result<(), UpdateError>;
 }
 
-/// Called with the update found by every successful check, or `None` when the app is current.
-pub type UpdateSink = Arc<dyn Fn(Option<UpdateInfo>) + Send + Sync>;
-
 /// Runs checks and keeps the update the last successful check found.
 pub struct UpdateManager {
     source: Arc<dyn UpdateSource>,
-    sink: UpdateSink,
     pending: Mutex<Option<Arc<dyn PendingUpdate>>>,
     installing: AtomicBool,
 }
 
 impl UpdateManager {
-    pub fn new(source: Arc<dyn UpdateSource>, sink: UpdateSink) -> UpdateManager {
+    pub fn new(source: Arc<dyn UpdateSource>) -> UpdateManager {
         UpdateManager {
             source,
-            sink,
             pending: Mutex::new(None),
             installing: AtomicBool::new(false),
         }
     }
 
-    /// Checks for an update and hands the result to the sink. A failed check keeps the update
+    /// Checks for an update and keeps what it finds. A failed check keeps the update
     /// found before.
     pub async fn check_now(&self) -> Result<Option<UpdateInfo>, UpdateError> {
         let found = self.source.check().await?;
         let info = found.as_ref().map(|update| update.info());
         *self.pending.lock().unwrap() = found;
-        (self.sink)(info.clone());
         Ok(info)
     }
 

@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, tauri]
 
 permissions:
   contents: read
@@ -49,6 +49,7 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm run build
       - run: npm test
 

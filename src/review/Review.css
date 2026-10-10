@@ -220,7 +220,7 @@
 .review-list__header {
   position: sticky;
   top: -6px;
-  z-index: 1;
+  z-index: var(--z-sticky);
   margin-bottom: 2px;
   padding: 6px 20px 5px;
   border-bottom: 0.5px solid var(--separator);
@@ -551,7 +551,7 @@
 .quicklook-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: var(--z-quicklook);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -698,7 +698,7 @@
 .review__drop {
   position: absolute;
   inset: 8px;
-  z-index: 5;
+  z-index: var(--z-drop-overlay);
   display: flex;
   flex-direction: column;
   align-items: center;

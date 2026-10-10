@@ -2,8 +2,9 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { PopUpButton } from "../components/PopUpButton";
 import { Sheet, SheetNote } from "../components/Sheet";
+import { fileName } from "../lib/paths";
 import type { StatementRecord } from "../lib/tauri";
-import { bankLabel, BANKS, fileName, type Statement } from "../main/Statements";
+import { bankLabel, BANKS, type Statement } from "../main/Statements";
 
 /**
  * Adds bank statements to a month in review: the statements the month already holds with their

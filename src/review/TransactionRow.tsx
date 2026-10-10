@@ -9,7 +9,7 @@ import { noReceiptTitle } from "./notes";
 import { receiptTitle } from "./receipts";
 import type { ListRow } from "./rows";
 
-export const STATUS_DOT: Record<Status, string> = { MATCHED: "dot--green", REVIEW: "dot--orange", UNMATCHED: "dot--red" };
+const STATUS_DOT: Record<Status, string> = { MATCHED: "dot--green", REVIEW: "dot--orange", UNMATCHED: "dot--red" };
 
 /**
  * A status as a dot and its label: a transaction's status, No Receipt with its category for a

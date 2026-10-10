@@ -448,6 +448,8 @@ describe("General pane", () => {
     await renderGeneral();
     fireEvent.click(button("Check Now"));
     expect(await screen.findByText("Couldn’t check for updates")).toBeTruthy();
+    expect(updateStatus().textContent).toContain("Concilia can't reach Google");
+    expect(updateStatus().textContent).toContain("Details: offline");
     expect(dotOf(updateStatus())).toBe("dot dot--red");
     expect(consoleError).toHaveBeenCalledWith(failure);
     expect(button("Check Now").disabled).toBe(false);

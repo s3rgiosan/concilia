@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { receiptUrl } from "../lib/tauri";
 import { makeReceipt } from "../test/fixtures";
 import { ReceiptPreview } from "./ReceiptPreview";
-import { fileName, isImage, receiptTitle } from "./receipts";
+import { isImage, receiptTitle } from "./receipts";
 
 vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),
@@ -39,7 +39,6 @@ describe("ReceiptPreview", () => {
 
 describe("receipt names", () => {
   it("names a receipt by vendor, else by file", () => {
-    expect(fileName("/receipts/2030/03/receipts/acme.pdf")).toBe("acme.pdf");
     expect(receiptTitle(makeReceipt("acme.pdf", { vendor: "ACME" }))).toBe("ACME");
     expect(receiptTitle(makeReceipt("acme.pdf", { vendor: null }))).toBe("acme.pdf");
   });

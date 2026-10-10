@@ -283,6 +283,12 @@ describe("patchReceipt", () => {
     expect(patched.reimbursements).toEqual([rescanned, INITECH]);
   });
 
+  it("keeps the statements the month holds", () => {
+    const statements = [{ file: "statement.pdf", bank: "cgd" as const, transactions: 2, added_at: "2030-03-01T00:00:00Z" }];
+    const patched = patchReceipt({ ...data, statements }, { ...ACME, amount_cents: 1500 });
+    expect(patched.statements).toEqual(statements);
+  });
+
   it("keeps the preview path when the new metadata lacks one", () => {
     const { rel_path: _relPath, ...rescanned } = { ...ACME, amount_cents: 1500 };
     const patched = patchReceipt(data, rescanned);

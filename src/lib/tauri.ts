@@ -251,6 +251,11 @@ export function listPeriods(): Promise<PeriodSummary[]> {
   return invoke<PeriodSummary[]>("list_periods");
 }
 
+/** One month's entry for the month list, read from its folders. */
+export function periodSummary(year: string, month: string): Promise<PeriodSummary> {
+  return invoke<PeriodSummary>("period_summary", { year, month });
+}
+
 /** Creates the month's folders and returns its entry for the month list. */
 export function createPeriod(year: string, month: string): Promise<PeriodSummary> {
   return invoke<PeriodSummary>("create_period", { year, month });
@@ -320,10 +325,6 @@ export function getDraft(year: string, month: string): Promise<Draft> {
 
 export function saveDraft(year: string, month: string, draft: Draft): Promise<void> {
   return invoke("save_draft", { year, month, draft });
-}
-
-export function deleteDraft(year: string, month: string): Promise<void> {
-  return invoke("delete_draft", { year, month });
 }
 
 export function finalize(year: string, month: string): Promise<void> {
@@ -411,6 +412,11 @@ export function requestAttention(): Promise<void> {
 /** Rebuilds the menu bar with these labels, by the keys in src-tauri/src/menu.rs. */
 export function setMenu(labels: Record<string, string>): Promise<void> {
   return invoke("set_menu", { labels });
+}
+
+/** Changes the text of one menu item by id, without rebuilding the menu. */
+export function setMenuItemText(id: string, text: string): Promise<void> {
+  return invoke("set_menu_item_text", { id, text });
 }
 
 /** Enables or disables menu items by id; ids not in the map keep their state. */

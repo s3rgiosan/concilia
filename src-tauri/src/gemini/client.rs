@@ -1,5 +1,5 @@
-//! Gemini on Google's Gemini Enterprise Agent Platform (formerly Vertex AI), authenticated with a
-//! Google service account.
+//! Gemini on Google's Gemini Enterprise Agent Platform, authenticated with a Google service
+//! account.
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -56,7 +56,8 @@ impl ServiceAccount {
     pub fn parse(json: &str) -> Result<ServiceAccount, GeminiError> {
         let value: Value = serde_json::from_str(json)
             .map_err(|_| GeminiError::Invalid("the file is not a JSON key file".into()))?;
-        if value.get("type").and_then(Value::as_str) != Some("service_account") {
+        let key_type = value.get("type").and_then(Value::as_str);
+        if key_type != Some("service_account") {
             return Err(GeminiError::Invalid(
                 "the file is not a service account key".into(),
             ));
@@ -164,7 +165,8 @@ impl GeminiClient {
     async fn access_token(&self) -> Result<String, GeminiError> {
         let mut cached = self.token.lock().await;
         if let Some((token, expires)) = cached.as_ref() {
-            if Instant::now() + TOKEN_MARGIN < *expires {
+            let refresh_from = Instant::now() + TOKEN_MARGIN;
+            if refresh_from < *expires {
                 return Ok(token.clone());
             }
         }
@@ -281,7 +283,7 @@ impl GeminiClient {
 
 /// The `generateContent` request body: the prompt, with the receipt text appended or the
 /// image attached.
-pub fn request_body(prompt: &str, payload: &Payload) -> Value {
+fn request_body(prompt: &str, payload: &Payload) -> Value {
     let parts = match payload {
         Payload::Text(text) => json!([{ "text": format!("{prompt}\n\nReceipt text:\n{text}") }]),
         Payload::Image { base64, mime_type } => json!([

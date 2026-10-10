@@ -276,9 +276,6 @@ export function install(): void {
           draft = a.draft as Draft;
           setPeriod(a, { pending: pendingWith(draft) });
           return delay(150, null);
-        case "delete_draft":
-          draft = {};
-          return null;
         case "finalize":
           draft = {};
           setPeriod(a, { status: "finalized", pending: 0 });
@@ -334,6 +331,10 @@ export function install(): void {
               dropped_decisions: [],
             };
           })();
+        case "period_summary":
+          return delay(100, periods.get(`${String(a.year)}-${String(a.month)}`) ?? { year: String(a.year), month: String(a.month), status: "empty", receipts: 0, transactions: 0, pending: 0 });
+        case "set_menu_item_text":
+          return null;
         case "create_period":
           setPeriod(a, {});
           return delay(150, periods.get(`${String(a.year)}-${String(a.month)}`));

@@ -182,18 +182,23 @@ pub fn plan(
 pub fn execute(moves: &[Move]) -> std::io::Result<()> {
     for (done, step) in moves.iter().enumerate() {
         if let Err(error) = std::fs::rename(&step.from, &step.to) {
-            for undo in moves[..done].iter().rev() {
-                if let Err(rollback) = std::fs::rename(&undo.to, &undo.from) {
-                    log::error!(
-                        "finalize rollback failed for {}: {rollback}",
-                        undo.to.display()
-                    );
-                }
-            }
+            undo(&moves[..done]);
             return Err(error);
         }
     }
     Ok(())
+}
+
+/// Moves every file of `moves` back to where it came from, last move first.
+pub fn undo(moves: &[Move]) {
+    for step in moves.iter().rev() {
+        if let Err(error) = std::fs::rename(&step.to, &step.from) {
+            log::error!(
+                "finalize rollback failed for {}: {error}",
+                step.to.display()
+            );
+        }
+    }
 }
 
 #[cfg(test)]

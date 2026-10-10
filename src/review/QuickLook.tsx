@@ -3,10 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { ExitingContext } from "../components/Presence";
 import { useModal } from "../components/Sheet";
+import { fileName } from "../lib/paths";
 import { useLatest } from "../lib/hooks/useLatest";
 import type { ReceiptMeta } from "../lib/tauri";
 import { ReceiptPreview } from "./ReceiptPreview";
-import { fileName } from "./receipts";
 
 /** Quick Look's margin from the window edges and its widest size, in pixels, as Review.css sets them. */
 const MARGIN = 40;

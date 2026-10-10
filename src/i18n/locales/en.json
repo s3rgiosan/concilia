@@ -143,7 +143,6 @@
   "review": {
     "title": "Review {{period}}",
     "transactions": "Transactions",
-    "noTransactions": "No transactions",
     "noResults": "No Results for “{{query}}”",
     "empty": {
       "doneTitle": "Every Transaction Has a Decision",
@@ -413,7 +412,9 @@
       "not_pdf": "Only PDF statements can be added.",
       "file_missing": "The receipt file is no longer in the receipts folder.",
       "receipt_outside_period": "That file isn't a receipt of this month.",
-      "read_timeout": "Gemini took too long to read the receipt. Try again."
+      "read_timeout": "Gemini took too long to read the receipt. Try again.",
+      "no_statements": "Choose at least one bank statement to add.",
+      "outside_root": "That location is outside the receipts folder."
     }
   },
   "menu": {

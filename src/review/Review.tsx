@@ -8,6 +8,7 @@ import type { PopUpAction } from "../components/PopUpButton";
 import { Presence } from "../components/Presence";
 import { ResizeHandle, useStoredWidth } from "../components/ResizeHandle";
 import { ToolbarPortal, type ToolbarSlots } from "../components/Toolbar";
+import { fileName } from "../lib/paths";
 import { errorDetail, errorKind, friendlyError } from "../lib/errors";
 import { useLatest } from "../lib/hooks/useLatest";
 import { useDockProgress } from "../lib/hooks/useDockProgress";
@@ -17,7 +18,7 @@ import { useToolbarOverflow } from "../lib/hooks/useToolbarOverflow";
 import { periodInSentence, periodLabel, type Period } from "../lib/period";
 import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import { buildSteps } from "../lib/steps";
-import { fileName, isPdf, newStatements, type Statement } from "../main/Statements";
+import { isPdf, newStatements, type Statement } from "../main/Statements";
 import {
   exportReport,
   finalize,
@@ -80,7 +81,7 @@ import { useDraftAutosave, type SaveState } from "./useDraftAutosave";
 type Loaded = { data: ReviewData; applied: boolean };
 
 /** The details column's width range and default, in pixels. */
-export const DETAILS_WIDTH = { min: 280, max: 420, initial: 300 };
+const DETAILS_WIDTH = { min: 280, max: 420, initial: 300 };
 
 /**
  * The selected row, and where it was in the list, so the row after it takes over if it leaves.
@@ -124,7 +125,7 @@ type JobOutcome = { dropped: DroppedDecision[]; notice: Notice };
 type Adding = { files: Statement[]; rejected: string | null };
 
 /** "3 new receipts · 1 matched", or that the scan found nothing new. */
-export function scanNotice(result: ScanResult, t: TFunction): Notice {
+function scanNotice(result: ScanResult, t: TFunction): Notice {
   if (result.new_receipts === 0 && result.newly_matched === 0) {
     return { tone: "info", text: t("review.result.noNewReceipts"), icon: "scan" };
   }
@@ -136,7 +137,7 @@ export function scanNotice(result: ScanResult, t: TFunction): Notice {
 }
 
 /** "3 transactions added · 1 duplicate skipped · 2 matched". */
-export function addNotice(result: AddStatementsResult, t: TFunction): Notice {
+function addNotice(result: AddStatementsResult, t: TFunction): Notice {
   const parts = [t("review.result.added", { count: result.added })];
   if (result.duplicates_skipped > 0) {
     parts.push(t("review.result.skipped", { count: result.duplicates_skipped }));
@@ -979,7 +980,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
 }
 
 /** What Reject does for a transaction, which names its menu item and button. */
-export function rejectKindOf(tx: Transaction | null): RejectKind {
+function rejectKindOf(tx: Transaction | null): RejectKind {
   if (tx?.status === "REVIEW") {
     return "noneOfThese";
   }

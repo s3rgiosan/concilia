@@ -16,6 +16,7 @@ import { useMenu } from "../lib/hooks/useMenu";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useRun, type RunState } from "../lib/hooks/useRun";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
+import { useWindowTitle } from "../lib/hooks/useWindowTitle";
 import {
   defaultPeriod,
   emptySummary,
@@ -31,7 +32,6 @@ import {
   type Period,
 } from "../lib/period";
 import type { MenuEntry } from "../lib/popUpMenu";
-import { isPreview } from "../lib/preview";
 import { buildSteps } from "../lib/steps";
 import {
   createPeriod,
@@ -39,7 +39,6 @@ import {
   openReport,
   openSettings,
   revealPeriod,
-  setWindowTitle,
   startReconcile,
   type PeriodSummary,
   type Summary,
@@ -56,13 +55,13 @@ import { Welcome } from "./Welcome";
 const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.Review })));
 
 /** The sidebar's width range and default, in pixels. */
-export const SIDEBAR_WIDTH = { min: 180, max: 280, initial: 220 };
+const SIDEBAR_WIDTH = { min: 180, max: 280, initial: 220 };
 
 /** How long the confirmation after setup shows, in milliseconds. */
 const SET_UP_NOTICE_MS = 6000;
 
 /** Below this window width the sidebar hides, and showing it lays it over the content. */
-export const COMPACT_WIDTH = 1100;
+const COMPACT_WIDTH = 1100;
 
 function isCompact(): boolean {
   return window.innerWidth < COMPACT_WIDTH;
@@ -210,13 +209,7 @@ export function Main() {
   const summary = periods.find((p) => periodKey(p) === key) ?? emptySummary(selected);
   const label = periodLabel(selected, t);
 
-  const windowTitle = configured ? label : "Concilia";
-  useEffect(() => {
-    document.title = windowTitle;
-    if (!isPreview()) {
-      setWindowTitle(windowTitle).catch((e) => console.error("could not set the window title", e));
-    }
-  }, [windowTitle]);
+  useWindowTitle(configured ? label : "Concilia");
 
   const select = useCallback(
     (period: Period) => {

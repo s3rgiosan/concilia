@@ -12,10 +12,6 @@ publish = false
 name = "concilia_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-[features]
-# Exposes test doubles to integration tests.
-test-support = []
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -27,9 +23,7 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 # Native TLS like the rest of the app; macOS installs the .app.tar.gz without the zip feature.
 tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "system-proxy"] }
-tauri-plugin-process = "2"
 keyring = "4"
-uuid = { version = "1", features = ["v4"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 log = "0.4.34"
@@ -55,8 +49,6 @@ panic = "abort"
 strip = true
 
 [dev-dependencies]
-# The crate itself with test doubles enabled, for the integration tests.
-concilia = { path = ".", features = ["test-support"] }
 tokio = { version = "1.53.2", features = ["test-util"] }
 wiremock = "0.6.5"
 calamine = "0.36.1"

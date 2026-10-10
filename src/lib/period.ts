@@ -10,7 +10,7 @@ export interface Period {
 export const MONTHS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"] as const;
 
 /** The first year the New Month sheet offers. */
-export const FIRST_YEAR = 2000;
+const FIRST_YEAR = 2000;
 
 /** The month to start on: the previous one, since statements arrive after a month ends. */
 export function defaultPeriod(now: Date): Period {

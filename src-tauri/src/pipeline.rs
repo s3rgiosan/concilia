@@ -746,7 +746,7 @@ pub async fn rescan(
             .await
             .map_err(|_| {
                 PipelineError::coded(
-                    ErrorKind::Io,
+                    ErrorKind::Timeout,
                     "read_timeout",
                     "Gemini took too long to read the receipt",
                 )
@@ -863,11 +863,11 @@ pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineE
         cleanup();
         return Err(io(&paths.receipts, error));
     }
-    std::fs::rename(&result_tmp, paths.match_result()).map_err(|e| io(&paths.match_result(), e))?;
-    std::fs::rename(&report_tmp, paths.report()).map_err(|e| io(&paths.report(), e))?;
-
-    let now = time_now_iso();
-    write_atomic(&paths.applied_marker(), now.as_bytes())?;
+    if let Err(error) = publish(paths, &result_tmp, &report_tmp) {
+        finalize::undo(&plan.moves);
+        cleanup();
+        return Err(error);
+    }
     match std::fs::remove_file(paths.draft()) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
             log::warn!("could not delete the review draft: {error}");
@@ -875,6 +875,65 @@ pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineE
         _ => {}
     }
     Ok(())
+}
+
+/// The contents of a file before Finalize replaces it, to put back if a later step fails.
+struct Backup {
+    path: PathBuf,
+    bytes: Option<Vec<u8>>,
+}
+
+impl Backup {
+    fn take(path: PathBuf) -> Result<Backup, PipelineError> {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(io(&path, error)),
+        };
+        Ok(Backup { path, bytes })
+    }
+
+    fn restore(&self) {
+        let restored = match &self.bytes {
+            Some(bytes) => write_atomic(&self.path, bytes).map_err(|e| e.to_string()),
+            None => match std::fs::remove_file(&self.path) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    Err(error.to_string())
+                }
+                _ => Ok(()),
+            },
+        };
+        if let Err(error) = restored {
+            log::error!(
+                "finalize rollback failed for {}: {error}",
+                self.path.display()
+            );
+        }
+    }
+}
+
+/// Puts the final match result and report in place and writes the applied marker. When a step
+/// fails, the match result and report are restored.
+fn publish(paths: &PeriodPaths, result_tmp: &Path, report_tmp: &Path) -> Result<(), PipelineError> {
+    let backups = [
+        Backup::take(paths.match_result())?,
+        Backup::take(paths.report())?,
+    ];
+    let outcome = std::fs::rename(result_tmp, paths.match_result())
+        .map_err(|e| io(&paths.match_result(), e))
+        .and_then(|_| {
+            std::fs::rename(report_tmp, paths.report()).map_err(|e| io(&paths.report(), e))
+        })
+        .and_then(|_| {
+            write_atomic(&paths.applied_marker(), time_now_iso().as_bytes())
+                .map_err(PipelineError::from)
+        });
+    if outcome.is_err() {
+        for backup in &backups {
+            backup.restore();
+        }
+    }
+    outcome
 }
 
 fn time_now_iso() -> String {
@@ -1215,7 +1274,8 @@ pub fn reset_period(paths: &PeriodPaths) -> ResetReport {
         paths.applied_marker(),
     ] {
         if let Err(error) = std::fs::remove_file(&file) {
-            if error.kind() != std::io::ErrorKind::NotFound {
+            let kind = error.kind();
+            if kind != std::io::ErrorKind::NotFound {
                 report.warnings.push(format!("{}: {error}", file.display()));
             }
         }

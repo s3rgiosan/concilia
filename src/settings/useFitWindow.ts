@@ -3,7 +3,7 @@ import { isPreview } from "../lib/preview";
 import { setWindowSize } from "../lib/tauri";
 
 /** Width of the Settings window; src-tauri/src/windows.rs creates it with the same value. */
-export const SETTINGS_WIDTH = 640;
+const SETTINGS_WIDTH = 640;
 const MIN_HEIGHT = 240;
 const MAX_HEIGHT = 640;
 const DURATION_MS = 160;
