@@ -13,6 +13,7 @@ import {
   nextPeriod,
   parsePeriodKey,
   periodKey,
+  periodInSentence,
   periodLabel,
   runSummaryText,
   statusLine,
@@ -136,12 +137,21 @@ describe("groupByYear", () => {
   });
 });
 
+describe("periodInSentence", () => {
+  it("writes the month in lower case in Portuguese only", () => {
+    expect(periodInSentence({ year: "2030", month: "03" }, i18n.t, "en")).toBe("March 2030");
+    expect(periodInSentence({ year: "2030", month: "03" }, i18n.getFixedT("pt"), "pt")).toBe("março de 2030");
+  });
+});
+
 describe("statusLine", () => {
   it("describes each status with a dot", () => {
     expect(statusLine(summary("2030", "03"), i18n.t)).toEqual({ tone: "gray", label: "No receipts" });
-    expect(statusLine(summary("2030", "03", { status: "ready" }), i18n.t)).toEqual({ tone: "blue", label: "Ready" });
-    expect(statusLine(summary("2030", "03", { status: "ready", receipts: 1 }), i18n.t).label).toBe("Ready · 1 receipt");
-    expect(statusLine(summary("2030", "03", { status: "ready", receipts: 38 }), i18n.t).label).toBe("Ready · 38 receipts");
+    expect(statusLine(summary("2030", "03", { status: "ready" }), i18n.t)).toEqual({ tone: "blue", label: "Needs statements" });
+    expect(statusLine(summary("2030", "03", { status: "ready", receipts: 1 }), i18n.t).label).toBe("Needs statements · 1 receipt");
+    expect(statusLine(summary("2030", "03", { status: "ready", receipts: 38 }), i18n.t).label).toBe("Needs statements · 38 receipts");
+    expect(statusLine(summary("2030", "03", { status: "ready", transactions: 12 }), i18n.t).label).toBe("Needs receipts");
+    expect(statusLine(summary("2030", "03", { status: "ready", receipts: 38, transactions: 12 }), i18n.t).label).toBe("Ready · 38 receipts");
     expect(statusLine(summary("2030", "03", { status: "in_review", pending: 6 }), i18n.t)).toEqual({ tone: "orange", label: "In review · 6 to decide" });
     expect(statusLine(summary("2030", "03", { status: "in_review" }), i18n.t).label).toBe("In review");
     expect(statusLine(summary("2030", "03", { status: "finalized" }), i18n.t)).toEqual({ tone: "green", label: "Finalized" });

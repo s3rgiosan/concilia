@@ -53,7 +53,7 @@ describe("Sidebar", () => {
         .map((o) => o.textContent),
     ]);
     expect(years).toEqual([
-      ["year-2030", ["MarchReady · 38 receipts", "FebruaryIn review · 6 to decide", "JanuaryFinalized"]],
+      ["year-2030", ["MarchNeeds statements · 38 receipts", "FebruaryIn review · 6 to decide", "JanuaryFinalized"]],
       ["year-2029", ["DecemberNo receipts"]],
     ]);
     expect(screen.getByRole("group", { name: "2030" })).toBeTruthy();
@@ -115,6 +115,34 @@ describe("Sidebar", () => {
     rerender(<Sidebar {...props} running={{ key: "2030-03", progress: null }} />);
     expect(rows()[0]).toBe("MarchReconciling…");
     expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it.each([
+    ["failed", "MarchFailed", "dot dot--red"],
+    ["stopped", "MarchStopped", "dot dot--gray"],
+  ] as const)("shows a month whose run %s", (outcome, row, dot) => {
+    const { container } = renderSidebar({ running: { key: "2030-03", progress: null, outcome } });
+    expect(rows()[0]).toBe(row);
+    expect(container.querySelector("#month-2030-03 .dot")?.className).toBe(dot);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("shows an accessory above the footer", () => {
+    render(
+      <Sidebar
+        periods={PERIODS}
+        selected="2030-03"
+        onSelect={vi.fn()}
+        running={null}
+        loading={false}
+        error={null}
+        onRetry={vi.fn()}
+        onNewMonth={vi.fn()}
+        menu={() => []}
+        accessory={<p>Update card</p>}
+      />,
+    );
+    expect(screen.getByText("Update card").nextElementSibling?.className).toBe("sidebar__footer");
   });
 
   it("shows no statuses while the months load", () => {

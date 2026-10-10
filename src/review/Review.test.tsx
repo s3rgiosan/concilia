@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { createRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PopUpAction } from "../components/PopUpButton";
@@ -11,14 +12,18 @@ import {
   getRules,
   openReceipt,
   openReport as openReportFile,
+  openSettings,
   periodStatus,
+  pickStatements,
   receiptUrl,
   rescanReceipt,
   rescanReimbursement,
   revealPeriod,
   saveDraft,
   saveRules,
+  startAddStatements,
   startScan,
+  type AddStatementsResult,
   type Draft,
   type ReceiptMeta,
   type RunEvent,
@@ -47,8 +52,18 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   saveDraft: vi.fn(),
   saveRules: vi.fn(),
   setDockProgress: vi.fn(() => Promise.resolve()),
+  openSettings: vi.fn(() => Promise.resolve()),
+  pickStatements: vi.fn(),
+  startAddStatements: vi.fn(),
   startScan: vi.fn(),
 }));
+
+vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
+
+/** Drops files on the window, as the webview reports them. */
+let dropFiles: (paths: string[]) => void = () => undefined;
+/** Reports files dragged over the window. */
+let dragOver: () => void = () => undefined;
 
 const PERIOD = { year: "2030", month: "03" };
 
@@ -124,6 +139,27 @@ function scanRun() {
   });
   return { result, cancel, push: (event: RunEvent) => act(() => onEvent(event)) };
 }
+
+/** Adding statements the test settles by hand. */
+function addRun() {
+  const result = deferred<AddStatementsResult>();
+  const cancel = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+  let onEvent: (event: RunEvent) => void = () => undefined;
+  vi.mocked(startAddStatements).mockImplementation((_year, _month, _statements, callback) => {
+    onEvent = callback;
+    return { promise: result.promise, cancel };
+  });
+  return { result, cancel, push: (event: RunEvent) => act(() => onEvent(event)) };
+}
+
+const ADDED: AddStatementsResult = {
+  summary: SUMMARY,
+  added: 3,
+  duplicates_skipped: 1,
+  newly_matched: 2,
+  statements: [{ file: "extrato-b.pdf", bank: "cgd", added: 3, skipped: 1 }],
+  dropped_decisions: [],
+};
 
 /** Runs every timer due now and the promise callbacks they lead to. */
 async function settle() {
@@ -266,6 +302,19 @@ function previewSource(): string | null {
 beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
+  let uuid = 0;
+  vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
+    uuid += 1;
+    return `00000000-0000-4000-8000-${String(uuid).padStart(12, "0")}`;
+  });
+  vi.mocked(getCurrentWebview).mockReturnValue({
+    onDragDropEvent: (handler: (event: { payload: { type: "drop"; paths: string[] } | { type: "over" } }) => void) => {
+      dropFiles = (paths) => act(() => handler({ payload: { type: "drop", paths } }));
+      dragOver = () => act(() => handler({ payload: { type: "over" } }));
+      return Promise.resolve(() => undefined);
+    },
+  } as unknown as ReturnType<typeof getCurrentWebview>);
+  vi.mocked(pickStatements).mockResolvedValue([]);
   vi.mocked(getReview).mockResolvedValue(DATA);
   vi.mocked(getDraft).mockResolvedValue({});
   vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus());
@@ -858,6 +907,7 @@ describe("commands", () => {
       scan: true,
       exportReport: true,
       finalize: true,
+      addStatements: true,
     });
     expect(onAvailabilityChange).toHaveBeenLastCalledWith(commands().can);
     select("ACME CORP");
@@ -1117,6 +1167,109 @@ describe("toolbar", () => {
   });
 });
 
+describe("add statements", () => {
+  const STATEMENTS = [{ file: "extrato-a.pdf", bank: "cgd" as const, transactions: 6, added_at: "2030-04-01T09:00:00Z" }];
+  const NEW_PATH = "/Users/example/Downloads/extrato-b.pdf";
+
+  beforeEach(() => {
+    vi.mocked(getReview).mockResolvedValue({ ...DATA, statements: STATEMENTS });
+  });
+
+  /** Opens the sheet from the toolbar's More Actions menu with the file the picker returns. */
+  async function openSheet(): Promise<HTMLElement> {
+    vi.mocked(pickStatements).mockResolvedValue([NEW_PATH]);
+    fireEvent.click(button("More Actions", toolbar()));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Add Statements…" }));
+    await settle();
+    return screen.getByRole("dialog", { name: "Add Statements to March 2030" });
+  }
+
+  it("lists the month's statements and the files to add", async () => {
+    await renderReview();
+    const sheet = await openSheet();
+    const existing = within(sheet).getByRole("list", { name: "Already in This Month" });
+    expect(existing.textContent).toBe("extrato-a.pdfCGD6 transactions");
+    const fresh = within(sheet).getByRole("list", { name: "To Add" });
+    expect(fresh.textContent).toContain("extrato-b.pdf");
+    fireEvent.click(button("Remove extrato-b.pdf", sheet));
+    expect(within(sheet).queryByRole("list", { name: "To Add" })).toBeNull();
+    expect(button("Add", sheet).disabled).toBe(true);
+    fireEvent.click(button("Cancel", sheet));
+    await settle();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("adds with progress, then sums up and reloads", async () => {
+    const run = addRun();
+    const { onChanged } = await renderReview();
+    const sheet = await openSheet();
+    fireEvent.click(button("Add", sheet));
+    await settle();
+    expect(startAddStatements).toHaveBeenCalledWith("2030", "03", [{ path: NEW_PATH, bank: "cgd" }], expect.any(Function));
+    const dialog = screen.getByRole("dialog", { name: "Adding Statements" });
+    await run.push({ step: "parsing", count: 1 });
+    expect(within(dialog).getByText("Reading statements")).toBeTruthy();
+    expect(within(dialog).queryByText("Generating report")).toBeNull();
+    run.result.resolve(ADDED);
+    await settle();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("3 transactions added · 1 duplicate skipped · 2 matched")).toBeTruthy();
+    expect(getReview).toHaveBeenCalledTimes(2);
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("goes back to the chosen files when adding is stopped", async () => {
+    const run = addRun();
+    await renderReview();
+    const sheet = await openSheet();
+    fireEvent.click(button("Add", sheet));
+    await settle();
+    fireEvent.click(button("Cancel", screen.getByRole("dialog")));
+    expect(run.cancel).toHaveBeenCalledTimes(1);
+    await act(async () => run.result.reject({ kind: "cancelled", message: "cancelled" }));
+    await settle();
+    const back = screen.getByRole("dialog", { name: "Add Statements to March 2030" });
+    expect(within(back).getByRole("list", { name: "To Add" }).textContent).toContain("extrato-b.pdf");
+  });
+
+  it("explains a failure and adds the same files again on Try Again", async () => {
+    const run = addRun();
+    await renderReview();
+    const sheet = await openSheet();
+    fireEvent.click(button("Add", sheet));
+    await settle();
+    run.result.reject({ kind: "parse", message: "no rows" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Adding Statements" });
+    expect(within(dialog).getByRole("alert").textContent).toContain("Details: no rows");
+    fireEvent.click(button("Try Again", dialog));
+    await settle();
+    expect(startAddStatements).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(startAddStatements).mock.calls[1][2]).toEqual([{ path: NEW_PATH, bank: "cgd" }]);
+  });
+
+  it("opens the sheet with dropped PDFs and notes other files", async () => {
+    await renderReview();
+    dragOver();
+    expect(screen.getByText("Drop to add statements to March 2030")).toBeTruthy();
+    dropFiles([NEW_PATH, "/Users/example/Downloads/notes.txt"]);
+    const sheet = screen.getByRole("dialog", { name: "Add Statements to March 2030" });
+    expect(within(sheet).getByRole("list", { name: "To Add" }).textContent).toContain("extrato-b.pdf");
+    expect(within(sheet).getByText("notes.txt isn't a PDF. Only PDF statements can be added.")).toBeTruthy();
+    dropFiles([NEW_PATH, "/Users/example/Downloads/extrato-c.pdf"]);
+    expect(within(sheet).getAllByRole("listitem").map((item) => item.textContent)).toContain("extrato-c.pdfCGD");
+    expect(within(within(sheet).getByRole("list", { name: "To Add" })).getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("is not offered for a finalized month", async () => {
+    vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus({ applied: true }));
+    const { commands } = await renderReview();
+    expect(commands().can.addStatements).toBe(false);
+    fireEvent.click(button("More Actions", toolbar()));
+    expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: "Add Statements…" })).toBeNull();
+  });
+});
+
 describe("scan for new receipts", () => {
   it("saves pending changes, then scans with progress", async () => {
     const run = scanRun();
@@ -1136,7 +1289,7 @@ describe("scan for new receipts", () => {
     expect(button("Scan for New Receipts", toolbar()).disabled).toBe(true);
     expect(button("Export Report…", toolbar()).disabled).toBe(true);
     expect(button("Finalize…", toolbar()).disabled).toBe(true);
-    run.result.resolve({ summary: SUMMARY, dropped_decisions: [] });
+    run.result.resolve({ summary: SUMMARY, dropped_decisions: [], new_receipts: 0, newly_matched: 0 });
     await settle();
   });
 
@@ -1174,6 +1327,8 @@ describe("scan for new receipts", () => {
     vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_ACME, TX_INITECH] }));
     run.result.resolve({
       summary: SUMMARY,
+      new_receipts: 0,
+      newly_matched: 0,
       dropped_decisions: [
         { txId: "tx-2", description: "GLOBEX SHOP", removedReceiptFiles: [GLOBEX.file] },
         { txId: "tx-9", description: "HOOLI STORE", removedReceiptFiles: [HOOLI.file] },
@@ -1196,7 +1351,12 @@ describe("scan for new receipts", () => {
     await renderReview();
     fireEvent.click(button("Scan for New Receipts", toolbar()));
     await settle();
-    run.result.resolve({ summary: SUMMARY, dropped_decisions: [{ txId: "tx-2", description: "GLOBEX SHOP", removedReceiptFiles: [GLOBEX.file] }] });
+    run.result.resolve({
+      summary: SUMMARY,
+      new_receipts: 0,
+      newly_matched: 0,
+      dropped_decisions: [{ txId: "tx-2", description: "GLOBEX SHOP", removedReceiptFiles: [GLOBEX.file] }],
+    });
     await settle();
     expect(screen.getByText("1 decision was discarded because its receipt is gone: GLOBEX SHOP.")).toBeTruthy();
   });
@@ -1213,6 +1373,57 @@ describe("scan for new receipts", () => {
     fireEvent.click(button("Close", dialog));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(getReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Settings and Try Again after a scan that Google refused", async () => {
+    const run = scanRun();
+    await renderReview();
+    fireEvent.click(button("Scan for New Receipts", toolbar()));
+    await settle();
+    run.result.reject({ kind: "unauthorized", message: "token exchange failed (400)" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Scan for New Receipts" });
+    expect(within(dialog).getAllByRole("button").map((b) => b.textContent)).toEqual(["Close", "Open Settings…", "Try Again"]);
+    fireEvent.click(button("Open Settings…", dialog));
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    scanRun();
+    fireEvent.click(button("Try Again", dialog));
+    await settle();
+    expect(startScan).toHaveBeenCalledTimes(2);
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+
+  it("offers only Try Again for a failure Settings cannot fix", async () => {
+    const run = scanRun();
+    await renderReview();
+    fireEvent.click(button("Scan for New Receipts", toolbar()));
+    await settle();
+    run.result.reject({ kind: "network", message: "offline" });
+    await settle();
+    const dialog = screen.getByRole("dialog", { name: "Scan for New Receipts" });
+    expect(within(dialog).getAllByRole("button").map((b) => b.textContent)).toEqual(["Close", "Try Again"]);
+  });
+
+  it("sums up what a scan found in a dismissible banner", async () => {
+    const run = scanRun();
+    await renderReview();
+    fireEvent.click(button("Scan for New Receipts", toolbar()));
+    await settle();
+    run.result.resolve({ summary: SUMMARY, dropped_decisions: [], new_receipts: 3, newly_matched: 1 });
+    await settle();
+    const banner = screen.getByText("3 new receipts · 1 matched").closest<HTMLElement>(".banner")!;
+    fireEvent.click(button("Dismiss", banner));
+    expect(screen.queryByText("3 new receipts · 1 matched")).toBeNull();
+  });
+
+  it("says when a scan found nothing new", async () => {
+    const run = scanRun();
+    await renderReview();
+    fireEvent.click(button("Scan for New Receipts", toolbar()));
+    await settle();
+    run.result.resolve({ summary: SUMMARY, dropped_decisions: [], new_receipts: 0, newly_matched: 0 });
+    await settle();
+    expect(screen.getByText("No new receipts")).toBeTruthy();
   });
 
   it("reports a failed save and does not scan", async () => {

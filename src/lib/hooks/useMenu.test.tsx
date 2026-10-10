@@ -74,6 +74,7 @@ function makeCommands(can: ReviewAvailability = availability(true)): ReviewComma
     scan: vi.fn(),
     exportReport: vi.fn(),
     finalize: vi.fn(),
+    addStatements: vi.fn(),
     can,
   };
 }
@@ -302,6 +303,11 @@ describe("enabled items", () => {
     expect(menuEnabled({ ...REVIEW_SCREEN, running: true }).rerun).toBe(false);
   });
 
+  it("enables Add Statements… in a review that can take statements", () => {
+    expect(menuEnabled(REVIEW_SCREEN).add_statements).toBe(true);
+    expect(menuEnabled({ ...REVIEW_SCREEN, reviewCan: { ...availability(true), addStatements: false } }).add_statements).toBe(false);
+  });
+
   it("disables the review's items when no review is shown", () => {
     const state = menuEnabled({ ...REVIEW_SCREEN, reviewCan: null });
     expect(state).toMatchObject({ accept: false, export_report: false, find: false });
@@ -312,7 +318,7 @@ describe("enabled items", () => {
     await flush();
     rerender({ m: REVIEW_SCREEN });
     await flush();
-    expect(lastState()).toMatchObject({ rerun: true, add_statements: false, accept: true });
+    expect(lastState()).toMatchObject({ rerun: true, add_statements: true, accept: true });
   });
 
   it("does not send an unchanged state again", async () => {
@@ -349,7 +355,7 @@ describe("routing", () => {
   });
 
   it("ignores month items that are disabled", async () => {
-    const { actions } = setup(REVIEW_SCREEN, makeCommands());
+    const { actions } = setup({ ...REVIEW_SCREEN, reviewCan: { ...availability(true), addStatements: false } }, makeCommands());
     await flush();
     act(() => choose("add_statements"));
     act(() => choose("reconcile"));

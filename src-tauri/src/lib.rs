@@ -140,6 +140,7 @@ pub fn run() {
             commands::open_report,
             commands::open_receipt,
             commands::reveal_period,
+            commands::open_key_help,
             commands::open_settings,
             commands::check_for_updates,
             commands::pending_update,

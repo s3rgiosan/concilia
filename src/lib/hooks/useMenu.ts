@@ -15,7 +15,7 @@ export interface MenuModel {
   rejectKind: RejectKind;
   /** The month is shown as statements to add and reconcile, and no run is going. */
   acceptsStatements: boolean;
-  /** The month has statements added or transactions to reconcile. */
+  /** The month has receipts, and statements added or transactions to reconcile. */
   canReconcile: boolean;
   /** The month has a match result, so it opens in the review. */
   hasResult: boolean;
@@ -112,6 +112,7 @@ const NO_REVIEW: ReviewAvailability = {
   scan: false,
   exportReport: false,
   finalize: false,
+  addStatements: false,
 };
 
 /** Every item the frontend enables or disables, all off. */
@@ -132,7 +133,7 @@ export function menuEnabled(model: MenuModel): Record<string, boolean> {
   return {
     ...enabled,
     new_month: true,
-    add_statements: model.acceptsStatements,
+    add_statements: model.acceptsStatements || model.reviewCan?.addStatements === true,
     reconcile: model.acceptsStatements && model.canReconcile,
     rerun: model.hasResult && !model.running,
     open_report: model.hasResult,

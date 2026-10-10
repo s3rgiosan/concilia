@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, State};
@@ -19,7 +19,7 @@ use crate::config::Settings;
 use crate::error::{fail, CommandError, CommandResult, ErrorKind};
 use crate::extract::{ExtractOptions, GeminiExtractor};
 use crate::locks::{ExclusiveGuard, RunKind};
-use crate::model::{Draft, DroppedDecision, Rule, Summary};
+use crate::model::{Draft, Rule, Summary};
 use crate::period::{Period, PeriodPaths};
 use crate::pipeline::{self, AddStatementsResult, RescanKind, RunContext, RunEvent, StatementFile};
 use crate::poppler::PopplerStatus;
@@ -273,19 +273,13 @@ pub async fn reconcile(
     timed_out(result).map_err(fail)
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ScanResult {
-    pub summary: Summary,
-    pub dropped_decisions: Vec<DroppedDecision>,
-}
-
 #[tauri::command]
 pub async fn scan_receipts(
     state: State<'_, Arc<AppState>>,
     year: String,
     month: String,
     on_event: Channel<RunEvent>,
-) -> CommandResult<ScanResult> {
+) -> CommandResult<pipeline::ScanOutcome> {
     let period = period(&year, &month)?;
     let job = start_job(&state, &period, RunKind::Scan).map_err(fail)?;
     let token = job.guard.token().clone();
@@ -302,11 +296,7 @@ pub async fn scan_receipts(
     };
     let result = tokio::time::timeout(RUN_TIMEOUT, pipeline::scan_receipts(&ctx)).await;
     drop(job);
-    let (summary, dropped_decisions) = timed_out(result).map_err(fail)?;
-    Ok(ScanResult {
-        summary,
-        dropped_decisions,
-    })
+    timed_out(result).map_err(fail)
 }
 
 /// Adds statements to a month in review, keeping its transaction IDs and review draft.
@@ -573,6 +563,14 @@ pub fn reveal_period(
     let paths = pipeline::ensure_period_dirs(&root, &period(&year, &month)?).map_err(fail)?;
     app.opener()
         .reveal_item_in_dir(&paths.dir)
+        .map_err(|e| fail(CommandError::new(ErrorKind::Io, e.to_string())))
+}
+
+/// Opens the help on creating a service account key in the browser.
+#[tauri::command]
+pub fn open_key_help(app: AppHandle) -> CommandResult<()> {
+    app.opener()
+        .open_url(crate::menu::KEY_HELP_URL, None::<&str>)
         .map_err(|e| fail(CommandError::new(ErrorKind::Io, e.to_string())))
 }
 

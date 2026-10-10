@@ -3,6 +3,7 @@
 .review {
   display: flex;
   flex: 1;
+  position: relative;
   min-height: 0;
 }
 
@@ -692,4 +693,43 @@
 .details__actions button.pull-down {
   gap: 6px;
   padding: 0 7px 0 10px;
+}
+
+/* Add Statements sheet ----------------------------------------------------- */
+
+.add-statements__list {
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.add-statements__count {
+  white-space: nowrap;
+}
+
+.add-statements__empty {
+  margin: 0 8px;
+  font-size: 12px;
+}
+
+/* Files dragged over the review: the whole review takes them as statements to add. */
+.review__drop {
+  position: absolute;
+  inset: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--label-secondary);
+  font-size: 15px;
+  pointer-events: none;
+}
+
+.review__drop p {
+  margin: 0;
 }

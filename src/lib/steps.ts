@@ -12,16 +12,30 @@ export interface Step {
   progress?: { current: number; total: number };
 }
 
-export type RunKind = "reconcile" | "scan";
+/** A full reconcile, a scan for new receipts, or statements added to a month in review. */
+export type RunKind = "reconcile" | "scan" | "add";
 
 /** How a run ended, or null while it runs. */
 export type RunOutcome = "succeeded" | "failed" | null;
 
 const ORDER: Step["id"][] = ["parse", "receipts", "extract", "match", "reimbursements", "export"];
 
+/** The steps a kind of run goes through: a scan reads no statements, and only a reconcile writes the report. */
+function stepIds(kind: RunKind): Step["id"][] {
+  switch (kind) {
+    case "scan":
+      return ORDER.filter((id) => id !== "parse" && id !== "export");
+    case "add":
+      return ORDER.filter((id) => id !== "export");
+    case "reconcile":
+    default:
+      return ORDER;
+  }
+}
+
 /**
- * The steps of a run and where each stands after `events`. A scan has no parsing or export
- * step. When the run ends, every step it reached counts as done, or the running one as failed.
+ * The steps of a run and where each stands after `events`. When the run ends, every step it
+ * reached counts as done, or the running one as failed.
  */
 export function buildSteps(kind: RunKind, events: RunEvent[], outcome: RunOutcome, t: TFunction): Step[] {
   const labels: Record<Step["id"], string> = {
@@ -32,7 +46,7 @@ export function buildSteps(kind: RunKind, events: RunEvent[], outcome: RunOutcom
     reimbursements: t("progress.reimbursements"),
     export: t("progress.generatingReport"),
   };
-  const ids = kind === "scan" ? ORDER.filter((id) => id !== "parse" && id !== "export") : ORDER;
+  const ids = stepIds(kind);
   const steps = new Map<Step["id"], Step>(ids.map((id) => [id, { id, label: labels[id], status: "pending" }]));
 
   /** Marks `id` running and every step before it done. Steps this kind of run lacks are ignored. */

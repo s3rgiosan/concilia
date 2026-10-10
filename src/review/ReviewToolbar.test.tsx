@@ -19,6 +19,7 @@ function renderToolbar(patch: Partial<Parameters<typeof ReviewToolbar>[0]> = {})
     finalized: false,
     moreActions: [{ label: "Open Report", onSelect: vi.fn() }],
     onScan: vi.fn(),
+    onAddStatements: vi.fn(),
     onExport: vi.fn(),
     onFinalize: vi.fn(),
     onOpenReport: vi.fn(),
@@ -60,7 +61,9 @@ describe("ReviewToolbar", () => {
     );
     expect(order.slice(4)).toEqual(["Scan for New Receipts", "Export Report…", "More Actions", "Finalize…", "Search"]);
     expect(screen.queryByRole("button", { name: /Inspector|Details/ })).toBeNull();
-    expect(menuItems()).toEqual(["Open Report"]);
+    expect(menuItems()).toEqual(["Add Statements…", "Open Report"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add Statements…" }));
+    expect(props.onAddStatements).toHaveBeenCalledTimes(1);
   });
 
   it("makes Finalize… the default button only once nothing is left to decide", () => {
@@ -115,7 +118,7 @@ describe("ReviewToolbar", () => {
     expect(within(filter()).getAllByRole("radio").map((b) => b.textContent)).toEqual(["To Decide", "Matched", "All"]);
     expect(screen.queryByRole("button", { name: "Export Report…" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Scan for New Receipts" })).toBeNull();
-    expect(menuItems()).toEqual(["Scan for New Receipts", "Export Report…", "Open Report"]);
+    expect(menuItems()).toEqual(["Add Statements…", "Scan for New Receipts", "Export Report…", "Open Report"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Export Report…" }));
     expect(props.onExport).toHaveBeenCalledTimes(1);
   });
@@ -128,6 +131,10 @@ describe("ReviewToolbar", () => {
   });
 
   it("disables the month's jobs while one runs and keeps Scan off once finalized", () => {
+    renderToolbar({ busy: true });
+    expect(menuItems()).toEqual(["-Add Statements…", "Open Report"]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    cleanup();
     renderToolbar({ busy: true });
     expect((screen.getByRole("button", { name: "Scan for New Receipts" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Export Report…" }) as HTMLButtonElement).disabled).toBe(true);

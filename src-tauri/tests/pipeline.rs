@@ -755,8 +755,10 @@ async fn scanning_drops_decisions_whose_receipts_disappeared() {
     h.extractor.take_calls();
     h.take_events();
 
-    let (summary, dropped) = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+    let outcome = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+    let (summary, dropped) = (outcome.summary, outcome.dropped_decisions);
 
+    assert_eq!(outcome.new_receipts, 1);
     assert_eq!(
         dropped,
         [DroppedDecision {
@@ -780,6 +782,33 @@ async fn scanning_drops_decisions_whose_receipts_disappeared() {
         RunEvent::ReimbursementsFound { count: 0 },
     ]);
     assert_eq!(h.take_events(), expected);
+}
+
+#[tokio::test]
+async fn scanning_counts_new_receipts_and_new_matches() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    h.extractor.knows("globex.pdf", 2000, "GLOBEX");
+    h.receipt("globex.pdf");
+
+    let outcome = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert_eq!(outcome.new_receipts, 1);
+    assert_eq!(outcome.newly_matched, 1);
+    let globex = h
+        .match_result()
+        .transactions
+        .into_iter()
+        .find(|t| t.id == GLOBEX_ID)
+        .unwrap();
+    assert_eq!(globex.status, Status::Matched);
+
+    let again = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert_eq!((again.new_receipts, again.newly_matched), (0, 0));
 }
 
 // Adding statements.
@@ -964,7 +993,10 @@ async fn scanning_keeps_a_hand_assigned_receipt_from_other_transactions() {
     // Read again, it now has the HOOLI transaction's amount.
     h.extractor.knows("scan.png", 5000, "HOOLI");
 
-    let (_, dropped) = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+    let dropped = pipeline::scan_receipts(&h.ctx())
+        .await
+        .unwrap()
+        .dropped_decisions;
 
     assert!(dropped.is_empty());
     assert_eq!(pipeline::read_draft(&h.paths).unwrap(), decisions);

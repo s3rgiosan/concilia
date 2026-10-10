@@ -1,8 +1,9 @@
 import "./Review.css";
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type Ref } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { ErrorState, needsSettings } from "../components/ErrorState";
-import { Icon } from "../components/Icon";
+import { Icon, type IconName } from "../components/Icon";
 import type { PopUpAction } from "../components/PopUpButton";
 import { Presence } from "../components/Presence";
 import { ResizeHandle, useStoredWidth } from "../components/ResizeHandle";
@@ -10,11 +11,13 @@ import { ToolbarPortal, type ToolbarSlots } from "../components/Toolbar";
 import { errorDetail, errorKind, friendlyError } from "../lib/errors";
 import { useLatest } from "../lib/hooks/useLatest";
 import { useDockProgress } from "../lib/hooks/useDockProgress";
+import { useFileDrop } from "../lib/hooks/useFileDrop";
 import { useRun } from "../lib/hooks/useRun";
 import { useToolbarOverflow } from "../lib/hooks/useToolbarOverflow";
-import { periodLabel, type Period } from "../lib/period";
+import { periodInSentence, periodLabel, type Period } from "../lib/period";
 import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import { buildSteps } from "../lib/steps";
+import { fileName, isPdf, newStatements, type Statement } from "../main/Statements";
 import {
   exportReport,
   finalize,
@@ -25,18 +28,25 @@ import {
   openReport,
   openSettings,
   periodStatus,
+  pickStatements,
   rescanReceipt,
   rescanReimbursement,
   revealPeriod,
   saveDraft,
   saveRules,
+  startAddStatements,
   startScan,
+  type AddStatementsResult,
   type DroppedDecision,
   type Draft,
   type ReceiptMeta,
   type ReviewData,
+  type RunEvent,
+  type RunHandle,
+  type ScanResult,
   type Transaction,
 } from "../lib/tauri";
+import { AddStatementsSheet } from "./AddStatementsSheet";
 import type { RejectKind, ReviewAvailability, ReviewCommands } from "./commands";
 import { assign, changedIds, confirm, forDraft, noReceipt, patchDraftReceipt, unmatch, type Decision } from "./decisions";
 import {
@@ -63,7 +73,7 @@ import { QuickLook } from "./QuickLook";
 import { receiptTitle } from "./receipts";
 import { ReviewToolbar, TOOLBAR_LEVELS, type ToolbarLevel } from "./ReviewToolbar";
 import { buildRows, findPending, initialSelection, resolveSelection, rowReceipts, type ListRow } from "./rows";
-import { ScanSheet } from "./ScanSheet";
+import { RunSheet } from "./RunSheet";
 import { TransactionList } from "./TransactionList";
 import { useDraftAutosave, type SaveState } from "./useDraftAutosave";
 
@@ -101,8 +111,46 @@ export interface ReviewProps {
   ref?: Ref<ReviewCommands>;
 }
 
-/** A short message over the list, such as a rule that was added. */
-type Notice = { tone: "success" | "info"; text: string };
+/** A short message over the list, such as a rule that was added or what a scan found. */
+type Notice = { tone: "success" | "info"; text: string; icon?: IconName };
+
+/** A run inside the review: a scan for new receipts, or statements being added. */
+type JobKind = "scan" | "add";
+
+/** What a scan or added statements changed: decisions dropped, and the line that sums it up. */
+type JobOutcome = { dropped: DroppedDecision[]; notice: Notice };
+
+/** The statements chosen in the Add Statements sheet, and a file it turned away. */
+type Adding = { files: Statement[]; rejected: string | null };
+
+/** "3 new receipts · 1 matched", or that the scan found nothing new. */
+export function scanNotice(result: ScanResult, t: TFunction): Notice {
+  if (result.new_receipts === 0 && result.newly_matched === 0) {
+    return { tone: "info", text: t("review.result.noNewReceipts"), icon: "scan" };
+  }
+  const parts = [t("review.result.newReceipts", { count: result.new_receipts })];
+  if (result.newly_matched > 0) {
+    parts.push(t("review.result.matched", { count: result.newly_matched }));
+  }
+  return { tone: "success", text: parts.join(" · ") };
+}
+
+/** "3 transactions added · 1 duplicate skipped · 2 matched". */
+export function addNotice(result: AddStatementsResult, t: TFunction): Notice {
+  const parts = [t("review.result.added", { count: result.added })];
+  if (result.duplicates_skipped > 0) {
+    parts.push(t("review.result.skipped", { count: result.duplicates_skipped }));
+  }
+  if (result.newly_matched > 0) {
+    parts.push(t("review.result.matched", { count: result.newly_matched }));
+  }
+  return result.added > 0 ? { tone: "success", text: parts.join(" · ") } : { tone: "info", text: parts.join(" · "), icon: "doc" };
+}
+
+/** A run whose result is summed up as a `JobOutcome` once it ends. */
+function withOutcome<T>(handle: RunHandle<T>, outcome: (result: T) => JobOutcome): RunHandle<JobOutcome> {
+  return { ...handle, promise: handle.promise.then(outcome) };
+}
 
 /**
  * The review of a month's matches: a list of transactions beside the details of the selected
@@ -135,8 +183,12 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const [justFinalized, setJustFinalized] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [detailsWidth, setDetailsWidth] = useStoredWidth("review.detailsWidth", DETAILS_WIDTH.initial, DETAILS_WIDTH.min, DETAILS_WIDTH.max);
-  const scan = useRun<{ dropped: DroppedDecision[] }>();
-  useDockProgress(scan.state);
+  const job = useRun<JobOutcome>();
+  const [jobKind, setJobKind] = useState<JobKind>("scan");
+  /** Starts the last run again, for Try Again. */
+  const lastJob = useRef<(() => void) | null>(null);
+  const [adding, setAdding] = useState<Adding | null>(null);
+  useDockProgress(job.state);
 
   const draft = history.present;
   const latestDraft = useLatest(draft);
@@ -203,8 +255,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const focusedChoice = focus && selected && focus.rowId === selected.id ? receipts.find((r) => r.file === focus.file) : undefined;
   const focused = focusedChoice ?? receipts[0] ?? null;
 
-  const scanning = scan.state.phase === "running";
-  const busy = finalizing || scanning;
+  const jobRunning = job.state.phase === "running";
+  const busy = finalizing || jobRunning;
   const ready = loaded !== null;
   /** Decisions can change: the month is not finalized and nothing else runs. */
   const decidable = !busy && !applied;
@@ -230,6 +282,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     scan: ready && !busy && !applied,
     exportReport: ready && !busy,
     finalize: ready && !busy && !applied,
+    addStatements: ready && !busy && !applied,
   };
 
   function selectRow(row: ListRow) {
@@ -297,31 +350,69 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     }
   }
 
-  function startScanning() {
+  /** Saves pending decisions, then starts a run; Try Again starts it the same way. */
+  function runJob(kind: JobKind, launch: (onEvent: (event: RunEvent) => void) => RunHandle<JobOutcome>) {
     setDropped([]);
+    setNotice(null);
+    setJobKind(kind);
+    lastJob.current = () => runJob(kind, launch);
     autosave
       .flush()
-      .then(() =>
-        scan.start((onEvent) => {
-          const handle = startScan(year, month, onEvent);
-          return { ...handle, promise: handle.promise.then((result) => ({ dropped: result.dropped_decisions })) };
-        }),
-      )
+      .then(() => job.start(launch))
       .catch(onError);
   }
 
-  const { state: scanState, reset: resetScan } = scan;
+  function startScanning() {
+    runJob("scan", (onEvent) => withOutcome(startScan(year, month, onEvent), (result) => ({ dropped: result.dropped_decisions, notice: scanNotice(result, t) })));
+  }
+
+  function startAdding(files: Statement[]) {
+    const inputs = files.map(({ path, bank }) => ({ path, bank }));
+    runJob("add", (onEvent) =>
+      withOutcome(startAddStatements(year, month, inputs, onEvent), (result) => ({ dropped: result.dropped_decisions, notice: addNotice(result, t) })),
+    );
+  }
+
+  /** Adds picked or dropped files to the Add Statements sheet, opening it when it is closed. */
+  function addFiles(paths: string[]) {
+    const pdfs = paths.filter(isPdf);
+    const firstRejected = paths.find((p) => !isPdf(p));
+    setAdding((prev) => {
+      const files = prev?.files ?? [];
+      return { files: [...files, ...newStatements(pdfs, files)], rejected: firstRejected === undefined ? null : fileName(firstRejected) };
+    });
+  }
+
+  function chooseStatements() {
+    pickStatements().then((paths) => {
+      if (paths.length > 0) {
+        addFiles(paths);
+      }
+    }, onError);
+  }
+
+  const dragging = useFileDrop(addFiles, can.addStatements && !confirmFinalize && !quickLook);
+
+  const { state: jobState, reset: resetJob } = job;
   useEffect(() => {
-    if (scanState.phase === "succeeded") {
-      setDropped(scanState.result.dropped);
-      resetScan();
+    if (jobState.phase === "succeeded") {
+      setDropped(jobState.result.dropped);
+      setNotice(jobState.result.notice);
+      setAdding(null);
+      resetJob();
       load();
       onChanged?.();
-    } else if (scanState.phase === "failed" && errorKind(scanState.error) === "cancelled") {
-      // A scan the user stopped closes its sheet; there is nothing to report.
-      resetScan();
+    } else if (jobState.phase === "failed" && errorKind(jobState.error) === "cancelled") {
+      // A run the user stopped closes its sheet, back to the chosen statements when adding.
+      resetJob();
     }
-  }, [scanState, resetScan, load, onChanged]);
+  }, [jobState, resetJob, load, onChanged]);
+
+  /** Closes a failed run's sheet and drops the statements it was adding. */
+  function closeJob() {
+    resetJob();
+    setAdding(null);
+  }
 
   function saveReport() {
     autosave
@@ -439,6 +530,11 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     finalize: () => {
       if (can.finalize) {
         setConfirmFinalize(true);
+      }
+    },
+    addStatements: () => {
+      if (can.addStatements) {
+        chooseStatements();
       }
     },
     can,
@@ -730,6 +826,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
           finalized={applied}
           moreActions={moreActions}
           onScan={commands.scan}
+          onAddStatements={commands.addStatements}
           onExport={commands.exportReport}
           onFinalize={commands.finalize}
           onOpenReport={() => {
@@ -757,7 +854,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         ) : null}
         {notice ? (
           <div className={`banner ${notice.tone === "success" ? "banner--success" : "banner--info"} review__banner`} role="status">
-            <Icon name={notice.tone === "success" ? "check" : "rules"} size={14} className={notice.tone === "success" ? "banner__icon--success" : undefined} />
+            <Icon name={notice.icon ?? (notice.tone === "success" ? "check" : "rules")} size={14} className={notice.tone === "success" ? "banner__icon--success" : undefined} />
             <span className="grow">{notice.text}</span>
             <button type="button" className="icon" aria-label={t("common.dismiss")} title={t("common.dismiss")} onClick={() => setNotice(null)}>
               <Icon name="xmark" size={12} />
@@ -828,15 +925,36 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         ) : null}
       </Presence>
 
+      {dragging && adding === null ? (
+        <div className="review__drop" aria-hidden="true">
+          <Icon name="drop" size={36} />
+          <p>{t("review.addStatements.drop", { period: periodInSentence(period, t, i18n.language) })}</p>
+        </div>
+      ) : null}
+
       <Presence>
-        {scanState.phase === "running" || scanState.phase === "failed" ? (
-          <ScanSheet
-            steps={buildSteps("scan", scanState.events, scanState.phase === "failed" ? "failed" : null, t)}
-            running={scanState.phase === "running"}
-            cancelling={scanState.phase === "running" && scanState.cancelling}
-            error={scanState.phase === "failed" ? scanState.error : null}
-            onCancel={scan.cancel}
-            onClose={scan.reset}
+        {jobState.phase === "running" || jobState.phase === "failed" ? (
+          <RunSheet
+            title={jobKind === "scan" ? t("review.scan") : t("review.addStatements.running")}
+            steps={buildSteps(jobKind, jobState.events, jobState.phase === "failed" ? "failed" : null, t)}
+            running={jobState.phase === "running"}
+            cancelling={jobState.phase === "running" && jobState.cancelling}
+            error={jobState.phase === "failed" ? jobState.error : null}
+            onCancel={job.cancel}
+            onClose={closeJob}
+            onRetry={() => lastJob.current?.()}
+            onOpenSettings={() => openSettings().catch(onError)}
+          />
+        ) : adding ? (
+          <AddStatementsSheet
+            period={periodInSentence(period, t, i18n.language)}
+            existing={data.statements ?? []}
+            files={adding.files}
+            rejected={adding.rejected}
+            onFiles={(files) => setAdding({ files, rejected: null })}
+            onChoose={chooseStatements}
+            onCancel={() => setAdding(null)}
+            onAdd={() => startAdding(adding.files)}
           />
         ) : null}
       </Presence>

@@ -57,10 +57,7 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
             onChange={(on) => save((s) => ({ ...s, check_for_updates: on }))}
           />
         </FormRow>
-        <FormRow label={t("settings.general.versionLabel")}>
-          <span className="value">{version}</span>
-        </FormRow>
-        <FormRow label={t("settings.general.checkNowLabel")}>
+        <FormRow label={t("settings.general.versionLabel")} description={version}>
           <UpdateCheck />
         </FormRow>
       </FormSection>

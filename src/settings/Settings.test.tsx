@@ -334,7 +334,7 @@ describe("General pane", () => {
     expect(headings).toEqual(["Updates"]);
     expect(screen.getByText("Also sets the language of the Excel report.").className).toBe("form-section__footer");
     expect(screen.getByText("Version")).toBeTruthy();
-    expect(screen.getByText("Check now")).toBeTruthy();
+    expect(screen.queryByText("Check now")).toBeNull();
   });
 
   it.each([
@@ -372,7 +372,8 @@ describe("General pane", () => {
   it("shows the app version", async () => {
     await renderGeneral();
     const version = await screen.findByText("2.0.0");
-    expect(version.className).toBe("value");
+    expect(version.className).toBe("form-row__description");
+    expect(version.closest(".form-row")?.querySelector("button")?.textContent).toBe("Check Now");
   });
 
   it("reports a failure to read the version", async () => {
@@ -540,6 +541,23 @@ describe("Folder pane", () => {
 });
 
 describe("Gemini pane", () => {
+  beforeEach(() => {
+    localStorage.setItem("settings.geminiAdvanced", "expanded");
+  });
+
+  it("keeps Region and Model under Advanced, collapsed at first, and remembers it", async () => {
+    localStorage.removeItem("settings.geminiAdvanced");
+    await renderSettings(makeView(), "gemini");
+    const advanced = button("Advanced");
+    expect(advanced.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByLabelText("Region")).toBeNull();
+    fireEvent.click(advanced);
+    expect(advanced.getAttribute("aria-expanded")).toBe("true");
+    expect(field("Region").value).toBe("europe-west1");
+    expect(field("Model").value).toBe("gemini-2.5-flash");
+    expect(localStorage.getItem("settings.geminiAdvanced")).toBe("expanded");
+  });
+
   it("shows the imported key", async () => {
     await renderSettings(makeView(), "gemini");
     expect(screen.getByText(ACCOUNT.client_email)).toBeTruthy();

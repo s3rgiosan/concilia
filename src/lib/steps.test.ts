@@ -36,6 +36,10 @@ describe("buildSteps", () => {
     expect(build("scan", []).map((s) => s.id)).toEqual(["receipts", "extract", "match", "reimbursements"]);
   });
 
+  it("leaves the export out of adding statements", () => {
+    expect(build("add", []).map((s) => s.id)).toEqual(["parse", "receipts", "extract", "match", "reimbursements"]);
+  });
+
   it("counts the statements being parsed", () => {
     const two = build("reconcile", [{ step: "parsing", count: 2 }]);
     expect(step(two, "parse")).toMatchObject({ status: "running", detail: "2 files" });

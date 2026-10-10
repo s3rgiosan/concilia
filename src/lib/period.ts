@@ -110,10 +110,7 @@ export type DotTone = "gray" | "blue" | "orange" | "green";
 export function statusLine(summary: PeriodSummary, t: TFunction): { tone: DotTone; label: string } {
   switch (summary.status) {
     case "ready":
-      return {
-        tone: "blue",
-        label: summary.receipts > 0 ? t("month.status.readyReceipts", { count: summary.receipts }) : t("month.status.ready"),
-      };
+      return { tone: "blue", label: readyLabel(summary, t) };
     case "in_review":
       return {
         tone: "orange",
@@ -125,6 +122,22 @@ export function statusLine(summary: PeriodSummary, t: TFunction): { tone: DotTon
     default:
       return { tone: "gray", label: t("month.status.empty") };
   }
+}
+
+/** What a month with receipts or transactions but no match result still needs. */
+function readyLabel(summary: PeriodSummary, t: TFunction): string {
+  if (summary.transactions === 0) {
+    return summary.receipts > 0 ? t("month.status.needsStatementsReceipts", { count: summary.receipts }) : t("month.status.needsStatements");
+  }
+  return summary.receipts > 0 ? t("month.status.readyReceipts", { count: summary.receipts }) : t("month.status.needsReceipts");
+}
+
+/** "March 2030" inside a sentence; Portuguese writes "março de 2030" there. */
+export function periodInSentence(period: Period, t: TFunction, language: string): string {
+  if (language !== "pt") {
+    return periodLabel(period, t);
+  }
+  return `${t(`form.months.${period.month}`).toLocaleLowerCase("pt")} de ${period.year}`;
 }
 
 /** The figures of a run: "12 transactions · 9 receipts · 75% matched". */

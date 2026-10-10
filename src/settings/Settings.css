@@ -165,3 +165,41 @@
   align-items: center;
   gap: 6px;
 }
+
+/* A disclosure: its chevron turns down while the section below it shows. */
+.disclosure-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+button.disclosure {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--label);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.disclosure__icon {
+  color: var(--label-secondary);
+  transition: transform 150ms ease-out;
+}
+
+.disclosure[aria-expanded="true"] .disclosure__icon {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disclosure__icon {
+    transition: none;
+  }
+}

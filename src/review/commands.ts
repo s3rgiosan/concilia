@@ -18,6 +18,7 @@ export const REVIEW_COMMANDS = [
   "scan",
   "exportReport",
   "finalize",
+  "addStatements",
 ] as const;
 
 /**
@@ -57,6 +58,8 @@ export interface ReviewCommands {
   exportReport: () => void;
   /** Asks to finalize the month. */
   finalize: () => void;
+  /** Picks bank statements to add to the month. The app menu runs it as a month item. */
+  addStatements: () => void;
   can: ReviewAvailability;
 }
 

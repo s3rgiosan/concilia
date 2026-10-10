@@ -176,6 +176,50 @@
   color: rgb(255 255 255 / 85%);
 }
 
+/* On the accent background a white ring keeps every status colour, blue included, visible. */
+.sidebar__list:focus .sidebar__row--selected .dot {
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+/* Update card: an available release in the sidebar, above its footer. */
+.sidebar > .update-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: calc(var(--sidebar-width, 220px) - 20px);
+  margin: 0 10px 8px;
+  padding: 10px;
+  border-radius: var(--radius-group);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.update-card__text {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+
+.update-card__text .symbol {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.update-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The buttons share a row when it fits them and stack at full width when it does not. */
+.update-card__actions > button {
+  flex: 1 1 auto;
+}
+
 .sidebar__label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -222,14 +266,48 @@
   margin: 10px 12px;
 }
 
-/* Statements -------------------------------------------------------------- */
+/* Month inputs: receipts, then bank statements ----------------------------- */
 
-.statements {
+.month-inputs {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
   min-height: 0;
+}
+
+.month-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.month-section__title {
+  margin: 0 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.receipts-hint__count {
+  color: var(--label);
+}
+
+/* What a disabled Reconcile still needs, beside it in the toolbar. */
+.titlebar__trailing > .toolbar-hint {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--label-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Statements -------------------------------------------------------------- */
+
+.statements {
+  flex: 1;
 }
 
 .dropzone {

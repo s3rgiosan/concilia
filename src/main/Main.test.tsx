@@ -6,6 +6,7 @@ import type { PopUpAction } from "../components/PopUpButton";
 import type { ToolbarSlots } from "../components/Toolbar";
 import { emptySummary, type Period } from "../lib/period";
 import {
+  createPeriod,
   getAppState,
   installUpdate,
   listPeriods,
@@ -39,6 +40,7 @@ import { Main } from "./Main";
 vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),
   cancelRun: vi.fn(),
+  createPeriod: vi.fn(),
   getAppState: vi.fn(),
   importServiceAccount: vi.fn(),
   installUpdate: vi.fn(),
@@ -140,6 +142,9 @@ const LISTED: PeriodSummary[] = [
   summary("2030", "01", { status: "finalized", receipts: 20, transactions: 25 }),
   summary("2029", "11", { status: "ready", receipts: 12 }),
 ];
+
+/** The listing with March holding receipts, so a statement is all it needs to reconcile. */
+const READY_LISTED: PeriodSummary[] = [summary("2030", "03", { status: "ready", receipts: 5 }), ...LISTED];
 
 /** Paths dropped onto the window, delivered to the statements drop zone. */
 let dropFiles: (paths: string[]) => void;
@@ -280,6 +285,7 @@ async function addStatement() {
 /** Starts a reconcile of one statement for March and returns the run to drive. */
 async function startReconciling() {
   const run = reconcileRun();
+  vi.mocked(listPeriods).mockResolvedValue(READY_LISTED);
   await renderMain();
   await addStatement();
   fireEvent.click(button("Reconcile", toolbar()));
@@ -336,12 +342,42 @@ describe("load error", () => {
   });
 });
 
+describe("finishing setup", () => {
+  it("confirms it and selects the month to work on", async () => {
+    localStorage.setItem("main.period", "2030-01");
+    await renderMain(UNCONFIGURED);
+    await act(async () => pushSettings(makeView()));
+    expect(title()).toBe("March 2030");
+    const banner = screen.getByText("You're set up.").closest<HTMLElement>(".banner")!;
+    fireEvent.click(button("Dismiss", banner));
+    expect(screen.queryByText("You're set up.")).toBeNull();
+  });
+
+  it("does not confirm a setup that was already done", async () => {
+    await renderMain();
+    expect(screen.queryByText("You're set up.")).toBeNull();
+  });
+});
+
 describe("update banner", () => {
   it("announces a pending update", async () => {
     vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
     await renderMain();
     const banner = await screen.findByRole("status");
     expect(banner.textContent).toContain("Concilia 9.9.9 is available.");
+    expect(banner.className).toBe("update-card");
+    expect(screen.getByRole("navigation", { name: "Months" }).contains(banner)).toBe(true);
+    expect(within(banner).getAllByRole("button").map((b) => b.textContent)).toEqual(["Install and Relaunch", "Later"]);
+  });
+
+  it("announces it in the detail area while the sidebar is hidden or before setup", async () => {
+    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
+    localStorage.setItem("main.sidebar", "hidden");
+    await renderMain();
+    expect((await screen.findByRole("status")).closest("main.detail")).toBeTruthy();
+    cleanup();
+    await renderMain(UNCONFIGURED);
+    expect((await screen.findByRole("status")).className).toContain("banner");
   });
 
   it("announces an update found by a background check", async () => {
@@ -385,7 +421,7 @@ describe("sidebar", () => {
       "* MarchNo receipts",
       "FebruaryIn review · 6 to decide",
       "JanuaryFinalized",
-      "NovemberReady · 12 receipts",
+      "NovemberNeeds statements · 12 receipts",
     ]);
     expect(screen.getByRole("group", { name: "2029" })).toBeTruthy();
     expect(title()).toBe("March 2030");
@@ -423,7 +459,7 @@ describe("sidebar", () => {
     vi.mocked(listPeriods).mockResolvedValue([summary("2030", "03", { status: "ready", receipts: 2 }), ...LISTED]);
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(listPeriods).toHaveBeenCalledTimes(2);
-    expect(months()[0]).toBe("* MarchReady · 2 receipts");
+    expect(months()[0]).toBe("* MarchNeeds statements · 2 receipts");
   });
 
   it("explains a listing that failed and lists again on Try Again", async () => {
@@ -544,18 +580,33 @@ describe("sidebar", () => {
   });
 
   it("adds and selects a new month", async () => {
+    vi.mocked(createPeriod).mockImplementation((year, month) => {
+      vi.mocked(listPeriods).mockResolvedValue([...LISTED, summary(year, month)]);
+      return Promise.resolve(summary(year, month));
+    });
     await renderMain();
     fireEvent.click(button("New Month…"));
     const sheet = screen.getByRole("dialog", { name: "New Month" });
     fireEvent.change(within(sheet).getByLabelText("Month"), { target: { value: "07" } });
     fireEvent.change(within(sheet).getByLabelText("Year"), { target: { value: "2028" } });
-    fireEvent.click(button("Create", sheet));
+    await act(async () => fireEvent.click(button("Create", sheet)));
+    expect(createPeriod).toHaveBeenCalledWith("2028", "07");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(title()).toBe("July 2028");
     expect(months()[months().length - 1]).toBe("* JulyNo receipts");
 
     selectMonth(/March/);
     expect(months()).toContain("JulyNo receipts");
+  });
+
+  it("keeps the New Month sheet open with the reason a month cannot be created", async () => {
+    vi.mocked(createPeriod).mockRejectedValue({ kind: "io", message: "permission denied" });
+    await renderMain();
+    fireEvent.click(button("New Month…"));
+    const sheet = screen.getByRole("dialog", { name: "New Month" });
+    await act(async () => fireEvent.click(button("Create", sheet)));
+    expect(within(sheet).getByRole("alert").textContent).toContain("Details: permission denied");
+    expect(button("Create", sheet).disabled).toBe(false);
   });
 
   it("starts the New Month sheet on the month after the newest one", async () => {
@@ -580,9 +631,11 @@ describe("sidebar", () => {
 describe("month without a match", () => {
   it("shows the drop zone, where receipts go and the actions", async () => {
     await renderMain();
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Receipts", "Bank Statements"]);
     expect(screen.getByText("Drop March's bank statements here")).toBeTruthy();
     expect(screen.getByText("Put this month's receipts in /Users/example/Receipts/2030/03/receipts")).toBeTruthy();
     expect(button("Reconcile", toolbar()).disabled).toBe(true);
+    expect(within(toolbar()).getByText("Add receipts and a statement first").id).toBe(button("Reconcile", toolbar()).getAttribute("aria-describedby"));
     expect(moreActions()).toEqual(["Open Report (disabled)", "Show in Finder"]);
   });
 
@@ -608,7 +661,27 @@ describe("month without a match", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("counts the month's receipts and says what Reconcile still needs", async () => {
+    vi.mocked(listPeriods).mockResolvedValue(READY_LISTED);
+    await renderMain();
+    expect(screen.getByText("5 receipts in this month's folder")).toBeTruthy();
+    expect(within(toolbar()).getByText("Add a statement first")).toBeTruthy();
+    await addStatement();
+    expect(within(toolbar()).queryByText("Add a statement first")).toBeNull();
+    expect(button("Reconcile", toolbar()).disabled).toBe(false);
+    cleanup();
+
+    await renderMain();
+    selectMonth(/March/);
+    vi.mocked(listPeriods).mockResolvedValue([summary("2030", "03", { status: "ready", transactions: 8 })]);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(subtitle()).toBe("Needs receipts");
+    expect(within(toolbar()).getByText("Add receipts first")).toBeTruthy();
+    expect(button("Reconcile", toolbar()).disabled).toBe(true);
+  });
+
   it("keeps each month's statements when moving between months", async () => {
+    vi.mocked(listPeriods).mockResolvedValue(READY_LISTED);
     await renderMain();
     await addStatement();
     expect(button("Reconcile", toolbar()).disabled).toBe(false);
@@ -754,7 +827,7 @@ describe("reconcile", () => {
     const run = await startReconciling();
     selectMonth(/November/);
     expect(screen.queryByRole("heading", { name: "Reconciling March 2030" })).toBeNull();
-    expect(subtitle()).toBe("Ready · 12 receipts");
+    expect(subtitle()).toBe("Needs statements · 12 receipts");
     expect(button("Reconcile", toolbar()).disabled).toBe(true);
     expect(months()[0]).toBe("MarchReconciling…");
 
@@ -775,9 +848,11 @@ describe("reconcile", () => {
     expect(steps()[0]).toBe("failed: Reading statements · 1 file");
     expect(within(toolbar()).queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open Settings…" })).toBeNull();
-    expect(months()[0]).toBe("* MarchNo receipts");
+    expect(screen.getByRole("heading", { name: "Couldn't Reconcile March 2030" })).toBeTruthy();
+    expect(months()[0]).toBe("* MarchFailed");
 
     fireEvent.click(button("Back to Statements"));
+    expect(months()[0]).toBe("* MarchNeeds statements · 5 receipts");
     expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
     expect(button("Reconcile", toolbar()).disabled).toBe(false);
   });
@@ -809,7 +884,39 @@ describe("reconcile", () => {
     expect(alert.textContent).toBe("Reconciliation stopped.");
     expect(alert.className).toContain("banner--info");
     expect(subtitle()).toBe("Stopped");
+    expect(screen.getByRole("heading", { name: "Stopped Reconciling March 2030" })).toBeTruthy();
+    expect(months()[0]).toBe("* MarchStopped");
     expect(button("Try Again")).toBeTruthy();
+  });
+
+  it("keeps a failed month marked until the user leaves it", async () => {
+    const run = await startReconciling();
+    await act(async () => run.result.reject({ kind: "network", message: "offline" }));
+    expect(months()[0]).toBe("* MarchFailed");
+    selectMonth(/November/);
+    expect(months()[0]).toBe("MarchNeeds statements · 5 receipts");
+    selectMonth(/March/);
+    expect(screen.queryByRole("heading", { name: "Couldn't Reconcile March 2030" })).toBeNull();
+    expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
+  });
+
+  it("estimates the time left once three receipts are read", async () => {
+    const run = await startReconciling();
+    run.push({ step: "receipts_found", count: 40 });
+    for (const current of [0, 1, 2]) {
+      vi.setSystemTime(new Date(2030, 3, 15, 0, 0, current * 10));
+      run.push({ step: "extracting", current, total: 40 });
+    }
+    expect(subtitle()).toBe("Reading receipts: 2 of 40");
+    vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 30));
+    run.push({ step: "extracting", current: 3, total: 40 });
+    expect(steps()[2]).toBe("running: Extracting receipt data · 3 of 40 · About 6 min left");
+    expect(subtitle()).toBe("Reading receipts: 3 of 40 · About 6 min left");
+    vi.setSystemTime(new Date(2030, 3, 15, 0, 1, 0));
+    run.push({ step: "extracting", current: 39, total: 40 });
+    expect(subtitle()).toBe("Reading receipts: 39 of 40 · Less than a minute left");
+    run.push({ step: "matching" });
+    expect(subtitle()).toBe("Reconciling…");
   });
 
   it("cancels a running run when the window closes", async () => {
@@ -851,6 +958,7 @@ describe("app menu", () => {
   });
 
   it("enables the statements items on a month that accepts statements", async () => {
+    vi.mocked(listPeriods).mockResolvedValue(READY_LISTED);
     await renderMain();
     expect(lastMenuState()).toMatchObject({ new_month: true, add_statements: true, reconcile: false, rerun: false, accept: false });
     await addStatement();
@@ -872,6 +980,7 @@ describe("app menu", () => {
 
   it("reconciles from the menu", async () => {
     reconcileRun();
+    vi.mocked(listPeriods).mockResolvedValue(READY_LISTED);
     await renderMain();
     await addStatement();
     act(() => pushMenu("reconcile"));

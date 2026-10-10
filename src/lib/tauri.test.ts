@@ -102,6 +102,8 @@ describe("command wrappers", () => {
     ],
     ["revealPeriod", () => api.revealPeriod("2030", "03"), "reveal_period", { year: "2030", month: "03" }],
     ["openSettings", () => api.openSettings(), "open_settings"],
+    ["openKeyHelp", () => api.openKeyHelp(), "open_key_help"],
+    ["createPeriod", () => api.createPeriod("2030", "03"), "create_period", { year: "2030", month: "03" }],
     ["checkForUpdates", () => api.checkForUpdates(), "check_for_updates"],
     ["pendingUpdate", () => api.pendingUpdate(), "pending_update"],
     ["installUpdate", () => api.installUpdate(), "install_update"],

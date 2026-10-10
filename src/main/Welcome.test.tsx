@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { importServiceAccount, openSettings, pickReceiptsRoot, saveSettings, type AppStateView } from "../lib/tauri";
+import { importServiceAccount, openKeyHelp, openSettings, pickReceiptsRoot, saveSettings, type AppStateView } from "../lib/tauri";
 import { deferred, makeSettings, makeView } from "../test/fixtures";
 import { Welcome } from "./Welcome";
 
 vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),
   importServiceAccount: vi.fn(),
+  openKeyHelp: vi.fn(),
   openSettings: vi.fn(),
   pickReceiptsRoot: vi.fn(),
   saveSettings: vi.fn(),
@@ -58,6 +59,24 @@ describe("Welcome", () => {
     expect(row("Receipts folder").textContent).toContain("/Users/example/Receipts");
     expect(row("Gemini key").textContent).toContain("Imported");
     expect([...container.querySelectorAll(".form-row .dot")].map((d) => d.className)).toEqual(["dot dot--green", "dot dot--green"]);
+    expect(within(row("Receipts folder")).getByRole("button").textContent).toBe("Change…");
+    expect(within(row("Gemini key")).getByRole("button").textContent).toBe("Replace…");
+    expect(screen.queryByRole("button", { name: "How to Get a Key" })).toBeNull();
+  });
+
+  it("opens the help on getting a key until one is imported", async () => {
+    vi.mocked(openKeyHelp).mockResolvedValue(undefined);
+    renderWelcome();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "How to Get a Key" })));
+    expect(openKeyHelp).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports help that cannot be opened", async () => {
+    const failure = { kind: "io", message: "no browser" };
+    vi.mocked(openKeyHelp).mockRejectedValue(failure);
+    const { onError } = renderWelcome();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "How to Get a Key" })));
+    expect(onError).toHaveBeenCalledWith(failure);
   });
 
   it("draws the folder layout for the month", () => {

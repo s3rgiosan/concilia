@@ -14,11 +14,11 @@ export interface Statement extends StatementInput {
   id: string;
 }
 
-function fileName(path: string): string {
+export function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-function isPdf(path: string): boolean {
+export function isPdf(path: string): boolean {
   return path.toLowerCase().endsWith(".pdf");
 }
 
@@ -27,9 +27,21 @@ export function receiptsFolder(root: string, period: Period): string {
   return `${root.replace(/[\\/]+$/, "")}/${period.year}/${period.month}/receipts`;
 }
 
+/** The label of a bank key, such as "CGD". */
+export function bankLabel(bank: string): string {
+  return BANKS.find((b) => b.value === bank)?.label ?? bank.toUpperCase();
+}
+
+/** New statements for `paths`, each with the first bank, skipping paths already in `known`. */
+export function newStatements(paths: string[], known: Statement[]): Statement[] {
+  const taken = new Set(known.map((s) => s.path));
+  return paths.filter((p) => !taken.has(p)).map((path) => ({ id: crypto.randomUUID(), path, bank: BANKS[0].value }));
+}
+
 /**
- * A month that has not been matched yet: a drop zone for its bank statements, the statements
- * added so far and, for an empty month, where its receipts go.
+ * A month that has not been matched yet, as the two things a reconcile needs in the order they
+ * come: its receipts, counted with a way to their folder, then a drop zone for its bank
+ * statements and the statements added so far.
  */
 export function Statements({
   ref,
@@ -58,8 +70,7 @@ export function Statements({
     const pdfs = paths.filter(isPdf);
     const firstRejected = paths.find((p) => !isPdf(p));
     setRejected(firstRejected === undefined ? null : fileName(firstRejected));
-    const known = new Set(statements.map((s) => s.path));
-    const fresh = pdfs.filter((p) => !known.has(p)).map((path) => ({ id: crypto.randomUUID(), path, bank: BANKS[0].value }));
+    const fresh = newStatements(pdfs, statements);
     if (fresh.length > 0) {
       onStatements([...statements, ...fresh]);
     }
@@ -87,67 +98,83 @@ export function Statements({
     </button>
   );
 
+  const folder = receiptsRoot ? receiptsFolder(receiptsRoot, period) : null;
+
   return (
-    <section className="statements" aria-label={t("month.statements")}>
-      <div className={`dropzone ${dragging ? "dropzone--over" : ""}`}>
-        {statements.length === 0 ? (
-          <div className="dropzone__empty">
-            <Icon name="drop" size={36} className="dropzone__icon" />
-            <p className="dropzone__hint">{hint}</p>
-            {addButton}
-          </div>
-        ) : (
-          <>
-            <ul className="statements__list" aria-label={t("month.statements")}>
-              {statements.map((statement) => {
-                const name = fileName(statement.path);
-                const removeLabel = t("month.removeStatement", { name });
-                const remove = () => onStatements(statements.filter((s) => s.id !== statement.id));
-                return (
-                <li
-                  key={statement.id}
-                  className="statements__row"
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    void popUpMenu([{ label: t("month.remove"), onSelect: remove }], { x: e.clientX, y: e.clientY });
-                  }}
-                >
-                  <Icon name="doc" size={14} />
-                  <span className="grow statements__name" title={statement.path}>
-                    {name}
-                  </span>
-                  {BANKS.length > 1 ? (
-                    <PopUpButton
-                      label={t("month.bankFor", { name })}
-                      value={statement.bank}
-                      options={BANKS}
-                      onChange={(bank) => onStatements(statements.map((s) => (s.id === statement.id ? { ...s, bank } : s)))}
-                    />
-                  ) : null}
-                  <button type="button" className="icon" aria-label={removeLabel} title={removeLabel} onClick={remove}>
-                    <Icon name="xmark" size={12} />
-                  </button>
-                </li>
-                );
-              })}
-            </ul>
-            <div className="dropzone__footer">
-              <span className="muted grow">{hint}</span>
-              {addButton}
-            </div>
-          </>
-        )}
-      </div>
-      {rejected !== null ? <p className="statements__note muted">{t("month.notPdf", { name: rejected })}</p> : null}
-      {summary.status === "empty" && receiptsRoot ? (
+    <div className="month-inputs">
+      <section className="month-section" aria-labelledby="month-receipts-title">
+        <h2 id="month-receipts-title" className="month-section__title">
+          {t("month.receipts")}
+        </h2>
         <div className="receipts-hint">
           <Icon name="folder" size={14} className="receipts-hint__icon" />
-          <span className="grow">{t("month.receiptsHint", { path: receiptsFolder(receiptsRoot, period) })}</span>
+          <span className="grow">
+            {summary.receipts > 0 ? (
+              <span className="receipts-hint__count">{t("month.receiptsCount", { count: summary.receipts })}</span>
+            ) : (
+              t("month.receiptsHint", { path: folder ?? "" })
+            )}
+          </span>
           <button type="button" onClick={onReveal}>
             {t("month.showInFinder")}
           </button>
         </div>
-      ) : null}
-    </section>
+      </section>
+      <section className="statements month-section" aria-labelledby="month-statements-title">
+        <h2 id="month-statements-title" className="month-section__title">
+          {t("month.statements")}
+        </h2>
+        <div className={`dropzone ${dragging ? "dropzone--over" : ""}`}>
+          {statements.length === 0 ? (
+            <div className="dropzone__empty">
+              <Icon name="drop" size={36} className="dropzone__icon" />
+              <p className="dropzone__hint">{hint}</p>
+              {addButton}
+            </div>
+          ) : (
+            <>
+              <ul className="statements__list" aria-label={t("month.statements")}>
+                {statements.map((statement) => {
+                  const name = fileName(statement.path);
+                  const removeLabel = t("month.removeStatement", { name });
+                  const remove = () => onStatements(statements.filter((s) => s.id !== statement.id));
+                  return (
+                    <li
+                      key={statement.id}
+                      className="statements__row"
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        void popUpMenu([{ label: t("month.remove"), onSelect: remove }], { x: e.clientX, y: e.clientY });
+                      }}
+                    >
+                      <Icon name="doc" size={14} />
+                      <span className="grow statements__name" title={statement.path}>
+                        {name}
+                      </span>
+                      {BANKS.length > 1 ? (
+                        <PopUpButton
+                          label={t("month.bankFor", { name })}
+                          value={statement.bank}
+                          options={BANKS}
+                          onChange={(bank) => onStatements(statements.map((s) => (s.id === statement.id ? { ...s, bank } : s)))}
+                        />
+                      ) : null}
+                      <button type="button" className="icon" aria-label={removeLabel} title={removeLabel} onClick={remove}>
+                        <Icon name="xmark" size={12} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="dropzone__footer">
+                <span className="muted grow">{hint}</span>
+                {addButton}
+              </div>
+            </>
+          )}
+        </div>
+        {rejected !== null ? <p className="statements__note muted">{t("month.notPdf", { name: rejected })}</p> : null}
+      </section>
+    </div>
   );
 }

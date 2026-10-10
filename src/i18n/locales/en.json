@@ -26,7 +26,12 @@
     "filesFound_one": "{{count}} file",
     "filesFound_other": "{{count}} files",
     "readingCount": "Reading receipts: {{current}} of {{total}}",
-    "count": "{{current}} of {{total}}"
+    "count": "{{current}} of {{total}}",
+    "failedTitle": "Couldn't Reconcile {{period}}",
+    "stoppedTitle": "Stopped Reconciling {{period}}",
+    "minutesLeft_one": "About {{count}} min left",
+    "minutesLeft_other": "About {{count}} min left",
+    "lessThanMinute": "Less than a minute left"
   },
   "toolbar": {
     "showSidebar": "Show Sidebar",
@@ -44,7 +49,10 @@
   "month": {
     "status": {
       "empty": "No receipts",
-      "ready": "Ready",
+      "needsStatements": "Needs statements",
+      "needsStatementsReceipts_one": "Needs statements · {{count}} receipt",
+      "needsStatementsReceipts_other": "Needs statements · {{count}} receipts",
+      "needsReceipts": "Needs receipts",
       "readyReceipts_one": "Ready · {{count}} receipt",
       "readyReceipts_other": "Ready · {{count}} receipts",
       "inReview": "In review",
@@ -56,7 +64,15 @@
       "stopped": "Stopped"
     },
     "dropHint": "Drop {{month}}'s bank statements here",
-    "statements": "Bank statements",
+    "statements": "Bank Statements",
+    "receipts": "Receipts",
+    "receiptsCount_one": "{{count}} receipt in this month's folder",
+    "receiptsCount_other": "{{count}} receipts in this month's folder",
+    "missing": {
+      "both": "Add receipts and a statement first",
+      "receipts": "Add receipts first",
+      "statements": "Add a statement first"
+    },
     "addStatements": "Add Statements…",
     "bankFor": "Bank for {{name}}",
     "removeStatement": "Remove {{name}}",
@@ -95,12 +111,16 @@
     "notImported": "Not imported",
     "imported": "Imported",
     "import": "Import…",
+    "change": "Change…",
+    "replace": "Replace…",
+    "keyHelp": "How to Get a Key",
     "project": "Google Cloud project",
     "projectMissing": "Enter your Google Cloud project in Settings.",
     "openSettings": "Open Settings",
     "layoutTitle": "Keep each month's receipts in a folder like this:",
     "layoutRoot": "Receipts",
-    "layoutNote": "this month's receipts"
+    "layoutNote": "this month's receipts",
+    "setUp": "You're set up."
   },
   "form": {
     "year": "Year",
@@ -155,6 +175,26 @@
     "finalize": "Finalize…",
     "scanDroppedBanner_one": "{{count}} decision was discarded because its receipt is gone: {{names}}.",
     "scanDroppedBanner_other": "{{count}} decisions were discarded because their receipts are gone: {{names}}.",
+    "addStatements": {
+      "title": "Add Statements to {{period}}",
+      "running": "Adding Statements",
+      "existing": "Already in This Month",
+      "new": "To Add",
+      "none": "Drop bank statement PDFs here, or choose them.",
+      "choose": "Choose Files…",
+      "drop": "Drop to add statements to {{period}}"
+    },
+    "result": {
+      "newReceipts_one": "{{count}} new receipt",
+      "newReceipts_other": "{{count}} new receipts",
+      "noNewReceipts": "No new receipts",
+      "added_one": "{{count}} transaction added",
+      "added_other": "{{count}} transactions added",
+      "skipped_one": "{{count}} duplicate skipped",
+      "skipped_other": "{{count}} duplicates skipped",
+      "matched_one": "{{count}} matched",
+      "matched_other": "{{count}} matched"
+    },
     "saveState": {
       "saving": "Saving…",
       "saved": "Saved",
@@ -288,7 +328,6 @@
       "pdfToolsSystem": "poppler {{version}}",
       "updatesSection": "Updates",
       "versionLabel": "Version",
-      "checkNowLabel": "Check now",
       "statusChecking": "Checking…",
       "statusCurrent": "Up to date",
       "statusAvailable": "Version {{version}} available",
@@ -316,6 +355,7 @@
       "project": "Project",
       "projectFromKey": "{{project}} (from the key)",
       "projectRequired": "Required",
+      "advanced": "Advanced",
       "region": "Region",
       "model": "Model",
       "connection": "Connection",

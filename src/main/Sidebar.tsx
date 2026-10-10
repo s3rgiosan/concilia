@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorText } from "../components/ErrorText";
 import { Icon } from "../components/Icon";
@@ -7,10 +7,15 @@ import { useLatest } from "../lib/hooks/useLatest";
 import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import type { PeriodSummary } from "../lib/tauri";
 
-/** The month being reconciled, with how many receipts have been read once reading starts. */
+/**
+ * The month being reconciled, with how many receipts have been read once reading starts, or the
+ * month whose last run failed or was stopped.
+ */
 export interface RunningMonth {
   key: string;
   progress: { current: number; total: number } | null;
+  /** How the run ended; absent while it runs. */
+  outcome?: "failed" | "stopped";
 }
 
 function optionId(key: string): string {
@@ -23,6 +28,7 @@ function optionId(key: string): string {
  * Home and End move the selection, and a right click offers the month's commands from `menu`.
  * Its width is the `--sidebar-width` custom property. As an `overlay` it lies over the content
  * and takes focus; Esc or a press outside it (other than on the sidebar button) runs `onDismiss`.
+ * `accessory`, such as an update notice, sits above the footer.
  */
 export function Sidebar({
   overlay = false,
@@ -36,6 +42,7 @@ export function Sidebar({
   onRetry,
   onNewMonth,
   menu,
+  accessory,
 }: {
   overlay?: boolean;
   onDismiss?: () => void;
@@ -50,6 +57,7 @@ export function Sidebar({
   onNewMonth: () => void;
   /** The commands for a month's context menu. */
   menu: (summary: PeriodSummary) => MenuEntry[];
+  accessory?: ReactNode;
 }) {
   const { t } = useTranslation();
   const list = useRef<HTMLDivElement>(null);
@@ -155,7 +163,12 @@ export function Sidebar({
                   onContextMenu={(e) => showMenu(summary, e)}
                 >
                   <span className="sidebar__month">{t(`form.months.${summary.month}`)}</span>
-                  {run ? (
+                  {run?.outcome ? (
+                    <span className="sidebar__status">
+                      <span className={`dot ${run.outcome === "failed" ? "dot--red" : "dot--gray"}`} aria-hidden="true" />
+                      <span className="sidebar__label">{t(`month.status.${run.outcome}`)}</span>
+                    </span>
+                  ) : run ? (
                     <RunStatus progress={run.progress} />
                   ) : (
                     <span className="sidebar__status">
@@ -179,6 +192,7 @@ export function Sidebar({
           </button>
         </div>
       ) : null}
+      {accessory}
       <footer className="sidebar__footer">
         <button type="button" className="icon" aria-label={t("sidebar.newMonth")} title={t("sidebar.newMonth")} onClick={onNewMonth}>
           <Icon name="plus" size={14} />

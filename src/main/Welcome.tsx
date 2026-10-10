@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { FormRow, FormSection } from "../components/Form";
 import { Icon } from "../components/Icon";
 import type { Period } from "../lib/period";
-import { importServiceAccount, openSettings, pickReceiptsRoot, saveSettings, type AppStateView } from "../lib/tauri";
+import { importServiceAccount, openKeyHelp, openSettings, pickReceiptsRoot, saveSettings, type AppStateView } from "../lib/tauri";
 
 function StatusLine({ tone, children }: { tone: "green" | "orange" | "gray"; children: ReactNode }) {
   return (
@@ -20,8 +20,8 @@ function baseName(path: string): string {
 
 /**
  * First run: the receipts folder and the Gemini key, each with its status and the button that
- * sets it, then the folder layout Concilia expects. The project row shows only when the key
- * names no project.
+ * sets or changes it, a link to the help on getting a key, then the folder layout Concilia
+ * expects. The project row shows only when the key names no project.
  */
 export function Welcome({
   state,
@@ -65,13 +65,21 @@ export function Welcome({
         {t("welcome.title")}
       </h1>
       <p className="welcome__intro">{t("welcome.intro")}</p>
-      <FormSection>
+      <FormSection
+        footer={
+          state.service_account ? undefined : (
+            <button type="button" className="link" onClick={() => openKeyHelp().catch(onError)}>
+              {t("welcome.keyHelp")}
+            </button>
+          )
+        }
+      >
         <FormRow
           label={t("welcome.receiptsFolder")}
           help={root ? <StatusLine tone="green">{root}</StatusLine> : <StatusLine tone="gray">{t("welcome.notChosen")}</StatusLine>}
         >
           <button type="button" onClick={chooseFolder} disabled={locked}>
-            {working === "folder" ? t("common.working") : t("common.choose")}
+            {working === "folder" ? t("common.working") : root ? t("welcome.change") : t("common.choose")}
           </button>
         </FormRow>
         <FormRow
@@ -85,7 +93,7 @@ export function Welcome({
           }
         >
           <button type="button" onClick={importKey} disabled={locked}>
-            {working === "key" ? t("common.working") : t("welcome.import")}
+            {working === "key" ? t("common.working") : state.service_account ? t("welcome.replace") : t("welcome.import")}
           </button>
         </FormRow>
         {state.missing.includes("project") ? (

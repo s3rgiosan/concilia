@@ -497,24 +497,67 @@ pub async fn reconcile(
     Ok(summary(&result, receipts.len()))
 }
 
+/// What a scan for new receipts changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ScanOutcome {
+    pub summary: Summary,
+    pub dropped_decisions: Vec<DroppedDecision>,
+    /// Receipts read for the first time.
+    pub new_receipts: usize,
+    /// Transactions the matcher marked MATCHED that were not before, bank fees included.
+    pub newly_matched: usize,
+}
+
 /// Re-reads the receipts folder against the existing transactions, keeping review decisions
 /// whose receipts still exist.
-pub async fn scan_receipts(
-    ctx: &RunContext<'_>,
-) -> Result<(Summary, Vec<DroppedDecision>), PipelineError> {
+pub async fn scan_receipts(ctx: &RunContext<'_>) -> Result<ScanOutcome, PipelineError> {
     let transactions: Vec<StatementTransaction> =
         read_json_opt(&ctx.paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
     if ctx.paths.applied_marker().exists() {
         return Err(PipelineError::Finalized);
     }
+    let known: HashSet<String> = read_cache(&ctx.paths.receipts_cache())
+        .into_iter()
+        .map(|r| r.file)
+        .collect();
+    let matched_before = matched_ids(&ctx.paths);
     create_dir(&ctx.paths.receipts)?;
     let receipts = extract_receipts(ctx, false).await?;
     (ctx.progress)(RunEvent::Matching);
     let result = match_keeping_draft(&ctx.paths, &transactions, &receipts, &ctx.rules);
     write_json(&ctx.paths.match_result(), &result)?;
     extract_reimbursements(ctx, false).await?;
-    let dropped = clean_saved_draft(&ctx.paths, &receipts, &result);
-    Ok((summary(&result, receipts.len()), dropped))
+    let dropped_decisions = clean_saved_draft(&ctx.paths, &receipts, &result);
+    let new_receipts = receipts.iter().filter(|r| !known.contains(&r.file)).count();
+    let newly_matched = result
+        .transactions
+        .iter()
+        .filter(|tx| tx.status == Status::Matched && !matched_before.contains(&tx.id))
+        .count();
+    Ok(ScanOutcome {
+        summary: summary(&result, receipts.len()),
+        dropped_decisions,
+        new_receipts,
+        newly_matched,
+    })
+}
+
+/// IDs of the transactions the saved match result marks MATCHED; none when it is unreadable.
+fn matched_ids(paths: &PeriodPaths) -> HashSet<String> {
+    let previous: Option<MatchResult> = read_json_opt(&paths.match_result()).unwrap_or_else(|e| {
+        log::warn!("ignoring unreadable match result: {e}");
+        None
+    });
+    previous
+        .map(|result| {
+            result
+                .transactions
+                .into_iter()
+                .filter(|tx| tx.status == Status::Matched)
+                .map(|tx| tx.id)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// What one statement given to `add_statements` contributed.

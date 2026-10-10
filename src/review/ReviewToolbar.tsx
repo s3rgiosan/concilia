@@ -69,7 +69,8 @@ function FilterControl({ filter, counts, onFilter, showCounts }: { filter: Filte
 
 /**
  * The review's controls in the window toolbar: the status filter, then Scan for New Receipts,
- * Export Report… and the month's other actions in one group, the primary button and search. The
+ * Export Report… and the `•••` menu in one group, the primary button and search. The `•••` menu
+ * starts with Add Statements…, except for a finalized month, then the month's other actions. The
  * primary button is Finalize…, the default button once nothing is left to decide, or Open Report
  * for a finalized month. As the window narrows (`level`), the counts go, Scan and Export move
  * into the `•••` menu, and then the filter becomes a pop-up button.
@@ -87,6 +88,7 @@ export function ReviewToolbar({
   finalized,
   moreActions,
   onScan,
+  onAddStatements,
   onExport,
   onFinalize,
   onOpenReport,
@@ -105,6 +107,7 @@ export function ReviewToolbar({
   finalized: boolean;
   moreActions: PopUpAction[];
   onScan: () => void;
+  onAddStatements: () => void;
   onExport: () => void;
   onFinalize: () => void;
   onOpenReport: () => void;
@@ -115,10 +118,14 @@ export function ReviewToolbar({
   const exportLabel = t("review.exportReport");
   const clearLabel = t("review.clearSearch");
   const scanDisabled = busy || finalized;
-  const menu: MenuEntry[] =
-    level === 0
-      ? moreActions
-      : [{ label: scanLabel, onSelect: onScan, disabled: scanDisabled }, { label: exportLabel, onSelect: onExport, disabled: busy }, "separator", ...moreActions];
+  const own: MenuEntry[] = [];
+  if (!finalized) {
+    own.push({ label: t("month.addStatements"), onSelect: onAddStatements, disabled: busy });
+  }
+  if (level > 0) {
+    own.push({ label: scanLabel, onSelect: onScan, disabled: scanDisabled }, { label: exportLabel, onSelect: onExport, disabled: busy });
+  }
+  const menu: MenuEntry[] = own.length > 0 ? [...own, "separator", ...moreActions] : moreActions;
 
   return (
     <>

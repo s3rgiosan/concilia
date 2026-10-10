@@ -2,7 +2,9 @@
 // designed and checked in a plain browser. All names and data here are fabricated.
 //
 // Pick a scenario with `?mock=<name>`: first-run (default), configured, resume, applied, busy,
-// update, read-only, load-error, run-error. `?lang=en|pt` saves that language in the settings.
+// update, read-only, load-error, run-error, slow. run-error fails every reconcile, scan and added
+// statement; slow reads one receipt every two seconds. `?lang=en|pt` saves that language in the
+// settings.
 
 import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
@@ -139,11 +141,12 @@ function initialPeriods(scenario: string, now: Date): Map<string, PeriodSummary>
 }
 
 /** Replays a run's progress over a few seconds, stopping when `cancelled` turns true. */
-async function replay(channel: Channel<RunEvent>, kind: "reconcile" | "scan" | "add", cancelled: () => boolean): Promise<void> {
+async function replay(channel: Channel<RunEvent>, kind: "reconcile" | "scan" | "add", cancelled: () => boolean, slow = false): Promise<void> {
   const send = (event: RunEvent) => channel.onmessage(event);
   const steps: RunEvent[] = kind === "scan" ? [] : [{ step: "parsing", count: kind === "add" ? 1 : 2 }];
   steps.push({ step: "receipts_found", count: 38 });
-  for (let current = 0; current <= 38; current += 2) {
+  const stride = slow ? 1 : 2;
+  for (let current = 0; current <= 38; current += stride) {
     steps.push({ step: "extracting", current, total: 38 });
   }
   steps.push({ step: "matching" }, { step: "reimbursements_found", count: 2 });
@@ -156,7 +159,8 @@ async function replay(channel: Channel<RunEvent>, kind: "reconcile" | "scan" | "
       throw { kind: "cancelled", message: "cancelled" };
     }
     send(event);
-    await delay(event.step === "extracting" ? 120 : 400, null);
+    const extractDelay = slow ? 2000 : 120;
+    await delay(event.step === "extracting" ? extractDelay : 400, null);
   }
 }
 
@@ -289,12 +293,12 @@ export function install(): void {
         case "open_receipt":
           return null;
         case "pick_statements":
-          return delay(300, ["/Users/example/Downloads/extrato-2030-03.pdf"]);
+          return delay(300, ["/Users/example/Downloads/extrato-2030-03-b.pdf"]);
         case "reconcile":
         case "scan_receipts":
           cancelRequested = false;
           return (async () => {
-            await replay(a.onEvent as Channel<RunEvent>, cmd === "scan_receipts" ? "scan" : "reconcile", () => cancelRequested);
+            await replay(a.onEvent as Channel<RunEvent>, cmd === "scan_receipts" ? "scan" : "reconcile", () => cancelRequested, scenario === "slow");
             if (scenario === "run-error") {
               throw { kind: "unauthorized", message: "token exchange failed (400)" };
             }
@@ -308,6 +312,8 @@ export function install(): void {
               ? {
                   summary: SUMMARY,
                   dropped_decisions: [{ txId: "tx-003-2030-03-04--2500", description: "GLOBEX ONLINE", removedReceiptFiles: ["globex.pdf"] }],
+                  new_receipts: 3,
+                  newly_matched: 1,
                 }
               : SUMMARY;
           })();
@@ -315,6 +321,9 @@ export function install(): void {
           cancelRequested = false;
           return (async (): Promise<AddStatementsResult> => {
             await replay(a.onEvent as Channel<RunEvent>, "add", () => cancelRequested);
+            if (scenario === "run-error") {
+              throw { kind: "parse", message: "no rows match the CGD layout" };
+            }
             setPeriod(a, { transactions: SUMMARY.totalTransactions + 3, pending: pendingWith(draft) + 1 });
             return {
               summary: { ...SUMMARY, totalTransactions: SUMMARY.totalTransactions + 3, matched: SUMMARY.matched + 2, unmatched: SUMMARY.unmatched + 1 },
@@ -335,6 +344,7 @@ export function install(): void {
           return delay(300, "/Users/example/Documents/2030-03.xlsx");
         case "open_report":
         case "reveal_period":
+        case "open_key_help":
           return null;
         case "open_settings":
           window.open(`${window.location.pathname}?view=settings&mock=${scenario}`, "settings", "width=640,height=560");

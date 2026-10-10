@@ -1,9 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorText } from "../components/ErrorText";
 import { FormRow, FormSection } from "../components/Form";
+import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { TextSetting } from "../components/TextSetting";
+import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import { importServiceAccount, removeServiceAccount, testGeminiConnection, type AppStateView } from "../lib/tauri";
 import type { PaneProps } from "./types";
 
@@ -20,6 +22,9 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
   const account = state.service_account;
   const locked = state.read_only || state.busy;
   const gemini = state.settings.gemini;
+  const [advancedSetting, setAdvancedSetting] = useSafeStorage("settings.geminiAdvanced", "collapsed");
+  const advanced = advancedSetting === "expanded";
+  const advancedId = useId();
 
   function importKey() {
     setTest({ kind: "idle" });
@@ -93,28 +98,6 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
             onCommit={(project) => save((s) => ({ ...s, gemini: { ...s.gemini, project: project || null } }))}
           />
         </FormRow>
-        <FormRow label={t("settings.gemini.region")} htmlFor="location">
-          <TextSetting
-            id="location"
-            label={t("settings.gemini.region")}
-            value={gemini.location}
-            placeholder="europe-west1"
-            suggestions={REGIONS}
-            disabled={locked}
-            onCommit={(location) => save((s) => ({ ...s, gemini: { ...s.gemini, location } }))}
-          />
-        </FormRow>
-        <FormRow label={t("settings.gemini.model")} htmlFor="model">
-          <TextSetting
-            id="model"
-            label={t("settings.gemini.model")}
-            value={gemini.model}
-            placeholder="gemini-2.5-flash"
-            suggestions={MODELS}
-            disabled={locked}
-            onCommit={(model) => save((s) => ({ ...s, gemini: { ...s.gemini, model } }))}
-          />
-        </FormRow>
         <FormRow label={t("settings.gemini.connection")}>
           <span className="value value--status" role="status">
             {test.kind === "ok" ? (
@@ -135,6 +118,44 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
           </button>
         </FormRow>
       </FormSection>
+      <section className="disclosure-section">
+        <button
+          type="button"
+          className="disclosure"
+          aria-expanded={advanced}
+          aria-controls={advancedId}
+          onClick={() => setAdvancedSetting(advanced ? "collapsed" : "expanded")}
+        >
+          <Icon name="disclosure" size={10} className="disclosure__icon" />
+          {t("settings.gemini.advanced")}
+        </button>
+        {advanced ? (
+          <div id={advancedId} className="form-group">
+            <FormRow label={t("settings.gemini.region")} htmlFor="location">
+              <TextSetting
+                id="location"
+                label={t("settings.gemini.region")}
+                value={gemini.location}
+                placeholder="europe-west1"
+                suggestions={REGIONS}
+                disabled={locked}
+                onCommit={(location) => save((s) => ({ ...s, gemini: { ...s.gemini, location } }))}
+              />
+            </FormRow>
+            <FormRow label={t("settings.gemini.model")} htmlFor="model">
+              <TextSetting
+                id="model"
+                label={t("settings.gemini.model")}
+                value={gemini.model}
+                placeholder="gemini-2.5-flash"
+                suggestions={MODELS}
+                disabled={locked}
+                onCommit={(model) => save((s) => ({ ...s, gemini: { ...s.gemini, model } }))}
+              />
+            </FormRow>
+          </div>
+        ) : null}
+      </section>
       {confirmRemove ? (
         <Sheet
           title={t("settings.gemini.removeTitle")}

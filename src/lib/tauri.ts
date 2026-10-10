@@ -106,6 +106,10 @@ export interface DroppedDecision {
 export interface ScanResult {
   summary: Summary;
   dropped_decisions: DroppedDecision[];
+  /** Receipts read for the first time. */
+  new_receipts: number;
+  /** Transactions matched that were not before, bank fees included. */
+  newly_matched: number;
 }
 
 export type Status = "MATCHED" | "REVIEW" | "UNMATCHED";
@@ -349,6 +353,11 @@ export function openReceipt(year: string, month: string, relPath: string): Promi
 
 export function revealPeriod(year: string, month: string): Promise<void> {
   return invoke("reveal_period", { year, month });
+}
+
+/** Opens the help on creating a Gemini service account key in the browser. */
+export function openKeyHelp(): Promise<void> {
+  return invoke("open_key_help");
 }
 
 export function openSettings(): Promise<void> {

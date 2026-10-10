@@ -19,6 +19,10 @@ pub const MENU_EVENT: &str = "menu";
 
 pub const HELP_URL: &str = "https://github.com/s3rgiosan/concilia#readme";
 
+/// The README section on creating a Gemini service account key.
+pub const KEY_HELP_URL: &str =
+    "https://github.com/s3rgiosan/concilia#setting-up-google-gemini-agent-platform";
+
 pub const SETTINGS: &str = "settings";
 pub const CHECK_UPDATES: &str = "check_updates";
 pub const NEW_MONTH: &str = "new_month";
@@ -414,7 +418,6 @@ fn build(
         MENU_FILE,
         &[
             &new_month,
-            &add_statements,
             &b.separator()?,
             &reveal_period,
             &b.separator()?,
@@ -464,6 +467,8 @@ fn build(
     let month_menu = b.submenu(
         MENU_MONTH,
         &[
+            &add_statements,
+            &b.separator()?,
             &reconcile,
             &scan,
             &b.separator()?,

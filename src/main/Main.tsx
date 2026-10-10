@@ -9,7 +9,9 @@ import { ResizeHandle, useStoredWidth } from "../components/ResizeHandle";
 import { Toolbar, ToolbarPortal } from "../components/Toolbar";
 import { errorKind } from "../lib/errors";
 import { ErrorText } from "../components/ErrorText";
+import { remainingText } from "../lib/eta";
 import { useDockProgress } from "../lib/hooks/useDockProgress";
+import { useExtractionEta } from "../lib/hooks/useExtractionEta";
 import { useMenu } from "../lib/hooks/useMenu";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useRun, type RunState } from "../lib/hooks/useRun";
@@ -21,6 +23,7 @@ import {
   mergePeriods,
   newMonthDefault,
   parsePeriodKey,
+  periodInSentence,
   periodKey,
   periodLabel,
   runSummaryText,
@@ -30,7 +33,17 @@ import {
 import type { MenuEntry } from "../lib/popUpMenu";
 import { isPreview } from "../lib/preview";
 import { buildSteps } from "../lib/steps";
-import { listPeriods, openReport, openSettings, revealPeriod, setWindowTitle, startReconcile, type PeriodSummary, type Summary } from "../lib/tauri";
+import {
+  createPeriod,
+  listPeriods,
+  openReport,
+  openSettings,
+  revealPeriod,
+  setWindowTitle,
+  startReconcile,
+  type PeriodSummary,
+  type Summary,
+} from "../lib/tauri";
 import { NewMonthSheet } from "./NewMonthSheet";
 import { RerunSheet } from "./RerunSheet";
 import { RunProgress } from "./RunProgress";
@@ -45,6 +58,9 @@ const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.R
 /** The sidebar's width range and default, in pixels. */
 export const SIDEBAR_WIDTH = { min: 180, max: 280, initial: 220 };
 
+/** How long the confirmation after setup shows, in milliseconds. */
+const SET_UP_NOTICE_MS = 6000;
+
 /** Below this window width the sidebar hides, and showing it lays it over the content. */
 export const COMPACT_WIDTH = 1100;
 
@@ -53,6 +69,12 @@ function isCompact(): boolean {
 }
 
 type SheetKind = "new-month" | "rerun";
+
+/** The listing with `summary` in place of the month's entry. */
+function withSummary(listed: PeriodSummary[], summary: PeriodSummary): PeriodSummary[] {
+  const key = periodKey(summary);
+  return [...listed.filter((p) => periodKey(p) !== key), summary];
+}
 
 /** The listing with `period` marked as in review after a run produced `summary`. */
 function withReviewed(listed: PeriodSummary[], period: Period, summary: Summary): PeriodSummary[] {
@@ -91,7 +113,6 @@ export function Main() {
   const [sidebarWidth, setSidebarWidth] = useStoredWidth("main.sidebarWidth", SIDEBAR_WIDTH.initial, SIDEBAR_WIDTH.min, SIDEBAR_WIDTH.max);
   const [listed, setListed] = useState<PeriodSummary[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
-  const [created, setCreated] = useState<Period[]>([]);
   const [statements, setStatements] = useState<Record<string, Statement[]>>({});
   const [runPeriod, setRunPeriod] = useState<Period | null>(null);
   /** Whether the last run read every receipt again, so Try Again repeats it the same way. */
@@ -108,7 +129,13 @@ export function Main() {
   /** The statements area's file picker, for the app menu. */
   const statementsPicker = useRef<{ browse: () => void }>(null);
   const run = useRun<Summary>();
-  useDockProgress(run.state);
+  const { state: runState, reset: resetRun } = run;
+  useDockProgress(runState);
+  const eta = useExtractionEta(runState.phase === "running" ? runState.events : null);
+  /** The month whose last run failed or was stopped; it shows why until the user leaves it. */
+  const failedKey = runPeriod && runState.phase === "failed" ? periodKey(runPeriod) : null;
+  /** Setup just finished, so the detail area confirms it for a moment. */
+  const [setUp, setSetUp] = useState(false);
 
   const configured = state?.configured === true;
   const root = state?.settings.receipts_root ?? null;
@@ -179,7 +206,7 @@ export function Main() {
     return () => window.removeEventListener("focus", refresh);
   }, [configured, root, refresh]);
 
-  const periods = useMemo(() => mergePeriods(listed ?? [], [fallback, selected, ...created]), [listed, fallback, selected, created]);
+  const periods = useMemo(() => mergePeriods(listed ?? [], [fallback, selected]), [listed, fallback, selected]);
   const summary = periods.find((p) => periodKey(p) === key) ?? emptySummary(selected);
   const label = periodLabel(selected, t);
 
@@ -193,13 +220,39 @@ export function Main() {
 
   const select = useCallback(
     (period: Period) => {
-      setStoredKey(periodKey(period));
+      const next = periodKey(period);
+      if (failedKey !== null && failedKey !== next) {
+        resetRun();
+        setRunPeriod(null);
+      }
+      setStoredKey(next);
       setMessage(null);
       setLastRun(null);
       setOverlay(false);
     },
-    [setStoredKey],
+    [setStoredKey, failedKey, resetRun],
   );
+
+  // Finishing setup selects the month to work on and confirms it briefly.
+  const wasConfigured = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+    if (wasConfigured.current === false && state.configured) {
+      setSetUp(true);
+      select(fallback);
+    }
+    wasConfigured.current = state.configured;
+  }, [state, select, fallback]);
+
+  useEffect(() => {
+    if (!setUp) {
+      return;
+    }
+    const timer = window.setTimeout(() => setSetUp(false), SET_UP_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [setUp]);
 
   function reconcile(clearCache: boolean) {
     const target = selected;
@@ -212,7 +265,6 @@ export function Main() {
     run.start((onEvent) => startReconcile(target.year, target.month, files, clearCache, onEvent));
   }
 
-  const { state: runState, reset: resetRun } = run;
   useEffect(() => {
     if (runState.phase !== "succeeded" || !runPeriod) {
       return;
@@ -248,7 +300,15 @@ export function Main() {
   const runHere = runPeriod !== null && periodKey(runPeriod) === key && runState.phase !== "idle";
   const running = runState.phase === "running";
   const monthStatements = statements[key] ?? [];
-  const runningMonth: RunningMonth | null = runPeriod && running ? { key: periodKey(runPeriod), progress: runProgress(runState) } : null;
+  const hasReceipts = summary.receipts > 0;
+  const hasStatements = monthStatements.length > 0 || summary.transactions > 0;
+  let runningMonth: RunningMonth | null = null;
+  if (runPeriod && running) {
+    runningMonth = { key: periodKey(runPeriod), progress: runProgress(runState) };
+  } else if (failedKey !== null && runState.phase === "failed") {
+    runningMonth = { key: failedKey, progress: null, outcome: errorKind(runState.error) === "cancelled" ? "stopped" : "failed" };
+  }
+  const etaText = eta === null ? null : remainingText(eta, t);
   const listReady = listed !== null || listError !== null;
   const existingKeys = useMemo(() => new Set(periods.map(periodKey)), [periods]);
   const reviewable = isReviewable(summary);
@@ -261,14 +321,20 @@ export function Main() {
       sidebarShown,
       rejectKind,
       acceptsStatements: onStatementsScreen && !running,
-      canReconcile: monthStatements.length > 0 || summary.transactions > 0,
+      canReconcile: hasReceipts && hasStatements,
       hasResult: reviewable,
       running,
       reviewCan: reviewShown ? reviewCan : null,
     },
     {
       newMonth: () => setSheet("new-month"),
-      addStatements: () => statementsPicker.current?.browse(),
+      addStatements: () => {
+        if (reviewShown) {
+          reviewCommands.current?.addStatements();
+        } else {
+          statementsPicker.current?.browse();
+        }
+      },
       reconcile: () => reconcile(false),
       rerun: () => setSheet("rerun"),
       openReport: () => {
@@ -303,14 +369,24 @@ export function Main() {
     const cancelled = failed !== null && errorKind(failed) === "cancelled";
     const outcome = failed !== null ? "failed" : null;
     const progress = runningMonth?.progress;
+    const steps = buildSteps("reconcile", runState.events, outcome, t);
+    const extract = steps.find((step) => step.id === "extract");
+    if (etaText && extract?.status === "running") {
+      extract.detail = extract.detail ? `${extract.detail} · ${etaText}` : etaText;
+    }
+    let title = t("progress.title", { period: label });
     if (failed !== null) {
       subtitle = cancelled ? t("month.status.stopped") : t("month.status.failed");
+      const period = periodInSentence(selected, t, i18n.language);
+      title = cancelled ? t("progress.stoppedTitle", { period }) : t("progress.failedTitle", { period });
+    } else if (progress) {
+      subtitle = etaText ? `${t("progress.readingCount", progress)} · ${etaText}` : t("progress.readingCount", progress);
     } else {
-      subtitle = progress ? t("progress.readingCount", progress) : t("month.status.reconciling");
+      subtitle = t("month.status.reconciling");
     }
     detail = (
       <div className="run-panel">
-        <RunProgress title={t("progress.title", { period: label })} steps={buildSteps("reconcile", runState.events, outcome, t)} />
+        <RunProgress title={title} steps={steps} />
         {failed !== null ? (
           <>
             <div className={`banner ${cancelled ? "banner--info" : "banner--error"}`} role="alert">
@@ -380,15 +456,29 @@ export function Main() {
       );
     } else {
       subtitle = runSummary ?? status;
+      let missing: string | null = null;
+      if (!hasReceipts && !hasStatements) {
+        missing = t("month.missing.both");
+      } else if (!hasReceipts) {
+        missing = t("month.missing.receipts");
+      } else if (!hasStatements) {
+        missing = t("month.missing.statements");
+      }
       trailing = (
         <>
           <div className="toolbar-group">
             <ActionPopUpButton label={t("toolbar.moreActions")} actions={actions} className="toolbar-group__item" borderless />
           </div>
+          {missing !== null && !running ? (
+            <span id="reconcile-missing" className="toolbar-hint">
+              {missing}
+            </span>
+          ) : null}
           <button
             type="button"
             className="default"
-            disabled={running || (monthStatements.length === 0 && summary.transactions === 0)}
+            disabled={running || missing !== null}
+            aria-describedby={missing !== null && !running ? "reconcile-missing" : undefined}
             onClick={() => reconcile(false)}
           >
             {t("month.reconcile")}
@@ -451,6 +541,7 @@ export function Main() {
                 onRetry={refresh}
                 onNewMonth={() => setSheet("new-month")}
                 menu={monthMenu}
+                accessory={<UpdateBanner placement="sidebar" onError={setMessage} />}
               />
               {compact ? null : (
                 <ResizeHandle
@@ -469,7 +560,16 @@ export function Main() {
           ) : null}
         </Presence>
         <main className={`detail ${configured && reviewable && !runHere ? "detail--review" : ""}`}>
-          <UpdateBanner onError={setMessage} />
+          {showSidebar ? null : <UpdateBanner placement="detail" onError={setMessage} />}
+          {setUp ? (
+            <div className="banner banner--success" role="status">
+              <Icon name="check" size={14} className="banner__icon--success" />
+              <span className="grow">{t("welcome.setUp")}</span>
+              <button type="button" className="icon" aria-label={t("common.dismiss")} title={t("common.dismiss")} onClick={() => setSetUp(false)}>
+                <Icon name="xmark" size={12} />
+              </button>
+            </div>
+          ) : null}
           {loadError ? (
             <ErrorState title={t("main.loadFailed")} error={loadError}>
               {needsSettings(loadError) ? (
@@ -502,11 +602,14 @@ export function Main() {
             initial={newMonthDefault(periods, new Date())}
             existing={existingKeys}
             onCancel={() => setSheet(null)}
-            onCreate={(period) => {
-              setCreated((prev) => [...prev, period]);
-              select(period);
-              setSheet(null);
-            }}
+            onCreate={(period) =>
+              createPeriod(period.year, period.month).then((entry) => {
+                setListed((prev) => withSummary(prev ?? [], entry));
+                select(entry);
+                setSheet(null);
+                refresh();
+              })
+            }
           />
         ) : null}
       </Presence>
