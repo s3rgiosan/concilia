@@ -9,8 +9,8 @@ pub const SETTINGS_LABEL: &str = "settings";
 /// Fixed width of the Settings window; its height follows the active pane (see `useFitWindow`).
 const SETTINGS_WIDTH: f64 = 640.0;
 const SETTINGS_HEIGHT: f64 = 420.0;
-/// Centres the traffic lights in the 62 px pane switcher drawn under the title bar.
-const SETTINGS_LIGHTS: (f64, f64) = (20.0, 29.0);
+/// Centres the traffic lights in the 62 px pane switcher; AppKit places their centre 3 pt above `y`.
+const SETTINGS_LIGHTS: (f64, f64) = (20.0, 34.0);
 
 /// Whether the window `label` exists and has focus.
 pub fn is_focused(app: &AppHandle, label: &str) -> bool {
