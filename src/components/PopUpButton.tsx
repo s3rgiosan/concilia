@@ -63,46 +63,71 @@ export interface PopUpAction {
   disabled?: boolean;
 }
 
+/** A native menu over a button: picking an item runs it, and the select returns to its placeholder. */
+function ActionMenu({ actions, label, disabled }: { actions: PopUpAction[]; label: string; disabled: boolean }) {
+  return (
+    <select
+      aria-label={label}
+      title={label}
+      value=""
+      disabled={disabled}
+      onChange={(e) => {
+        const picked = e.target.value;
+        actions.find((_, index) => String(index) === picked)?.onSelect();
+      }}
+    >
+      <option value="" disabled hidden>
+        {label}
+      </option>
+      {actions.map((a, index) => (
+        <option key={a.label} value={index} disabled={a.disabled}>
+          {a.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /**
  * An action pop-up button: a small "…" button whose native menu runs a command instead of
  * holding a value. The select stays on its hidden placeholder, so any item can be chosen again.
+ * A borderless one shows its fill only on hover, for use inside rows.
  */
 export function ActionPopUpButton({
   actions,
   label = "More Actions",
   disabled,
+  borderless,
 }: {
   actions: PopUpAction[];
   label?: string;
   disabled?: boolean;
+  borderless?: boolean;
 }) {
   const unavailable = disabled || actions.every((a) => a.disabled);
+  const classes = ["action-popup", borderless ? "action-popup--borderless" : null, unavailable ? "action-popup--disabled" : null];
   return (
-    <span className={`action-popup ${unavailable ? "action-popup--disabled" : ""}`}>
+    <span className={classes.filter(Boolean).join(" ")}>
       <svg className="action-popup__glyph" width="13" height="3" viewBox="0 0 13 3" aria-hidden="true">
         <circle cx="1.5" cy="1.5" r="1.4" fill="currentColor" />
         <circle cx="6.5" cy="1.5" r="1.4" fill="currentColor" />
         <circle cx="11.5" cy="1.5" r="1.4" fill="currentColor" />
       </svg>
-      <select
-        aria-label={label}
-        title={label}
-        value=""
-        disabled={unavailable}
-        onChange={(e) => {
-          const picked = e.target.value;
-          actions.find((_, index) => String(index) === picked)?.onSelect();
-        }}
-      >
-        <option value="" disabled hidden>
-          {label}
-        </option>
-        {actions.map((a, index) => (
-          <option key={a.label} value={index} disabled={a.disabled}>
-            {a.label}
-          </option>
-        ))}
-      </select>
+      <ActionMenu actions={actions} label={label} disabled={unavailable} />
+    </span>
+  );
+}
+
+/** A pull-down button: a labelled button with a ⌄ chevron whose native menu runs a command. */
+export function PullDownButton({ label, actions, disabled }: { label: string; actions: PopUpAction[]; disabled?: boolean }) {
+  const unavailable = disabled || actions.every((a) => a.disabled);
+  return (
+    <span className={`popup-button pull-down ${unavailable ? "popup-button--disabled" : ""}`}>
+      <span className="popup-button__label">{label}</span>
+      <svg className="popup-button__chevron" width="9" height="6" viewBox="0 0 9 6" aria-hidden="true">
+        <path d="M1 1.2 4.5 4.6 8 1.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <ActionMenu actions={actions} label={label} disabled={unavailable} />
     </span>
   );
 }

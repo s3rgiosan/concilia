@@ -238,4 +238,38 @@ describe("useDraftAutosave", () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledWith(DRAFT_A);
   });
+
+  it("forgets a finished save", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = setup(save);
+    rerender({ draft: DRAFT_A, dirty: true });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS));
+    await settle();
+    expect(result.current.state).toEqual({ kind: "saved" });
+    act(() => result.current.forget());
+    expect(result.current.state).toEqual({ kind: "idle" });
+  });
+
+  it("forgets a failed save, so flush has nothing to retry", async () => {
+    const save = vi.fn().mockRejectedValue(new Error("disk full"));
+    const { result, rerender } = setup(save);
+    rerender({ draft: DRAFT_A, dirty: true });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS));
+    await settle();
+    act(() => result.current.forget());
+    expect(result.current.state).toEqual({ kind: "idle" });
+    await act(async () => result.current.flush());
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the state while a change waits for its save", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = setup(save);
+    rerender({ draft: DRAFT_C, dirty: true });
+    act(() => result.current.forget());
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS));
+    await settle();
+    expect(save).toHaveBeenCalledWith(DRAFT_C);
+    expect(result.current.state).toEqual({ kind: "saved" });
+  });
 });

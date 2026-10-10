@@ -102,10 +102,6 @@
     "layoutRoot": "Recibos",
     "layoutNote": "recibos deste mês"
   },
-  "results": {
-    "saveReport": "Guardar relatório…",
-    "reportSaved": "Relatório guardado em {{path}}."
-  },
   "form": {
     "year": "Ano",
     "month": "Mês",
@@ -122,58 +118,80 @@
       "10": "Outubro",
       "11": "Novembro",
       "12": "Dezembro"
-    },
-    "scan": "Procurar novos recibos"
+    }
   },
   "review": {
     "title": "Revisão de {{period}}",
-    "empty": "Ainda não há dados de reconciliação para este período. Execute uma reconciliação primeiro.",
-    "refreshFailed": "Não foi possível atualizar os dados de revisão: {{msg}}",
-    "draftSaveFailed": "Não foi possível guardar o rascunho: {{msg}}",
-    "noTransactions": "Sem transações.",
-    "noReceipt": "Sem recibo",
-    "save": "Guardar",
-    "scan": "Examinar recibos",
-    "downloadReport": "Descarregar relatório",
+    "transactions": "Transações",
+    "noTransactions": "Sem transações",
+    "noSelection": "Nenhuma seleção",
+    "inspector": "Inspetor",
+    "showInspector": "Mostrar inspetor",
+    "hideInspector": "Ocultar inspetor",
+    "filter": "Filtro",
+    "filters": {
+      "all": "Todas",
+      "review": "Por rever",
+      "unmatched": "Sem associação",
+      "matched": "Associadas"
+    },
+    "status": {
+      "review": "Por rever",
+      "unmatched": "Sem associação",
+      "matched": "Associada"
+    },
+    "search": "Pesquisar",
+    "scan": "Procurar novos recibos",
+    "scanTitle": "A procurar novos recibos",
+    "exportReport": "Exportar relatório…",
     "finalize": "Finalizar…",
-    "changesSaved": "Alterações guardadas",
-    "saveFailed": "Não foi possível guardar as alterações: {{msg}}",
-    "scanFailed": "Verificação falhou: {{msg}}",
-    "scanComplete": "Verificação concluída",
-    "scanConnectionClosed": "A ligação foi interrompida inesperadamente.",
     "scanDroppedBanner_one": "{{count}} decisão pendente foi removida porque o recibo associado foi apagado: {{names}}",
     "scanDroppedBanner_other": "{{count}} decisões pendentes foram removidas porque os recibos associados foram apagados: {{names}}",
-    "scanDroppedDismiss": "Dispensar",
-    "changesApplied": "Alterações aplicadas e relatório atualizado",
-    "finalizeConfirm": {
-      "title": "Finalizar reconciliação?",
-      "body": "Esta operação vai mover todos os recibos para subpastas _matched, _review ou _unmatched, regenerar o relatório e eliminar o rascunho. Esta ação não pode ser revertida.",
-      "checkbox": "Compreendo que esta ação é irreversível",
-      "cta": "Finalizar",
-      "cancel": "Cancelar"
+    "saveState": {
+      "saving": "A guardar…",
+      "saved": "Guardado",
+      "failed": "Não guardado",
+      "failedDetail": "Alterações não guardadas: {{message}}"
     },
-    "scanModal": {
-      "title": "A verificar recibos",
-      "subtitle": "A procurar recibos novos ou removidos e a executar o matcher.",
-      "close": "Fechar"
+    "sections": {
+      "candidates": "Candidatos",
+      "assignable": "Recibos sem associação",
+      "receipts_one": "Recibo",
+      "receipts_other": "Recibos"
     },
-    "other": "Outro…",
-    "filters": {
-      "all": "Todos",
-      "review": "Revisão",
-      "unmatched": "Sem associação",
-      "matched": "Associados"
+    "actions": {
+      "accept": "Aceitar",
+      "assign": "Associar",
+      "noneOfThese": "Nenhum destes",
+      "dispute": "Contestar",
+      "rescan": "Reanalisar",
+      "quickLook": "Vista rápida"
     },
-    "nameFilter": {
-      "placeholder": "Filtrar por nome…",
-      "clear": "Limpar filtro"
+    "receiptActions": "Ações para {{name}}",
+    "rescanning": "A reanalisar…",
+    "openInPreview": "Abrir na Pré-visualização",
+    "noPreview": "Sem pré-visualização",
+    "previewOf": "Pré-visualização de {{name}}",
+    "quickLookOf": "Vista rápida de {{name}}",
+    "mismatch": {
+      "amount": "Difere em {{amount}}",
+      "fx": "Difere mais de 10%"
     },
-    "expand": "Expandir",
-    "collapse": "Recolher",
-    "amountKind": {
-      "income": "Receita",
-      "expense": "Despesa"
+    "noReceiptMenu": "Dispensa recibo",
+    "noReceiptNeeded": "Dispensa recibo: {{category}}",
+    "noReceipt": "Sem recibo",
+    "noReceiptCategories": {
+      "bankFee": "Comissão bancária",
+      "salary": "Salário",
+      "transfer": "Transferência",
+      "refund": "Reembolso",
+      "noReceipt": "Sem recibo"
     },
+    "candidatesTaken": "Todos os candidatos foram associados a outra transação.",
+    "noCandidates": "Não há recibos para associar.",
+    "dateUnknown": "Data desconhecida",
+    "amountUnknown": "Valor desconhecido",
+    "lowConfidence": "confiança baixa",
     "matchReason": {
       "bankFeeAuto": "Comissão bancária (auto)",
       "nameAmountMatch": "Nome e valor coincidentes",
@@ -198,50 +216,21 @@
       "multipleFilename_one": "{{count}} recibo coincide pelo nome do ficheiro",
       "multipleFilename_other": "{{count}} recibos coincidem pelo nome do ficheiro"
     },
-    "dateUnknown": "Data desconhecida",
-    "noReceiptCategories": {
-      "bankFee": "Comissão bancária",
-      "salary": "Salário",
-      "transfer": "Transferência",
-      "refund": "Reembolso",
-      "noReceipt": "Sem recibo"
-    },
-    "actions": {
-      "preview": "Pré-visualizar",
-      "rescan": "Reanalisar com IA",
-      "accept": "Aceitar",
-      "reject": "Rejeitar",
-      "assign": "Aceitar",
-      "dispute": "Contestar"
-    },
-    "rescanDone": "Recibo reanalisado",
     "reimbursements": {
-      "title": "Reembolsos",
-      "subtitle": "Recibos pagos pessoalmente no IVA da empresa — apenas leitura.",
-      "total": "Total",
-      "empty": "Sem recibos de reembolso neste período.",
-      "rescanDone": "Reembolso reanalisado",
-      "rescanFailed": "Falha ao reanalisar reembolso: {{msg}}"
+      "header": "Reembolsos · {{total}} no total",
+      "label": "Reembolso",
+      "subtitle": "Pago pessoalmente com o IVA da empresa. Não tem transação."
     },
-    "search": "Pesquisar",
-    "saveState": {
-      "saving": "A guardar…",
-      "saved": "Todas as alterações guardadas",
-      "failed": "Alterações não guardadas: {{message}}"
-    },
-    "noReceiptMenu": "Sem recibo necessário",
-    "previewEmpty": "Selecione um recibo para o pré-visualizar.",
-    "openInPreview": "Abrir na Pré-visualização",
-    "lowConfidence": "confiança baixa",
-    "noCandidates": "Não há recibos por associar.",
-    "finalizedNote": "Este mês está finalizado. As alterações aqui entram no relatório; volte a executar o mês para ordenar os recibos novamente.",
-    "scanTitle": "A procurar novos recibos",
-    "rescanFailed": "Não foi possível voltar a ler o recibo: {{message}}",
-    "candidatesTaken": "Todos os candidatos foram associados a outra transação."
-  },
-  "preview": {
-    "unavailable": "Pré-visualização indisponível para este tipo de ficheiro.",
-    "openNewTab": "Abrir em novo separador ↗"
+    "finalizeConfirm": {
+      "title": "Finalizar {{period}}?",
+      "moves_zero": "Nenhum recibo será movido.",
+      "moves_one": "{{count}} recibo será movido: {{matched}} para _matched, {{review}} para _review, {{unmatched}} para _unmatched.",
+      "moves_other": "{{count}} recibos serão movidos: {{matched}} para _matched, {{review}} para _review, {{unmatched}} para _unmatched.",
+      "irreversible": "O rascunho será eliminado. Não é possível anular esta ação.",
+      "pending_one": "{{count}} transação ainda precisa de uma decisão.",
+      "pending_other": "{{count}} transações ainda precisam de uma decisão.",
+      "confirm": "Finalizar"
+    }
   },
   "lang": {
     "en": "English",

@@ -28,6 +28,7 @@ let symbols: [(name: String, symbol: String)] = [
     ("globe", "globe"),
     ("sparkles", "sparkles"),
     ("sidebar", "sidebar.left"),
+    ("inspector", "sidebar.right"),
 ]
 
 let pointSize: CGFloat = 16

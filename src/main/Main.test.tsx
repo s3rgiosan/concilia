@@ -2,6 +2,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PopUpAction } from "../components/PopUpButton";
+import type { ToolbarSlots } from "../components/Toolbar";
 import { emptySummary, type Period } from "../lib/period";
 import {
   getAppState,
@@ -52,19 +54,43 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
 
-vi.mock("../review/Review", () => ({
-  Review: ({ period, onChanged, onError }: { period: Period; onChanged?: () => void; onError: (e: unknown) => void }) => (
-    <section aria-label="Review">
-      <p>{`Review ${period.year}-${period.month}`}</p>
-      <button type="button" onClick={onChanged}>
-        Change Review
-      </button>
-      <button type="button" onClick={() => onError({ kind: "io", message: "draft unreadable" })}>
-        Fail Review
-      </button>
-    </section>
-  ),
-}));
+vi.mock("../review/Review", async () => {
+  const { ActionPopUpButton } = await import("../components/PopUpButton");
+  const { ToolbarPortal } = await import("../components/Toolbar");
+  return {
+    Review: ({
+      period,
+      toolbar,
+      status,
+      runSummary,
+      moreActions,
+      onChanged,
+      onError,
+    }: {
+      period: Period;
+      toolbar: ToolbarSlots;
+      status: string;
+      runSummary?: string;
+      moreActions: PopUpAction[];
+      onChanged?: () => void;
+      onError: (e: unknown) => void;
+    }) => (
+      <section aria-label="Review">
+        <ToolbarPortal target={toolbar.subtitle}>{runSummary ?? status}</ToolbarPortal>
+        <ToolbarPortal target={toolbar.trailing}>
+          <ActionPopUpButton label="More Actions" actions={moreActions} />
+        </ToolbarPortal>
+        <p>{`Review ${period.year}-${period.month}`}</p>
+        <button type="button" onClick={onChanged}>
+          Change Review
+        </button>
+        <button type="button" onClick={() => onError({ kind: "io", message: "draft unreadable" })}>
+          Fail Review
+        </button>
+      </section>
+    ),
+  };
+});
 
 let pushSettings: (view: AppStateView) => void;
 let pushCheckResult: (result: UpdateCheckResult) => void;

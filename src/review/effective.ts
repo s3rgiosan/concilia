@@ -89,6 +89,22 @@ export function byAmountProximity(pool: ReceiptMeta[], absCents: number): Receip
 }
 
 /**
+ * Pool receipts that fit a transaction, closest amount first. Receipts carry the amount paid, so
+ * a positive receipt fits money going out and a negative one (a credit note) money coming in.
+ * Receipts without an amount are offered for money going out, where nearly every receipt belongs.
+ */
+export function assignableReceipts(pool: ReceiptMeta[], tx: Pick<Transaction, "amount_cents" | "abs_cents">): ReceiptMeta[] {
+  const outgoing = tx.amount_cents < 0;
+  const fits = (r: ReceiptMeta) => (r.amount_cents === null ? outgoing : (r.amount_cents >= 0) === outgoing);
+  return byAmountProximity(pool.filter(fits), tx.abs_cents);
+}
+
+/** A REVIEW transaction's candidates that no MATCHED transaction holds. */
+export function openCandidates(tx: Transaction, claimed: Set<string>): ReceiptMeta[] {
+  return tx.receipt_meta.filter((m) => !claimed.has(m.file));
+}
+
+/**
  * Whether a receipt's amount looks wrong for its transaction: any difference for euro receipts,
  * more than 10% for other currencies, which the bank converts.
  */
@@ -102,7 +118,33 @@ export function amountMismatch(receipt: ReceiptMeta, txAbsCents: number): boolea
   return receipt.amount_cents !== txAbsCents;
 }
 
-export type Filter = "all" | "review" | "unmatched" | "matched";
+export type Mismatch = { kind: "amount"; cents: number } | { kind: "fx" };
+
+/**
+ * How a receipt's amount differs from its transaction's: by how many cents for euro receipts, or
+ * by more than the 10% allowed for other currencies. Null when it fits.
+ */
+export function mismatch(receipt: ReceiptMeta, txAbsCents: number): Mismatch | null {
+  if (!amountMismatch(receipt, txAbsCents) || receipt.amount_cents === null) {
+    return null;
+  }
+  if (receipt.currency && receipt.currency !== "EUR") {
+    return { kind: "fx" };
+  }
+  return { kind: "amount", cents: Math.abs(receipt.amount_cents - txAbsCents) };
+}
+
+export const FILTERS = ["all", "review", "unmatched", "matched"] as const;
+export type Filter = (typeof FILTERS)[number];
+
+/** Whether a transaction still waits for a decision: REVIEW or UNMATCHED. */
+export function needsDecision(tx: Pick<Transaction, "status">): boolean {
+  return tx.status !== "MATCHED";
+}
+
+export function pendingCount(merged: Transaction[]): number {
+  return merged.filter(needsDecision).length;
+}
 
 export function filterCounts(merged: Transaction[]): Record<Filter, number> {
   const counts: Record<Filter, number> = { all: merged.length, review: 0, unmatched: 0, matched: 0 };
@@ -119,6 +161,52 @@ export function visibleTransactions(merged: Transaction[], filter: Filter, searc
     .filter((tx) => filter === "all" || tx.status.toLowerCase() === filter)
     .filter((tx) => !needle || tx.description.toLowerCase().includes(needle))
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+}
+
+/** Reimbursements shown for a filter and search text: only under All, searched by vendor and file name. */
+export function visibleReimbursements(receipts: ReceiptMeta[], filter: Filter, search: string): ReceiptMeta[] {
+  if (filter !== "all") {
+    return [];
+  }
+  const needle = search.trim().toLowerCase();
+  return receipts.filter((r) => !needle || `${r.vendor ?? ""} ${r.file.split("/").pop() ?? ""}`.toLowerCase().includes(needle));
+}
+
+export interface FinalizeCounts {
+  matched: number;
+  review: number;
+  unmatched: number;
+  total: number;
+}
+
+const RANK: Record<Status, number> = { MATCHED: 0, REVIEW: 1, UNMATCHED: 2 };
+
+/**
+ * Where Finalize sorts the receipts: each file goes to the folder of the strongest status that
+ * references it (MATCHED, then REVIEW, then UNMATCHED), and every pool receipt goes to _unmatched.
+ * The backend's `finalize::plan` sorts the same way.
+ */
+export function finalizeCounts(data: Pick<ReviewData, "transactions" | "unmatched_receipts">, merged: Transaction[]): FinalizeCounts {
+  const best = new Map<string, Status>();
+  const note = (file: string, status: Status) => {
+    const current = best.get(file);
+    if (current === undefined || RANK[status] < RANK[current]) {
+      best.set(file, status);
+    }
+  };
+  for (const tx of merged) {
+    for (const meta of tx.receipt_meta) {
+      note(meta.file, tx.status);
+    }
+  }
+  for (const receipt of unmatchedPool(data, merged)) {
+    note(receipt.file, "UNMATCHED");
+  }
+  const counts: FinalizeCounts = { matched: 0, review: 0, unmatched: 0, total: best.size };
+  for (const status of best.values()) {
+    counts[status.toLowerCase() as Lowercase<Status>] += 1;
+  }
+  return counts;
 }
 
 /** Replaces a receipt's metadata wherever it appears, after a rescan. */

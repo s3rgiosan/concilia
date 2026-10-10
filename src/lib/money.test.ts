@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatMoney } from "./money";
+import { formatMoney, formatSignedMoney } from "./money";
 
 const NBSP = " ";
 
@@ -47,5 +47,25 @@ describe("formatMoney", () => {
     });
     expect(formatMoney(1000, "USD", "en")).toBe("10.00 USD");
     expect(formatMoney(1000, null, "en")).toBe("10.00");
+  });
+});
+
+describe("formatSignedMoney", () => {
+  it("signs income and expenses", () => {
+    expect(formatSignedMoney(50000, "EUR", "en")).toBe("+€500.00");
+    expect(formatSignedMoney(-1000, "EUR", "en")).toBe("-€10.00");
+    expect(formatSignedMoney(-1000, "EUR", "pt")).toBe(`-10,00${NBSP}€`);
+  });
+
+  it("leaves zero unsigned", () => {
+    expect(formatSignedMoney(0, "EUR", "en")).toBe("€0.00");
+  });
+
+  it("keeps the sign when the formatter fails", () => {
+    vi.spyOn(Intl, "NumberFormat").mockImplementation(() => {
+      throw new RangeError("unsupported");
+    });
+    expect(formatSignedMoney(1000, "EUR", "en")).toBe("+10.00 EUR");
+    expect(formatSignedMoney(-1000, "EUR", "en")).toBe("-10.00 EUR");
   });
 });

@@ -94,6 +94,14 @@ function reviewData(): ReviewData {
   };
 }
 
+/** An SVG page standing in for a receipt file, titled with its file name. */
+function placeholderPage(path: string): string {
+  const name = path.split("/").pop() ?? path;
+  const lines = Array.from({ length: 6 }, (_, i) => `<rect x="60" y="${200 + i * 36}" width="${380 - (i % 3) * 70}" height="12" rx="6" fill="#d8d8dc"/>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 595 842"><rect width="595" height="842" fill="#fff"/><text x="60" y="120" font-family="-apple-system, sans-serif" font-size="28" font-weight="600" fill="#1d1d1f">${name}</text><text x="60" y="160" font-family="-apple-system, sans-serif" font-size="16" fill="#8e8e93">Sample receipt</text>${lines}<rect x="60" y="460" width="475" height="1" fill="#c7c7cc"/><text x="60" y="500" font-family="-apple-system, sans-serif" font-size="18" fill="#1d1d1f">Total</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 /** "2030-03" for the month `offset` months before `now`. */
 function monthKey(now: Date, offset: number): string {
   const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
@@ -179,6 +187,9 @@ export function install(): void {
     periods.set(key, { ...current, ...patch });
   }
   mockConvertFileSrc("macos");
+  // The browser has no receipt:// scheme, so previews there show a drawn placeholder page.
+  const internals = (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (path: string, protocol: string) => string } }).__TAURI_INTERNALS__;
+  internals.convertFileSrc = (path, protocol) => (protocol === "receipt" ? placeholderPage(path) : `${protocol}://localhost/${path}`);
 
   function view(): AppStateView {
     const missing: Missing[] = [];

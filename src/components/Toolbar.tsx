@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { IS_MACOS } from "../lib/platform";
 
 /**
@@ -48,4 +49,15 @@ export function Toolbar({
       ) : null}
     </header>
   );
+}
+
+/** Elements in the toolbar that a pane fills with its own subtitle and trailing controls. */
+export interface ToolbarSlots {
+  subtitle: HTMLElement | null;
+  trailing: HTMLElement | null;
+}
+
+/** Renders `children` into a toolbar slot once the slot exists. */
+export function ToolbarPortal({ target, children }: { target: HTMLElement | null; children: ReactNode }) {
+  return target ? createPortal(children, target) : null;
 }

@@ -50,3 +50,9 @@ export function patchDraftReceipt(draft: Draft, meta: ReceiptMeta): { draft: Dra
   }
   return { draft: changed ? next : draft, changed };
 }
+
+/** IDs of the transactions whose decision differs between two drafts. */
+export function changedIds(a: Draft, b: Draft): string[] {
+  const ids = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...ids].filter((id) => a[id] !== b[id]);
+}

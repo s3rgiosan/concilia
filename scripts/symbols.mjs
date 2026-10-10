@@ -37,6 +37,7 @@ const LUCIDE = {
   globe: "globe",
   sparkles: "sparkles",
   sidebar: "panel-left",
+  inspector: "panel-right",
 };
 
 const source = process.platform === "darwin" && process.env.CONCILIA_SYMBOLS !== "lucide" ? "sf" : "lucide";

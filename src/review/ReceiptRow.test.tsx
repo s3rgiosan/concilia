@@ -2,94 +2,85 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeReceipt } from "../test/fixtures";
-import { ReceiptRow, type ReceiptAction } from "./ReceiptRow";
+import { ReceiptRow } from "./ReceiptRow";
 
-afterEach(() => {
-  cleanup();
-});
+afterEach(cleanup);
 
 function renderRow(props: Partial<Parameters<typeof ReceiptRow>[0]> = {}) {
-  const onSelect = vi.fn();
-  render(
+  const handlers = { onFocus: vi.fn(), onRescan: vi.fn(), onOpen: vi.fn() };
+  const { container } = render(
     <ul>
-      <ReceiptRow receipt={makeReceipt("acme.pdf", { vendor: "ACME" })} mismatch={false} selected={false} onSelect={onSelect} actions={[]} {...props} />
+      <ReceiptRow receipt={makeReceipt("acme.pdf", { vendor: "ACME" })} focused={false} mismatch={null} rescanning={false} {...handlers} {...props} />
     </ul>,
   );
-  return { onSelect, row: screen.getByRole("listitem") };
+  return { container, ...handlers };
+}
+
+function pick(item: string) {
+  const menu = screen.getByRole("combobox") as HTMLSelectElement;
+  const option = Array.from(menu.options).find((o) => o.textContent === item)!;
+  fireEvent.change(menu, { target: { value: option.value } });
 }
 
 describe("ReceiptRow", () => {
-  it("shows the vendor, file, date, reason and amount", () => {
-    const { row } = renderRow({ reason: "Amount match" });
-    const main = screen.getByRole("button", { pressed: false });
-    expect(main.textContent).toBe("ACMEacme.pdf2030-03-05Amount match");
-    expect(row.querySelector(".receipt__amount")?.textContent).toBe("€10.00");
+  it("shows the vendor, amount, date and file name", () => {
+    const { container } = renderRow();
+    expect(container.querySelector(".receipt-row__title")?.textContent).toBe("ACME");
+    expect(container.querySelector(".receipt-row__amount")?.textContent).toBe("€10.00");
+    expect(container.querySelector(".receipt-row__meta")?.textContent).toBe("5 Maracme.pdf");
   });
 
-  it("shows the file name in place of a missing vendor", () => {
-    const { row } = renderRow({ receipt: makeReceipt("globex.pdf") });
-    expect(row.querySelector(".receipt__vendor")?.textContent).toBe("globex.pdf");
-    expect(row.querySelector(".receipt__file")).toBeNull();
+  it("falls back to the file name and says what is unknown", () => {
+    const { container } = renderRow({
+      receipt: makeReceipt("scan.pdf", { vendor: null, amount_cents: null, date: null, confidence: "low" }),
+    });
+    expect(container.querySelector(".receipt-row__title")?.textContent).toBe("scan.pdf");
+    expect(container.querySelector(".receipt-row__amount")).toBeNull();
+    expect(container.querySelector(".receipt-row__meta")?.textContent).toBe("Date unknownlow confidence");
   });
 
-  it("says when the date is unknown", () => {
-    renderRow({ receipt: makeReceipt("acme.pdf", { date: null }) });
-    expect(screen.getByText("Date unknown")).toBeTruthy();
-  });
-
-  it("formats the amount in its currency", () => {
-    const { row } = renderRow({ receipt: makeReceipt("acme.pdf", { amount_cents: 2000, currency: "USD" }) });
-    expect(row.querySelector(".receipt__amount")?.textContent).toBe("US$20.00");
-  });
-
-  it("hides a missing amount", () => {
-    const { row } = renderRow({ receipt: makeReceipt("acme.pdf", { amount_cents: null }) });
-    expect(row.querySelector(".receipt__amount")).toBeNull();
-  });
-
-  it("marks a mismatched amount", () => {
-    const { row } = renderRow({ mismatch: true });
-    expect(row.querySelector(".receipt__amount")?.classList.contains("receipt__amount--mismatch")).toBe(true);
-  });
-
-  it("labels low confidence", () => {
-    renderRow({ receipt: makeReceipt("acme.pdf", { confidence: "low" }) });
-    expect(screen.getByText("low confidence")).toBeTruthy();
-  });
-
-  it("does not label high or unknown confidence", () => {
-    renderRow();
-    expect(screen.queryByText("low confidence")).toBeNull();
+  it("says how much the amount differs", () => {
+    renderRow({ mismatch: { kind: "amount", cents: 1500 } });
+    expect(screen.getByText("Differs by €15.00")).toBeTruthy();
     cleanup();
-    renderRow({ receipt: makeReceipt("acme.pdf", { confidence: null }) });
-    expect(screen.queryByText("low confidence")).toBeNull();
+    renderRow({ mismatch: { kind: "fx" } });
+    expect(screen.getByText("Differs by more than 10%")).toBeTruthy();
   });
 
-  it("selects the receipt", () => {
-    const { onSelect } = renderRow();
+  it("focuses on click and shows it is focused", () => {
+    const { onFocus } = renderRow();
     fireEvent.click(screen.getByRole("button", { pressed: false }));
-    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    cleanup();
+    const { container } = renderRow({ focused: true });
+    expect(container.querySelector(".receipt-row--focused")).toBeTruthy();
   });
 
-  it("marks the selected receipt", () => {
-    const { row } = renderRow({ selected: true });
-    expect(row.classList.contains("receipt--selected")).toBe(true);
-    expect(screen.getByRole("button", { pressed: true })).toBeTruthy();
+  it("rescans and opens from its menu", () => {
+    const { onRescan, onOpen } = renderRow();
+    expect(screen.getByRole("combobox", { name: "Actions for ACME" })).toBeTruthy();
+    pick("Rescan");
+    pick("Open in Preview");
+    expect(onRescan).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("runs its actions", () => {
-    const accept = vi.fn();
-    const actions: ReceiptAction[] = [
-      { id: "accept", label: "Accept", icon: "check", tone: "accept", onClick: accept },
-      { id: "rescan", label: "Rescan", icon: "refresh", onClick: vi.fn(), disabled: true, spinning: true },
-    ];
-    renderRow({ actions });
-    const button = screen.getByRole("button", { name: "Accept" });
-    expect(button.classList.contains("icon--accept")).toBe(true);
-    fireEvent.click(button);
-    expect(accept).toHaveBeenCalledTimes(1);
-    const rescan = screen.getByRole("button", { name: "Rescan" }) as HTMLButtonElement;
-    expect(rescan.disabled).toBe(true);
-    expect(rescan.querySelector(".spin")).not.toBeNull();
+  it("disables the menu items a receipt without a path cannot run", () => {
+    renderRow({ receipt: makeReceipt("acme.pdf", { rel_path: null }) });
+    expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(true);
+  });
+
+  it("shows a spinner and disables Rescan while rescanning", () => {
+    renderRow({ rescanning: true });
+    expect(screen.getByRole("status", { name: "Rescanning…" })).toBeTruthy();
+    const menu = screen.getByRole("combobox") as HTMLSelectElement;
+    expect(Array.from(menu.options).find((o) => o.textContent === "Rescan")?.disabled).toBe(true);
+  });
+
+  it("runs its decision button", () => {
+    const onClick = vi.fn();
+    renderRow({ action: { label: "Accept", onClick } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

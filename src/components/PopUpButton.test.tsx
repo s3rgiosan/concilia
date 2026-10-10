@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ActionPopUpButton, PopUpButton } from "./PopUpButton";
+import { ActionPopUpButton, PopUpButton, PullDownButton } from "./PopUpButton";
 
 afterEach(cleanup);
 
@@ -89,3 +89,37 @@ describe("ActionPopUpButton", () => {
     expect(go).not.toHaveBeenCalled();
   });
 });
+
+describe("PullDownButton", () => {
+  it("shows its label and runs the chosen action", () => {
+    const refund = vi.fn();
+    const { container } = render(
+      <PullDownButton
+        label="No Receipt Needed"
+        actions={[
+          { label: "Bank fee", onSelect: vi.fn() },
+          { label: "Refund", onSelect: refund },
+        ]}
+      />,
+    );
+    expect(container.querySelector(".popup-button__label")?.textContent).toBe("No Receipt Needed");
+    const menu = screen.getByRole("combobox", { name: "No Receipt Needed" }) as HTMLSelectElement;
+    fireEvent.change(menu, { target: { value: "1" } });
+    expect(refund).toHaveBeenCalledTimes(1);
+    expect(menu.value).toBe("");
+  });
+
+  it("is disabled when asked", () => {
+    const { container } = render(<PullDownButton label="Pick" disabled actions={[{ label: "Go", onSelect: vi.fn() }]} />);
+    expect((screen.getByLabelText("Pick") as HTMLSelectElement).disabled).toBe(true);
+    expect(container.querySelector(".popup-button--disabled")).toBeTruthy();
+  });
+});
+
+describe("ActionPopUpButton borderless", () => {
+  it("marks itself borderless", () => {
+    const { container } = render(<ActionPopUpButton borderless actions={[{ label: "Go", onSelect: vi.fn() }]} />);
+    expect(container.querySelector(".action-popup--borderless")).toBeTruthy();
+  });
+});
+

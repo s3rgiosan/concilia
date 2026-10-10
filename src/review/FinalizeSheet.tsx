@@ -1,26 +1,38 @@
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Sheet } from "../components/Sheet";
+import { Sheet, SheetNote } from "../components/Sheet";
+import type { FinalizeCounts } from "./effective";
 
 /** Confirms Finalize, which moves every receipt file and cannot be undone. */
-export function FinalizeSheet({ busy, onCancel, onConfirm }: { busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+export function FinalizeSheet({
+  period,
+  counts,
+  pending,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  /** The month's name, such as "March 2030". */
+  period: string;
+  counts: FinalizeCounts;
+  /** Transactions still needing a decision. */
+  pending: number;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   const { t } = useTranslation();
-  const [consent, setConsent] = useState(false);
+  const moves = t("review.finalizeConfirm.moves", { count: counts.total, matched: counts.matched, review: counts.review, unmatched: counts.unmatched });
   return (
     <Sheet
-      title={t("review.finalizeConfirm.title")}
-      message={t("review.finalizeConfirm.body")}
-      submitLabel={t("review.finalizeConfirm.cta")}
-      submitDisabled={!consent}
+      title={t("review.finalizeConfirm.title", { period })}
+      message={`${moves} ${t("review.finalizeConfirm.irreversible")}`}
+      submitLabel={t("review.finalizeConfirm.confirm")}
       destructive
       busy={busy}
       onCancel={onCancel}
       onSubmit={onConfirm}
     >
-      <label className="consent">
-        <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-        {t("review.finalizeConfirm.checkbox")}
-      </label>
+      {pending > 0 ? <SheetNote tone="warning">{t("review.finalizeConfirm.pending", { count: pending })}</SheetNote> : null}
     </Sheet>
   );
 }

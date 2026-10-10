@@ -114,7 +114,13 @@
 }
 
 .detail--review {
+  gap: 0;
+  padding: 0;
   overflow: hidden;
+}
+
+.detail--review > .banner {
+  margin: 10px 12px;
 }
 
 /* Statements -------------------------------------------------------------- */

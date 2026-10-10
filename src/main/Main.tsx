@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { ActionPopUpButton, type PopUpAction } from "../components/PopUpButton";
-import { Toolbar } from "../components/Toolbar";
+import { Toolbar, ToolbarPortal } from "../components/Toolbar";
 import { errorKind, friendlyError } from "../lib/errors";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useRun, type RunState } from "../lib/hooks/useRun";
@@ -28,6 +28,7 @@ import { RunProgress } from "./RunProgress";
 import { Sidebar, type RunningMonth } from "./Sidebar";
 import { Statements, type Statement } from "./Statements";
 import { UpdateBanner } from "./UpdateBanner";
+import type { ReviewCommands } from "../review/commands";
 import { Welcome } from "./Welcome";
 
 const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.Review })));
@@ -79,6 +80,10 @@ export function Main() {
   const [lastRun, setLastRun] = useState<{ key: string; summary: Summary } | null>(null);
   const [message, setMessage] = useState<unknown>(null);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
+  const [subtitleSlot, setSubtitleSlot] = useState<HTMLElement | null>(null);
+  const [trailingSlot, setTrailingSlot] = useState<HTMLElement | null>(null);
+  /** The open review's commands, for the app menu. */
+  const reviewCommands = useRef<ReviewCommands>(null);
   const run = useRun<Summary>();
 
   const configured = state?.configured === true;
@@ -181,7 +186,7 @@ export function Main() {
   const reviewable = isReviewable(summary);
 
   let detail: ReactNode = null;
-  let subtitle: string | undefined;
+  let subtitle: ReactNode = null;
   let trailing: ReactNode = null;
   if (state && !state.configured) {
     detail = <Welcome state={state} period={fallback} onState={replace} onError={setMessage} />;
@@ -218,7 +223,8 @@ export function Main() {
       );
     }
   } else if (state && listReady) {
-    subtitle = lastRun?.key === key ? t("month.summary", { ...lastRun.summary }) : statusLine(summary, t).label;
+    const status = statusLine(summary, t).label;
+    const runSummary = lastRun?.key === key ? t("month.summary", { ...lastRun.summary }) : undefined;
     const actions: PopUpAction[] = [
       {
         label: t("month.openReport"),
@@ -231,19 +237,29 @@ export function Main() {
     ];
     if (reviewable) {
       actions.push({ label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
-    }
-    const more = <ActionPopUpButton label={t("toolbar.moreActions")} actions={actions} />;
-    if (reviewable) {
-      trailing = more;
+      // The review fills the toolbar's subtitle and trailing controls itself.
+      subtitle = <span ref={setSubtitleSlot} className="titlebar__slot" />;
+      trailing = <div ref={setTrailingSlot} className="titlebar__slot" />;
       detail = (
-        <Suspense fallback={null}>
-          <Review key={key} period={selected} onChanged={refresh} onError={setMessage} />
+        <Suspense fallback={<ToolbarPortal target={subtitleSlot}>{runSummary ?? status}</ToolbarPortal>}>
+          <Review
+            key={key}
+            ref={reviewCommands}
+            period={selected}
+            toolbar={{ subtitle: subtitleSlot, trailing: trailingSlot }}
+            status={status}
+            runSummary={runSummary}
+            moreActions={actions}
+            onChanged={refresh}
+            onError={setMessage}
+          />
         </Suspense>
       );
     } else {
+      subtitle = runSummary ?? status;
       trailing = (
         <>
-          {more}
+          <ActionPopUpButton label={t("toolbar.moreActions")} actions={actions} />
           <button
             type="button"
             className="default"

@@ -102,10 +102,6 @@
     "layoutRoot": "Receipts",
     "layoutNote": "this month's receipts"
   },
-  "results": {
-    "saveReport": "Save Report…",
-    "reportSaved": "Report saved to {{path}}."
-  },
   "form": {
     "year": "Year",
     "month": "Month",
@@ -122,58 +118,80 @@
       "10": "October",
       "11": "November",
       "12": "December"
-    },
-    "scan": "Scan for New Receipts"
+    }
   },
   "review": {
     "title": "Review {{period}}",
-    "empty": "No reconciliation data for this period yet. Run a reconciliation first.",
-    "refreshFailed": "Could not refresh review data: {{msg}}",
-    "draftSaveFailed": "Could not save draft: {{msg}}",
-    "noTransactions": "No transactions.",
-    "noReceipt": "No receipt",
-    "save": "Save",
-    "scan": "Scan receipts",
-    "downloadReport": "Download Report",
-    "finalize": "Finalize…",
-    "changesSaved": "Changes saved",
-    "saveFailed": "Could not save changes: {{msg}}",
-    "scanFailed": "Scan failed: {{msg}}",
-    "scanComplete": "Scan complete",
-    "scanConnectionClosed": "Connection closed unexpectedly.",
-    "scanDroppedBanner_one": "{{count}} pending decision was dropped because its receipt was removed: {{names}}",
-    "scanDroppedBanner_other": "{{count}} pending decisions were dropped because their receipts were removed: {{names}}",
-    "scanDroppedDismiss": "Dismiss",
-    "changesApplied": "Changes applied and report updated",
-    "finalizeConfirm": {
-      "title": "Finalize reconciliation?",
-      "body": "This will move every receipt file into _matched, _review, or _unmatched subfolders, regenerate the report, and delete your draft. The action cannot be undone.",
-      "checkbox": "I understand this action is irreversible",
-      "cta": "Finalize",
-      "cancel": "Cancel"
-    },
-    "scanModal": {
-      "title": "Scanning receipts",
-      "subtitle": "Looking for new or removed receipts and re-running the matcher.",
-      "close": "Close"
-    },
-    "other": "Other…",
+    "transactions": "Transactions",
+    "noTransactions": "No Transactions",
+    "noSelection": "No Selection",
+    "inspector": "Inspector",
+    "showInspector": "Show Inspector",
+    "hideInspector": "Hide Inspector",
+    "filter": "Filter",
     "filters": {
       "all": "All",
-      "review": "Review",
+      "review": "Needs Review",
       "unmatched": "Unmatched",
       "matched": "Matched"
     },
-    "nameFilter": {
-      "placeholder": "Filter by name…",
-      "clear": "Clear filter"
+    "status": {
+      "review": "Needs Review",
+      "unmatched": "Unmatched",
+      "matched": "Matched"
     },
-    "expand": "Expand",
-    "collapse": "Collapse",
-    "amountKind": {
-      "income": "Income",
-      "expense": "Expense"
+    "search": "Search",
+    "scan": "Scan for New Receipts",
+    "scanTitle": "Scanning for new receipts",
+    "exportReport": "Export Report…",
+    "finalize": "Finalize…",
+    "scanDroppedBanner_one": "{{count}} pending decision was dropped because its receipt was removed: {{names}}",
+    "scanDroppedBanner_other": "{{count}} pending decisions were dropped because their receipts were removed: {{names}}",
+    "saveState": {
+      "saving": "Saving…",
+      "saved": "Saved",
+      "failed": "Not Saved",
+      "failedDetail": "Changes not saved: {{message}}"
     },
+    "sections": {
+      "candidates": "Candidates",
+      "assignable": "Unmatched Receipts",
+      "receipts_one": "Receipt",
+      "receipts_other": "Receipts"
+    },
+    "actions": {
+      "accept": "Accept",
+      "assign": "Assign",
+      "noneOfThese": "None of These",
+      "dispute": "Dispute",
+      "rescan": "Rescan",
+      "quickLook": "Quick Look"
+    },
+    "receiptActions": "Actions for {{name}}",
+    "rescanning": "Rescanning…",
+    "openInPreview": "Open in Preview",
+    "noPreview": "No Preview",
+    "previewOf": "Preview of {{name}}",
+    "quickLookOf": "Quick Look of {{name}}",
+    "mismatch": {
+      "amount": "Differs by {{amount}}",
+      "fx": "Differs by more than 10%"
+    },
+    "noReceiptMenu": "No Receipt Needed",
+    "noReceiptNeeded": "No receipt needed: {{category}}",
+    "noReceipt": "No receipt",
+    "noReceiptCategories": {
+      "bankFee": "Bank fee",
+      "salary": "Salary",
+      "transfer": "Transfer",
+      "refund": "Refund",
+      "noReceipt": "No receipt"
+    },
+    "candidatesTaken": "Every candidate was assigned to another transaction.",
+    "noCandidates": "No receipts to assign.",
+    "dateUnknown": "Date unknown",
+    "amountUnknown": "Amount unknown",
+    "lowConfidence": "low confidence",
     "matchReason": {
       "bankFeeAuto": "Bank fee (auto)",
       "nameAmountMatch": "Name & amount match",
@@ -198,50 +216,21 @@
       "multipleFilename_one": "{{count}} receipt matches by filename",
       "multipleFilename_other": "{{count}} receipts match by filename"
     },
-    "dateUnknown": "Date unknown",
-    "noReceiptCategories": {
-      "bankFee": "Bank fee",
-      "salary": "Salary",
-      "transfer": "Transfer",
-      "refund": "Refund",
-      "noReceipt": "No receipt"
-    },
-    "actions": {
-      "preview": "Preview",
-      "rescan": "Rescan",
-      "accept": "Accept",
-      "reject": "Reject",
-      "assign": "Accept",
-      "dispute": "Dispute"
-    },
-    "rescanDone": "Receipt rescanned",
     "reimbursements": {
-      "title": "Reimbursements",
-      "subtitle": "Receipts paid personally on company VAT — read-only.",
-      "total": "Total",
-      "empty": "No reimbursement receipts for this period.",
-      "rescanDone": "Reimbursement rescanned",
-      "rescanFailed": "Could not rescan reimbursement: {{msg}}"
+      "header": "Reimbursements · {{total}} total",
+      "label": "Reimbursement",
+      "subtitle": "Paid personally on company VAT. It has no transaction."
     },
-    "search": "Search",
-    "saveState": {
-      "saving": "Saving…",
-      "saved": "All changes saved",
-      "failed": "Changes not saved: {{message}}"
-    },
-    "noReceiptMenu": "No Receipt Needed",
-    "previewEmpty": "Select a receipt to preview it.",
-    "openInPreview": "Open in Preview",
-    "lowConfidence": "low confidence",
-    "noCandidates": "No unmatched receipts left to assign.",
-    "finalizedNote": "This month is finalized. Changes here go into the report; re-run the month to sort receipts again.",
-    "scanTitle": "Scanning for new receipts",
-    "rescanFailed": "Could not rescan the receipt: {{message}}",
-    "candidatesTaken": "Every candidate was assigned to another transaction."
-  },
-  "preview": {
-    "unavailable": "Preview not available for this file type.",
-    "openNewTab": "Open in new tab ↗"
+    "finalizeConfirm": {
+      "title": "Finalize {{period}}?",
+      "moves_zero": "No receipts will be moved.",
+      "moves_one": "{{count}} receipt will be moved: {{matched}} to _matched, {{review}} to _review, {{unmatched}} to _unmatched.",
+      "moves_other": "{{count}} receipts will be moved: {{matched}} to _matched, {{review}} to _review, {{unmatched}} to _unmatched.",
+      "irreversible": "Your draft will be deleted. You can't undo this.",
+      "pending_one": "{{count}} transaction still needs a decision.",
+      "pending_other": "{{count}} transactions still need a decision.",
+      "confirm": "Finalize"
+    }
   },
   "lang": {
     "en": "English",

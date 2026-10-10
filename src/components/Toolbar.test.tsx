@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { Toolbar } from "./Toolbar";
+import { Toolbar, ToolbarPortal } from "./Toolbar";
 
 afterEach(cleanup);
 
@@ -63,3 +63,16 @@ describe("Toolbar", () => {
     expect(header(container).classList.contains("titlebar--plain")).toBe(true);
   });
 });
+
+describe("ToolbarPortal", () => {
+  it("renders into its slot once the slot exists", () => {
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    const { rerender } = render(<ToolbarPortal target={null}>In review</ToolbarPortal>);
+    expect(slot.textContent).toBe("");
+    rerender(<ToolbarPortal target={slot}>In review</ToolbarPortal>);
+    expect(slot.textContent).toBe("In review");
+    slot.remove();
+  });
+});
+

@@ -3,15 +3,22 @@ import type { Draft } from "../lib/tauri";
 import { makeReceipt, makeReviewData, makeTransaction } from "../test/fixtures";
 import {
   amountMismatch,
+  assignableReceipts,
   byAmountProximity,
   claimedFiles,
   filterCounts,
+  finalizeCounts,
   isNoReceipt,
   mergeDraft,
+  mismatch,
+  needsDecision,
   NO_RECEIPT_CATEGORIES,
+  openCandidates,
   patchReceipt,
+  pendingCount,
   relPaths,
   unmatchedPool,
+  visibleReimbursements,
   visibleTransactions,
 } from "./effective";
 
@@ -292,3 +299,102 @@ describe("patchReceipt", () => {
     expect(patched).toEqual(data);
   });
 });
+
+describe("assignableReceipts", () => {
+  const unread = makeReceipt("scan.pdf", { amount_cents: null });
+  const credit = makeReceipt("credit.pdf", { vendor: "INITECH", amount_cents: -1500 });
+
+  it("offers positive receipts and unread ones to money going out, closest first", () => {
+    const tx = makeTransaction("tx-1", { amount_cents: -2900 });
+    expect(files(assignableReceipts([unread, ACME, HOOLI, credit, GLOBEX], tx))).toEqual([HOOLI.file, GLOBEX.file, ACME.file, unread.file]);
+  });
+
+  it("offers nothing but credit notes to money coming in", () => {
+    const tx = makeTransaction("tx-1", { amount_cents: 50000 });
+    expect(assignableReceipts([unread, ACME, GLOBEX], tx)).toEqual([]);
+    expect(files(assignableReceipts([ACME, credit], tx))).toEqual([credit.file]);
+  });
+});
+
+describe("openCandidates", () => {
+  it("leaves out candidates a MATCHED transaction holds", () => {
+    const tx = makeTransaction("tx-1", { status: "REVIEW", receipt_meta: [ACME, GLOBEX] });
+    expect(files(openCandidates(tx, new Set([ACME.file])))).toEqual([GLOBEX.file]);
+    expect(files(openCandidates(tx, new Set()))).toEqual([ACME.file, GLOBEX.file]);
+  });
+});
+
+describe("mismatch", () => {
+  it("is null when the amount fits", () => {
+    expect(mismatch(ACME, 1000)).toBeNull();
+    expect(mismatch(makeReceipt("usd.pdf", { currency: "USD", amount_cents: 1050 }), 1000)).toBeNull();
+    expect(mismatch(makeReceipt("scan.pdf", { amount_cents: null }), 1000)).toBeNull();
+  });
+
+  it("gives the difference of a euro receipt", () => {
+    expect(mismatch(ACME, 2500)).toEqual({ kind: "amount", cents: 1500 });
+    expect(mismatch(GLOBEX, 500)).toEqual({ kind: "amount", cents: 1500 });
+  });
+
+  it("flags a foreign receipt beyond the tolerance", () => {
+    expect(mismatch(makeReceipt("usd.pdf", { currency: "USD", amount_cents: 2000 }), 1000)).toEqual({ kind: "fx" });
+  });
+});
+
+describe("needsDecision and pendingCount", () => {
+  it("counts REVIEW and UNMATCHED transactions", () => {
+    const merged = [
+      makeTransaction("tx-1", { status: "MATCHED" }),
+      makeTransaction("tx-2", { status: "REVIEW" }),
+      makeTransaction("tx-3", { status: "UNMATCHED" }),
+    ];
+    expect(merged.map(needsDecision)).toEqual([false, true, true]);
+    expect(pendingCount(merged)).toBe(2);
+    expect(pendingCount([])).toBe(0);
+  });
+});
+
+describe("visibleReimbursements", () => {
+  const taxi = makeReceipt("taxi.pdf", { vendor: "HOOLI CABS" });
+  const train = makeReceipt("rail-ticket.pdf", { vendor: null });
+
+  it("shows every reimbursement under All", () => {
+    expect(visibleReimbursements([taxi, train], "all", "")).toEqual([taxi, train]);
+  });
+
+  it("hides them under a status filter", () => {
+    expect(visibleReimbursements([taxi, train], "review", "")).toEqual([]);
+    expect(visibleReimbursements([taxi, train], "matched", "")).toEqual([]);
+  });
+
+  it("searches vendor and file name", () => {
+    expect(visibleReimbursements([taxi, train], "all", " cabs ")).toEqual([taxi]);
+    expect(visibleReimbursements([taxi, train], "all", "RAIL")).toEqual([train]);
+    expect(visibleReimbursements([taxi, train], "all", "receipts")).toEqual([]);
+  });
+});
+
+describe("finalizeCounts", () => {
+  it("sorts each receipt into the folder of its strongest status", () => {
+    const transactions = [
+      makeTransaction("tx-1", { status: "MATCHED", receipt_meta: [ACME] }),
+      makeTransaction("tx-2", { status: "REVIEW", receipt_meta: [ACME, GLOBEX] }),
+      makeTransaction("tx-3", { status: "UNMATCHED" }),
+    ];
+    const data = makeReviewData({ transactions, unmatched_receipts: [HOOLI, INITECH] });
+    expect(finalizeCounts(data, transactions)).toEqual({ matched: 1, review: 1, unmatched: 2, total: 4 });
+  });
+
+  it("follows pending decisions", () => {
+    const transactions = [makeTransaction("tx-2", { status: "REVIEW", receipt_meta: [ACME, GLOBEX] })];
+    const data = makeReviewData({ transactions, unmatched_receipts: [HOOLI] });
+    const draft: Draft = { "tx-2": { status: "MATCHED", receipt_meta: [ACME], receipt_files: [ACME.file], notes: "amount_match" } };
+    // GLOBEX was left out of the confirmed match, so it returns to the pool.
+    expect(finalizeCounts(data, mergeDraft(transactions, draft))).toEqual({ matched: 1, review: 0, unmatched: 2, total: 3 });
+  });
+
+  it("counts nothing for an empty month", () => {
+    expect(finalizeCounts(makeReviewData(), [])).toEqual({ matched: 0, review: 0, unmatched: 0, total: 0 });
+  });
+});
+

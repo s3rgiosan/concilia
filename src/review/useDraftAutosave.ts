@@ -9,14 +9,14 @@ export const AUTOSAVE_DELAY_MS = 500;
 
 /**
  * Saves the draft shortly after each change. `flush` saves at once, or again after a failed save,
- * and resolves when the draft is stored, or rejects when the save fails. Pending changes are saved when the component
- * unmounts.
+ * and resolves when the draft is stored, or rejects when the save fails. `forget` clears the save
+ * state for a draft loaded afresh. Pending changes are saved when the component unmounts.
  */
 export function useDraftAutosave(
   draft: Draft,
   dirty: boolean,
   save: (draft: Draft) => Promise<void>,
-): { state: SaveState; flush: () => Promise<void> } {
+): { state: SaveState; flush: () => Promise<void>; forget: () => void } {
   const [state, setState] = useState<SaveState>({ kind: "idle" });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef(false);
@@ -77,5 +77,13 @@ export function useDraftAutosave(
 
   const flush = useCallback(() => (pending.current || failed.current ? write() : queue.current), [write]);
 
-  return { state, flush };
+  const forget = useCallback(() => {
+    if (!pending.current) {
+      failed.current = false;
+      queue.current = queue.current.catch(() => undefined);
+      setState({ kind: "idle" });
+    }
+  }, []);
+
+  return { state, flush, forget };
 }
