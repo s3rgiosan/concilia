@@ -82,3 +82,19 @@ export function rowReceipts(row: ListRow | null, pool: ReceiptMeta[], claimed: S
       return row.tx.receipt_meta;
   }
 }
+
+/** The index an arrow, Home or End key moves the selection to within `count` rows, or null for other keys. */
+export function listNavigationTarget(key: string, selectedIndex: number, count: number): number | null {
+  switch (key) {
+    case "ArrowDown":
+      return Math.min(selectedIndex + 1, count - 1);
+    case "ArrowUp":
+      return Math.max(selectedIndex - 1, 0);
+    case "Home":
+      return 0;
+    case "End":
+      return count - 1;
+    default:
+      return null;
+  }
+}

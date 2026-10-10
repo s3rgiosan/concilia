@@ -1,4 +1,5 @@
-//! File helpers: atomic writes and JSON files that may not exist yet.
+//! File helpers: atomic writes, JSON files that may not exist yet, and removal that tolerates
+//! a missing file.
 
 use std::io::Write;
 use std::path::Path;
@@ -64,6 +65,26 @@ pub fn read_json_opt<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, FsEr
         })
 }
 
+/// Reads a JSON file for a caller that can do without it: a missing or damaged file reads as
+/// none, and a damaged one is logged.
+pub fn read_json_lenient<T: DeserializeOwned>(path: &Path) -> Option<T> {
+    match read_json_opt(path) {
+        Ok(value) => value,
+        Err(error) => {
+            log::warn!("ignoring unreadable {}: {error}", path.display());
+            None
+        }
+    }
+}
+
+/// Deletes a file; one that does not exist counts as deleted.
+pub fn remove_if_exists(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +122,27 @@ mod tests {
             read_json_opt::<Value>(&path),
             Err(FsError::Json { .. })
         ));
+    }
+
+    #[test]
+    fn reads_a_damaged_file_leniently_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        assert_eq!(read_json_lenient::<Value>(&path), None);
+        std::fs::write(&path, b"{").unwrap();
+        assert_eq!(read_json_lenient::<Value>(&path), None);
+        std::fs::write(&path, b"[1]").unwrap();
+        assert_eq!(read_json_lenient::<Value>(&path), Some(json!([1])));
+    }
+
+    #[test]
+    fn removes_files_and_ignores_missing_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("data.json");
+        std::fs::write(&path, b"{}").unwrap();
+        remove_if_exists(&path).unwrap();
+        assert!(!path.exists());
+        remove_if_exists(&path).unwrap();
+        assert!(remove_if_exists(dir.path()).is_err());
     }
 }

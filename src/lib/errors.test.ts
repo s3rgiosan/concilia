@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import i18n from "../i18n";
 import commandsSource from "../../src-tauri/src/commands.rs?raw";
 import errorSource from "../../src-tauri/src/error.rs?raw";
-import pipelineSource from "../../src-tauri/src/pipeline.rs?raw";
 import { ERROR_CODES, ERROR_KINDS, errorDetail, errorKind, friendlyError, isCommandError } from "./errors";
 
 const t = i18n.t;
@@ -90,7 +89,8 @@ describe("friendlyError", () => {
   });
 
   it("lists every code the backend sets", () => {
-    const sources = [commandsSource, errorSource, pipelineSource];
+    const pipelineSources = Object.values(import.meta.glob<string>("../../src-tauri/src/pipeline/*.rs", { query: "?raw", import: "default", eager: true }));
+    const sources = [commandsSource, errorSource, ...pipelineSources];
     const sent = new Set<string>();
     for (const source of sources) {
       for (const match of source.matchAll(/coded\(\s*ErrorKind::\w+,\s*"([a-z_]+)"/g)) {

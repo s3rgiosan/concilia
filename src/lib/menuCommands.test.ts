@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { menuCommand, menuState, REVIEW_COMMANDS, runMenuCommand, type ReviewAvailability, type ReviewCommands } from "./commands";
+import { menuCommand, menuState, REVIEW_COMMANDS, runMenuCommand, type ReviewAvailability, type ReviewCommands } from "./menuCommands";
 
 function availability(value: boolean): ReviewAvailability {
   return Object.fromEntries(REVIEW_COMMANDS.map((c) => [c, value])) as ReviewAvailability;

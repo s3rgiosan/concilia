@@ -94,7 +94,8 @@ impl AppState {
 
     /// The receipts root, when it is set and is a folder.
     pub fn receipts_root(&self) -> Option<PathBuf> {
-        self.settings().receipts_root.filter(|root| root.is_dir())
+        let root = lock(&self.config).settings().receipts_root.clone();
+        root.filter(|root| root.is_dir())
     }
 
     pub fn period_paths(&self, period: &Period) -> CommandResult<PeriodPaths> {

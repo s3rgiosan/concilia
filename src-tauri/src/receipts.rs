@@ -10,6 +10,13 @@ const RECEIPT_EXTENSIONS: &[&str] = &["pdf", "jpg", "jpeg", "png"];
 /// Folders Finalize sorts receipts into; the walk skips them at the top level only.
 pub const STATUS_FOLDERS: &[&str] = &["_matched", "_review", "_unmatched"];
 
+/// Whether a path has a `.pdf` extension, in any letter case.
+pub fn is_pdf(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+}
+
 /// Whether a file name has a receipt extension.
 pub fn is_receipt_name(name: &str) -> bool {
     name.rsplit_once('.')

@@ -6,33 +6,12 @@ import { fileName } from "../lib/paths";
 import { useFileDrop } from "../lib/hooks/useFileDrop";
 import type { Period } from "../lib/period";
 import { popUpMenu } from "../lib/popUpMenu";
-import { pickStatements, type PeriodSummary, type StatementInput } from "../lib/tauri";
-
-/** Banks Concilia can parse, as the backend's `Bank` keys. */
-export const BANKS = [{ value: "cgd", label: "CGD" }];
-
-export interface Statement extends StatementInput {
-  id: string;
-}
-
-export function isPdf(path: string): boolean {
-  return path.toLowerCase().endsWith(".pdf");
-}
+import { BANKS, isPdf, newStatements, type Statement } from "../lib/statements";
+import { pickStatements, type PeriodSummary } from "../lib/tauri";
 
 /** The month's receipts folder under the receipts root. */
 export function receiptsFolder(root: string, period: Period): string {
   return `${root.replace(/[\\/]+$/, "")}/${period.year}/${period.month}/receipts`;
-}
-
-/** The label of a bank key, such as "CGD". */
-export function bankLabel(bank: string): string {
-  return BANKS.find((b) => b.value === bank)?.label ?? bank.toUpperCase();
-}
-
-/** New statements for `paths`, each with the first bank, skipping paths already in `known`. */
-export function newStatements(paths: string[], known: Statement[]): Statement[] {
-  const taken = new Set(known.map((s) => s.path));
-  return paths.filter((p) => !taken.has(p)).map((path) => ({ id: crypto.randomUUID(), path, bank: BANKS[0].value }));
 }
 
 /**

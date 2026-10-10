@@ -1250,7 +1250,7 @@ async fn lists_the_statements_a_period_holds() {
     assert_eq!(rows, [("statement.pdf", 3), ("second.pdf", 2)]);
     assert_eq!(listed[1].added_at.len(), 20);
 
-    let review = pipeline::review_data(&h.paths).unwrap();
+    let review = serde_json::to_value(pipeline::review_data(&h.paths).unwrap()).unwrap();
     assert_eq!(review["statements"][1]["file"], "second.pdf");
     assert_eq!(review["statements"][1]["bank"], "cgd");
     assert_eq!(review["statements"][1]["transactions"], 2);
@@ -1762,7 +1762,7 @@ async fn review_data_adds_period_relative_paths() {
         .await
         .unwrap();
 
-    let data = pipeline::review_data(&h.paths).unwrap();
+    let data = serde_json::to_value(pipeline::review_data(&h.paths).unwrap()).unwrap();
 
     assert_eq!(
         data["transactions"][0]["receipt_meta"][0]["rel_path"],
@@ -1797,6 +1797,172 @@ async fn review_data_adds_period_relative_paths() {
             .join(relative)
             .is_file());
     }
+}
+
+#[test]
+fn review_data_has_a_stable_json_shape() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = period().paths(dir.path());
+    let inside = |name: &str| paths.receipts.join(name).to_string_lossy().into_owned();
+    let reimbursed = paths
+        .reimbursements
+        .join("fare.jpg")
+        .to_string_lossy()
+        .into_owned();
+    write_json_file(
+        &paths.match_result(),
+        &json!({
+            "transactions": [
+                {
+                    "id": "tx-001",
+                    "date": "2030-03-01",
+                    "description": "ACME CORP",
+                    "amount_cents": -1000,
+                    "abs_cents": 1000,
+                    "status": "MATCHED",
+                    "receipt_files": [inside("acme.pdf")],
+                    "receipt_meta": [{
+                        "file": inside("acme.pdf"),
+                        "amount_cents": 1000,
+                        "confidence": "high",
+                        "currency": "EUR",
+                        "vendor": "ACME CORP",
+                        "date": "2030-03-01",
+                        "provider_used": "gemini",
+                        "tag": "kept"
+                    }],
+                    "notes": "amount_match",
+                    "flag": true
+                },
+                {
+                    "id": "tx-002",
+                    "date": "2030-03-02",
+                    "description": "GLOBEX",
+                    "amount_cents": -2000,
+                    "abs_cents": 2000,
+                    "status": "REVIEW",
+                    "receipt_files": ["/elsewhere/globex.pdf"],
+                    "receipt_meta": [{ "file": "/elsewhere/globex.pdf" }],
+                    "notes": "1 receipts match amount"
+                },
+                {
+                    "id": "tx-003",
+                    "date": "2030-03-03",
+                    "description": "HOOLI",
+                    "amount_cents": -300,
+                    "abs_cents": 300
+                }
+            ],
+            "receiptsByStatus": { "matched": [], "review": [], "unmatched": [] },
+            "unmatchedReceipts": [{
+                "file": inside("initech.png"),
+                "amount_cents": null,
+                "vendor": "INITECH"
+            }]
+        }),
+    );
+    write_json_file(
+        &paths.reimbursements_cache(),
+        &json!([{ "file": reimbursed, "amount_cents": 1500, "vendor": "TAXI CO" }]),
+    );
+    write_json_file(
+        &paths.statements(),
+        &json!([{
+            "file": "statement.pdf",
+            "bank": "cgd",
+            "transactions": 3,
+            "added_at": "2030-04-01T00:00:00Z"
+        }]),
+    );
+
+    let data = serde_json::to_value(pipeline::review_data(&paths).unwrap()).unwrap();
+
+    assert_eq!(
+        data,
+        json!({
+            "transactions": [
+                {
+                    "id": "tx-001",
+                    "date": "2030-03-01",
+                    "description": "ACME CORP",
+                    "amount_cents": -1000,
+                    "abs_cents": 1000,
+                    "status": "MATCHED",
+                    "receipt_files": [inside("acme.pdf")],
+                    "receipt_meta": [{
+                        "file": inside("acme.pdf"),
+                        "amount_cents": 1000,
+                        "confidence": "high",
+                        "currency": "EUR",
+                        "vendor": "ACME CORP",
+                        "date": "2030-03-01",
+                        "provider_used": "gemini",
+                        "tag": "kept",
+                        "rel_path": "2030/03/receipts/acme.pdf"
+                    }],
+                    "notes": "amount_match",
+                    "flag": true
+                },
+                {
+                    "id": "tx-002",
+                    "date": "2030-03-02",
+                    "description": "GLOBEX",
+                    "amount_cents": -2000,
+                    "abs_cents": 2000,
+                    "status": "REVIEW",
+                    "receipt_files": ["/elsewhere/globex.pdf"],
+                    "receipt_meta": [{
+                        "file": "/elsewhere/globex.pdf",
+                        "amount_cents": null,
+                        "confidence": null,
+                        "currency": null,
+                        "vendor": null,
+                        "date": null,
+                        "provider_used": null,
+                        "rel_path": null
+                    }],
+                    "notes": "1 receipts match amount"
+                },
+                {
+                    "id": "tx-003",
+                    "date": "2030-03-03",
+                    "description": "HOOLI",
+                    "amount_cents": -300,
+                    "abs_cents": 300,
+                    "status": "UNMATCHED",
+                    "receipt_files": [],
+                    "receipt_meta": [],
+                    "notes": ""
+                }
+            ],
+            "unmatched_receipts": [{
+                "file": inside("initech.png"),
+                "amount_cents": null,
+                "confidence": null,
+                "currency": null,
+                "vendor": "INITECH",
+                "date": null,
+                "provider_used": null,
+                "rel_path": "2030/03/receipts/initech.png"
+            }],
+            "reimbursements": [{
+                "file": reimbursed,
+                "amount_cents": 1500,
+                "confidence": null,
+                "currency": null,
+                "vendor": "TAXI CO",
+                "date": null,
+                "provider_used": null,
+                "rel_path": "2030/03/reimbursements/fare.jpg"
+            }],
+            "statements": [{
+                "file": "statement.pdf",
+                "bank": "cgd",
+                "transactions": 3,
+                "added_at": "2030-04-01T00:00:00Z"
+            }]
+        })
+    );
 }
 
 #[test]

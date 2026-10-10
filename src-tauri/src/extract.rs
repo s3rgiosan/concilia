@@ -16,7 +16,7 @@ use crate::gemini::client::{GeminiClient, GeminiError, Payload};
 use crate::gemini::parse::Extracted;
 use crate::model::ReceiptMeta;
 use crate::poppler::Poppler;
-use crate::receipts::is_usable_pdf_text;
+use crate::receipts::{is_pdf, is_usable_pdf_text};
 
 /// Resolution of the page image sent when a PDF has no usable text.
 const RENDER_DPI: u32 = 300;
@@ -75,12 +75,6 @@ fn image_mime(file: &Path) -> &'static str {
         Some("jpg") | Some("jpeg") => "image/jpeg",
         _ => "image/png",
     }
-}
-
-fn is_pdf(file: &Path) -> bool {
-    file.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
 }
 
 /// Reads receipts with Gemini: a PDF's text when it is usable, otherwise an image of its first

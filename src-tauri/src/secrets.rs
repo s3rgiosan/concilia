@@ -101,12 +101,8 @@ impl SecretStore for FileStore {
     }
 
     fn delete(&self) -> Result<(), SecretError> {
-        match std::fs::remove_file(&self.path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                Err(SecretError::AccessDenied(e.to_string()))
-            }
-            _ => Ok(()),
-        }
+        crate::fsutil::remove_if_exists(&self.path)
+            .map_err(|e| SecretError::AccessDenied(e.to_string()))
     }
 }
 

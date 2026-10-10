@@ -1,6 +1,7 @@
 import "./Main.css";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Banner } from "../components/Banner";
 import { Icon } from "../components/Icon";
 import { ErrorState, needsSettings } from "../components/ErrorState";
 import { ActionPopUpButton, type PopUpAction } from "../components/PopUpButton";
@@ -45,11 +46,12 @@ import {
 } from "../lib/tauri";
 import { NewMonthSheet } from "./NewMonthSheet";
 import { RerunSheet } from "./RerunSheet";
-import { RunProgress } from "./RunProgress";
+import { RunPanel } from "./RunPanel";
 import { Sidebar, type RunningMonth } from "./Sidebar";
-import { Statements, type Statement } from "./Statements";
+import type { Statement } from "../lib/statements";
+import { Statements } from "./Statements";
 import { UpdateBanner } from "./UpdateBanner";
-import type { RejectKind, ReviewAvailability, ReviewCommands } from "../review/commands";
+import type { RejectKind, ReviewAvailability, ReviewCommands } from "../lib/menuCommands";
 import { Welcome } from "./Welcome";
 
 const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.Review })));
@@ -157,10 +159,11 @@ export function Main() {
   const mainRef = useRef<HTMLDivElement>(null);
   /** Whether the detail area is scrolled, so the toolbar shows its edge over the content. */
   const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
+  const [scrolledKey, setScrolledKey] = useState(key);
+  if (scrolledKey !== key) {
+    setScrolledKey(key);
     setScrolled(false);
-  }, [key]);
+  }
 
   useEffect(() => {
     const onResize = () => setCompact(isCompact());
@@ -378,32 +381,14 @@ export function Main() {
       subtitle = t("month.status.reconciling");
     }
     detail = (
-      <div className="run-panel">
-        <RunProgress title={title} steps={steps} />
-        {failed !== null ? (
-          <>
-            <div className={`banner ${cancelled ? "banner--info" : "banner--error"}`} role="alert">
-              <Icon name="warning" size={14} />
-              <span className="grow">
-                <ErrorText error={failed} />
-              </span>
-            </div>
-            <div className="run__actions">
-              <button type="button" onClick={backToStatements}>
-                {t("month.backToStatements")}
-              </button>
-              {needsSettings(failed) ? (
-                <button type="button" onClick={showSettings}>
-                  {t("common.openSettings")}
-                </button>
-              ) : null}
-              <button type="button" className="default" onClick={() => reconcile(lastClearCache.current)}>
-                {t("common.tryAgain")}
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
+      <RunPanel
+        title={title}
+        steps={steps}
+        error={failed}
+        onBack={backToStatements}
+        onOpenSettings={showSettings}
+        onRetry={() => reconcile(lastClearCache.current)}
+      />
     );
     if (runState.phase === "running") {
       trailing = (
@@ -555,13 +540,9 @@ export function Main() {
         <main className={`detail ${configured && reviewable && !runHere ? "detail--review" : ""}`}>
           {showSidebar ? null : <UpdateBanner placement="detail" onError={setMessage} />}
           {setUp ? (
-            <div className="banner banner--success" role="status">
-              <Icon name="check" size={14} className="banner__icon--success" />
-              <span className="grow">{t("welcome.setUp")}</span>
-              <button type="button" className="icon" aria-label={t("common.dismiss")} title={t("common.dismiss")} onClick={() => setSetUp(false)}>
-                <Icon name="xmark" size={12} />
-              </button>
-            </div>
+            <Banner tone="success" icon="check" onDismiss={() => setSetUp(false)}>
+              {t("welcome.setUp")}
+            </Banner>
           ) : null}
           {loadError ? (
             <ErrorState title={t("main.loadFailed")} error={loadError}>
@@ -576,15 +557,9 @@ export function Main() {
             </ErrorState>
           ) : null}
           {message !== null ? (
-            <div className="banner banner--error" role="alert">
-              <Icon name="warning" size={14} />
-              <span className="grow">
-                <ErrorText error={message} />
-              </span>
-              <button type="button" className="icon" aria-label={t("common.close")} title={t("common.close")} onClick={() => setMessage(null)}>
-                <Icon name="xmark" size={12} />
-              </button>
-            </div>
+            <Banner tone="error" icon="warning" role="alert" onDismiss={() => setMessage(null)} dismissLabel={t("common.close")}>
+              <ErrorText error={message} />
+            </Banner>
           ) : null}
           {detail}
         </main>

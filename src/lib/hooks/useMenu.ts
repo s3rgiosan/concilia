@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { menuState, runMenuCommand, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../../review/commands";
+import { menuState, rejectMenuLabel, runMenuCommand, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../menuCommands";
 import { isTextField } from "../popUpMenu";
 import { isPreview } from "../preview";
 import { onMenu, setMenu, setMenuState, subscribe } from "../tauri";
 import { useLatest } from "./useLatest";
+import { useShallowStable } from "./useShallowStable";
 
 /** What the main window knows that decides which menu items are enabled and how they read. */
 export interface MenuModel {
@@ -143,27 +144,13 @@ export function menuEnabled(model: MenuModel): Record<string, boolean> {
   };
 }
 
-/** The menu label key of Reject for what it does to the selected transaction. */
-function rejectLabel(kind: RejectKind): string {
-  switch (kind) {
-    case "noneOfThese":
-      return "menu.reject_review";
-    case "needsReceipt":
-      return "menu.reject_no_receipt";
-    case "removeMatch":
-    default:
-      return "menu.reject";
-  }
-}
-
 /**
  * Keeps the native menu bar in step with the main window: sends the localized labels when the
  * language, the sidebar or the selected transaction change, sends which items are enabled, and runs
  * the items the user chooses. Does nothing in the browser preview.
  */
 export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: RefObject<ReviewCommands | null>) {
-  const { t, i18n } = useTranslation();
-  const language = i18n.language;
+  const { t } = useTranslation();
   const { sidebarShown, rejectKind } = model;
 
   const labels = useMemo(() => {
@@ -172,13 +159,11 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
       result[key] = t(`menu.${key}`);
     }
     result.toggle_sidebar = t(sidebarShown ? "menu.hide_sidebar" : "menu.show_sidebar");
-    result.reject = t(rejectLabel(rejectKind));
+    result.reject = t(rejectMenuLabel(rejectKind));
     return result;
-    // The language is a dependency because `t` keeps its identity while the language changes.
-  }, [t, language, sidebarShown, rejectKind]);
+  }, [t, sidebarShown, rejectKind]);
 
-  const enabled = menuEnabled(model);
-  const enabledKey = JSON.stringify(enabled);
+  const enabled = useShallowStable(menuEnabled(model));
 
   /** Menu calls run one after another, so a state update never lands before the labels it follows. */
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -194,9 +179,9 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
 
   useEffect(() => {
     if (!isPreview()) {
-      send(() => setMenuState(JSON.parse(enabledKey) as Record<string, boolean>));
+      send(() => setMenuState(enabled));
     }
-  }, [enabledKey, labels, send]);
+  }, [enabled, labels, send]);
 
   const latestModel = useLatest(model);
   const latestActions = useLatest(actions);

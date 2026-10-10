@@ -203,3 +203,52 @@ button.disclosure {
     transition: none;
   }
 }
+
+.form-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Add and remove buttons under a list: one grouped control with a divider. */
+.add-remove {
+  display: inline-flex;
+  height: 24px;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+}
+
+.add-remove button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--label);
+}
+
+.add-remove button + button {
+  box-shadow: inset 1px 0 0 0 var(--separator), inset 1px 0 0 -0.5px var(--separator);
+  background-clip: padding-box;
+}
+
+.add-remove button:first-child {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+
+.add-remove button:last-child {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.add-remove button:active:not(:disabled) {
+  background: var(--control-fill-strong);
+}
+
+.add-remove button:disabled {
+  opacity: 0.6;
+}

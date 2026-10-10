@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use crate::matcher::epoch_days;
+use crate::dates::epoch_days;
 use crate::schema::euros_to_cents;
 use crate::text::{js_len, js_trim};
 

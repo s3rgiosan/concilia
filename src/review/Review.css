@@ -1,3 +1,40 @@
+/* Segmented control: a grey track; the selected segment is a darker grey. */
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  height: 24px;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+}
+
+.segmented__item {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--label);
+  font-size: 13px;
+}
+
+.segmented__item:active:not(.segmented__item--on) {
+  background: var(--fill-strong);
+}
+
+.segmented__item--on {
+  background: var(--control-fill-strong);
+}
+
+@media (prefers-contrast: more) {
+  .segmented {
+    border: 1px solid var(--field-border);
+  }
+}
+
 /* Layout: the list fills the detail area, the details column sits on its right. */
 
 .review {
@@ -178,7 +215,7 @@
 }
 
 .review-list:focus .list-row--selected .list-row__edited {
-  color: rgb(255 255 255 / 85%);
+  color: var(--selected-text-secondary);
 }
 
 .list-row__amount {
@@ -188,7 +225,7 @@
 
 .review-list:focus .list-row--selected .list-row__status,
 .review-list:focus .list-row--selected .list-row__date {
-  color: rgb(255 255 255 / 85%);
+  color: var(--selected-text-secondary);
 }
 
 .details__note--finalized {
@@ -555,7 +592,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 28%);
+  background: var(--backdrop-dim);
   transition: opacity 160ms ease-out;
 }
 

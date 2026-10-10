@@ -4,7 +4,7 @@ import { createRef, type RefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
 import menuSource from "../../../src-tauri/src/menu.rs?raw";
-import { REVIEW_COMMANDS, type ReviewAvailability, type ReviewCommands } from "../../review/commands";
+import { REVIEW_COMMANDS, type ReviewAvailability, type ReviewCommands } from "../menuCommands";
 import { onMenu, setMenu, setMenuState } from "../tauri";
 import { menuEnabled, useMenu, type MenuActions, type MenuModel } from "./useMenu";
 

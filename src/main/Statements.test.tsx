@@ -6,7 +6,8 @@ import i18n from "../i18n";
 import { useFileDrop } from "../lib/hooks/useFileDrop";
 import { emptySummary, type Period } from "../lib/period";
 import { pickStatements, type PeriodSummary } from "../lib/tauri";
-import { BANKS, receiptsFolder, Statements, type Statement } from "./Statements";
+import { BANKS, type Statement } from "../lib/statements";
+import { receiptsFolder, Statements } from "./Statements";
 
 vi.mock("../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/tauri")>()),

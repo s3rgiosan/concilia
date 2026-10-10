@@ -1,5 +1,11 @@
-// Loaded first so component stylesheets, imported after it, win ties on specificity.
+// The shared styles load before the feature stylesheets, which refine them.
+import "./styles/tokens.css";
 import "./App.css";
+import "./styles/controls.css";
+import "./components/Banner.css";
+import "./components/PopUpButton.css";
+import "./components/Sheet.css";
+import "./components/Toolbar.css";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { isTextField } from "./lib/popUpMenu";

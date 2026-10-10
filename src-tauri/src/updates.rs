@@ -234,6 +234,8 @@ fn classify(error: tauri_plugin_updater::Error) -> UpdateError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicUsize;
+
     use super::*;
 
     #[test]
@@ -272,5 +274,173 @@ mod tests {
             serde_json::to_value(UpdateCheckResult::from(&failed)).unwrap(),
             serde_json::json!({ "update": null, "error": "offline" })
         );
+    }
+
+    fn info(version: &str) -> UpdateInfo {
+        UpdateInfo {
+            version: version.into(),
+            notes: Some("Fixes.".into()),
+        }
+    }
+
+    /// An update that reports two chunks of progress, then finishes with `outcome` once
+    /// `gate` opens.
+    struct FakeUpdate {
+        info: UpdateInfo,
+        outcome: Result<(), UpdateError>,
+        installs: AtomicUsize,
+        gate: tokio::sync::Semaphore,
+    }
+
+    impl FakeUpdate {
+        fn new(version: &str, outcome: Result<(), UpdateError>) -> Arc<FakeUpdate> {
+            Arc::new(FakeUpdate {
+                info: info(version),
+                outcome,
+                installs: AtomicUsize::new(0),
+                gate: tokio::sync::Semaphore::new(tokio::sync::Semaphore::MAX_PERMITS),
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl PendingUpdate for FakeUpdate {
+        fn info(&self) -> UpdateInfo {
+            self.info.clone()
+        }
+
+        async fn download_and_install(
+            &self,
+            progress: ProgressSink<'_>,
+        ) -> Result<(), UpdateError> {
+            self.installs.fetch_add(1, Ordering::SeqCst);
+            progress(UpdateProgress {
+                downloaded: 10,
+                total: Some(20),
+            });
+            let _permit = self.gate.acquire().await.unwrap();
+            progress(UpdateProgress {
+                downloaded: 20,
+                total: Some(20),
+            });
+            self.outcome.clone()
+        }
+    }
+
+    type CheckResult = Result<Option<Arc<dyn PendingUpdate>>, UpdateError>;
+
+    /// Answers each check with the next scripted result.
+    struct FakeSource {
+        results: Mutex<Vec<CheckResult>>,
+    }
+
+    impl FakeSource {
+        fn scripted(results: Vec<CheckResult>) -> Arc<FakeSource> {
+            Arc::new(FakeSource {
+                results: Mutex::new(results.into_iter().rev().collect()),
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl UpdateSource for FakeSource {
+        async fn check(&self) -> Result<Option<Arc<dyn PendingUpdate>>, UpdateError> {
+            self.results
+                .lock()
+                .unwrap()
+                .pop()
+                .expect("a scripted check")
+        }
+    }
+
+    fn found(update: &Arc<FakeUpdate>) -> CheckResult {
+        Ok(Some(update.clone() as Arc<dyn PendingUpdate>))
+    }
+
+    #[tokio::test]
+    async fn keeps_the_update_a_check_finds() {
+        let update = FakeUpdate::new("9.9.9", Ok(()));
+        let manager = UpdateManager::new(FakeSource::scripted(vec![found(&update), Ok(None)]));
+        assert_eq!(manager.pending(), None);
+
+        assert_eq!(manager.check_now().await, Ok(Some(info("9.9.9"))));
+        assert_eq!(manager.pending(), Some(info("9.9.9")));
+
+        assert_eq!(manager.check_now().await, Ok(None));
+        assert_eq!(manager.pending(), None);
+    }
+
+    #[tokio::test]
+    async fn a_failed_check_keeps_the_update_found_before() {
+        let update = FakeUpdate::new("9.9.9", Ok(()));
+        let manager = UpdateManager::new(FakeSource::scripted(vec![
+            found(&update),
+            Err(UpdateError::Network("offline".into())),
+        ]));
+        manager.check_now().await.unwrap();
+
+        assert_eq!(
+            manager.check_now().await,
+            Err(UpdateError::Network("offline".into()))
+        );
+        assert_eq!(manager.pending(), Some(info("9.9.9")));
+    }
+
+    #[tokio::test]
+    async fn installing_needs_a_pending_update() {
+        let manager = UpdateManager::new(FakeSource::scripted(Vec::new()));
+        assert_eq!(
+            manager.install(&|_| {}).await,
+            Err(UpdateError::NothingPending)
+        );
+    }
+
+    #[tokio::test]
+    async fn installing_reports_progress_and_allows_a_retry_after_failure() {
+        let update = FakeUpdate::new("9.9.9", Err(UpdateError::Internal("bad archive".into())));
+        let manager = UpdateManager::new(FakeSource::scripted(vec![found(&update)]));
+        manager.check_now().await.unwrap();
+
+        let seen = Mutex::new(Vec::new());
+        let sink = |progress| seen.lock().unwrap().push(progress);
+        let first = manager.install(&sink).await;
+        let second = manager.install(&sink).await;
+
+        assert_eq!(first, Err(UpdateError::Internal("bad archive".into())));
+        assert_eq!(second, first);
+        assert_eq!(update.installs.load(Ordering::SeqCst), 2);
+        let downloaded: Vec<u64> = seen.lock().unwrap().iter().map(|p| p.downloaded).collect();
+        assert_eq!(downloaded, [10, 20, 10, 20]);
+        assert_eq!(manager.pending(), Some(info("9.9.9")));
+    }
+
+    #[tokio::test]
+    async fn refuses_a_second_install_while_one_runs() {
+        let update = Arc::new(FakeUpdate {
+            info: info("9.9.9"),
+            outcome: Ok(()),
+            installs: AtomicUsize::new(0),
+            gate: tokio::sync::Semaphore::new(0),
+        });
+        let manager = Arc::new(UpdateManager::new(FakeSource::scripted(vec![found(
+            &update,
+        )])));
+        manager.check_now().await.unwrap();
+
+        let running = tokio::spawn({
+            let manager = manager.clone();
+            async move { manager.install(&|_| {}).await }
+        });
+        while update.installs.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(
+            manager.install(&|_| {}).await,
+            Err(UpdateError::AlreadyInstalling)
+        );
+        update.gate.add_permits(1);
+        assert_eq!(running.await.unwrap(), Ok(()));
+        assert_eq!(manager.install(&|_| {}).await, Ok(()));
     }
 }

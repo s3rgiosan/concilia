@@ -1,0 +1,132 @@
+//! The Excel report and the data the review screen loads.
+
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+use serde_json::{Map, Value};
+
+use super::periods::read_statements;
+use super::{io, read_cache, PipelineError};
+use crate::excel;
+use crate::fsutil::{read_json_lenient, read_json_opt};
+use crate::model::{
+    Draft, Language, MatchResult, ReceiptMeta, StatementRecord, Status, Transaction,
+};
+use crate::period::PeriodPaths;
+use crate::review::merge_draft;
+
+/// Writes the report through a temporary file next to `path`.
+pub(super) fn write_report(
+    result: &MatchResult,
+    reimbursements: &[ReceiptMeta],
+    language: Language,
+    path: &Path,
+) -> Result<(), PipelineError> {
+    let sheets = excel::build(result, reimbursements, language);
+    let tmp = path.with_extension("xlsx.tmp");
+    excel::write(&sheets, &tmp).map_err(|e| io(&tmp, e))?;
+    std::fs::rename(&tmp, path).map_err(|e| io(path, e))
+}
+
+/// A receipt as the review screen shows it: its stored fields plus the period-relative path
+/// the preview loads, null for a file outside the period.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ReceiptView {
+    #[serde(flatten)]
+    pub meta: ReceiptMeta,
+    pub rel_path: Option<String>,
+}
+
+impl ReceiptView {
+    pub fn new(paths: &PeriodPaths, meta: ReceiptMeta) -> ReceiptView {
+        let rel_path = paths.relative(&meta.file);
+        ReceiptView { meta, rel_path }
+    }
+}
+
+/// A transaction with its receipts as the review screen shows them.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ReviewTransaction {
+    pub id: String,
+    pub date: String,
+    pub description: String,
+    pub amount_cents: i64,
+    pub abs_cents: i64,
+    pub status: Status,
+    pub receipt_files: Vec<String>,
+    pub receipt_meta: Vec<ReceiptView>,
+    pub notes: String,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// What the review screen loads.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ReviewData {
+    pub transactions: Vec<ReviewTransaction>,
+    pub unmatched_receipts: Vec<ReceiptView>,
+    pub reimbursements: Vec<ReceiptView>,
+    pub statements: Vec<StatementRecord>,
+}
+
+/// Writes the report from the match result with pending review decisions applied, and
+/// returns its path. Decisions that cannot be applied are left out.
+pub fn export_report(paths: &PeriodPaths, language: Language) -> Result<PathBuf, PipelineError> {
+    let result: MatchResult =
+        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
+    let draft: Draft = read_json_lenient(&paths.draft()).unwrap_or_default();
+    let shown = match merge_draft(&result, &draft) {
+        Ok(transactions) => MatchResult {
+            transactions,
+            receipts_by_status: result.receipts_by_status,
+            unmatched_receipts: result.unmatched_receipts,
+        },
+        Err(error) => {
+            log::warn!("report without the review draft: {error}");
+            result
+        }
+    };
+    let reimbursements = read_cache(&paths.reimbursements_cache());
+    write_report(&shown, &reimbursements, language, &paths.report())?;
+    Ok(paths.report())
+}
+
+/// The match result and reimbursements, each receipt with its period-relative `rel_path` for
+/// previews, and the statements the period holds.
+pub fn review_data(paths: &PeriodPaths) -> Result<ReviewData, PipelineError> {
+    let result: MatchResult =
+        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
+    let view = |meta| ReceiptView::new(paths, meta);
+    let transactions = result
+        .transactions
+        .into_iter()
+        .map(|tx| review_transaction(tx, &view))
+        .collect();
+    Ok(ReviewData {
+        transactions,
+        unmatched_receipts: result.unmatched_receipts.into_iter().map(&view).collect(),
+        reimbursements: read_cache(&paths.reimbursements_cache())
+            .into_iter()
+            .map(&view)
+            .collect(),
+        statements: read_statements(paths),
+    })
+}
+
+fn review_transaction(
+    tx: Transaction,
+    view: &impl Fn(ReceiptMeta) -> ReceiptView,
+) -> ReviewTransaction {
+    ReviewTransaction {
+        id: tx.id,
+        date: tx.date,
+        description: tx.description,
+        amount_cents: tx.amount_cents,
+        abs_cents: tx.abs_cents,
+        status: tx.status,
+        receipt_files: tx.receipt_files,
+        receipt_meta: tx.receipt_meta.into_iter().map(view).collect(),
+        notes: tx.notes,
+        extra: tx.extra,
+    }
+}

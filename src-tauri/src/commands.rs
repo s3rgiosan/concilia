@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::future::BoxFuture;
 use serde::Deserialize;
-use serde_json::Value;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
@@ -21,7 +21,10 @@ use crate::extract::{ExtractOptions, GeminiExtractor};
 use crate::locks::{ExclusiveGuard, RunKind};
 use crate::model::{Draft, Rule, Summary};
 use crate::period::{Period, PeriodPaths};
-use crate::pipeline::{self, AddStatementsResult, RescanKind, RunContext, RunEvent, StatementFile};
+use crate::pipeline::{
+    self, AddStatementsResult, PipelineError, ReceiptView, RescanKind, ReviewData, RunContext,
+    RunEvent, StatementFile,
+};
 use crate::poppler::PopplerStatus;
 use crate::updates::{UpdateInfo, UpdateManager, UPDATE_PROGRESS_EVENT};
 use crate::windows;
@@ -266,6 +269,37 @@ fn statement_files(statements: Vec<StatementInput>) -> CommandResult<Vec<Stateme
         .collect()
 }
 
+/// Runs `run` as the period's exclusive job of `kind`: takes the lock, builds the context from
+/// the current setup, forwards progress to `on_event` and stops after `RUN_TIMEOUT`.
+async fn run_job<T>(
+    state: &AppState,
+    period: &Period,
+    kind: RunKind,
+    on_event: Channel<RunEvent>,
+    run: impl for<'a, 'b> FnOnce(&'a RunContext<'b>) -> BoxFuture<'a, Result<T, PipelineError>>,
+) -> CommandResult<T> {
+    let Job {
+        guard,
+        extractor,
+        paths,
+    } = start_job(state, period, kind)?;
+    let token = guard.token().clone();
+    let progress = progress_sender(on_event, token.clone());
+    let ctx = RunContext {
+        paths,
+        extractor: &extractor,
+        statements: &state.poppler,
+        rules: state.rules(),
+        language: state.settings().report_language(),
+        options: ExtractOptions::default(),
+        progress: &progress,
+        cancel: token,
+    };
+    let result = tokio::time::timeout(RUN_TIMEOUT, run(&ctx)).await;
+    drop(guard);
+    timed_out(result)
+}
+
 #[tauri::command]
 pub async fn reconcile(
     state: State<'_, Arc<AppState>>,
@@ -277,23 +311,11 @@ pub async fn reconcile(
 ) -> CommandResult<Summary> {
     let period = period(&year, &month).map_err(fail)?;
     let files = statement_files(statements).map_err(fail)?;
-    let job = start_job(&state, &period, RunKind::Reconcile).map_err(fail)?;
-    let token = job.guard.token().clone();
-    let progress = progress_sender(on_event, token.clone());
-    let ctx = RunContext {
-        paths: job.paths.clone(),
-        extractor: &job.extractor,
-        statements: &state.poppler,
-        rules: state.rules(),
-        language: state.settings().report_language(),
-        options: ExtractOptions::default(),
-        progress: &progress,
-        cancel: token,
-    };
-    let result =
-        tokio::time::timeout(RUN_TIMEOUT, pipeline::reconcile(&ctx, &files, clear_cache)).await;
-    drop(job);
-    timed_out(result).map_err(fail)
+    run_job(&state, &period, RunKind::Reconcile, on_event, |ctx| {
+        Box::pin(async move { pipeline::reconcile(ctx, &files, clear_cache).await })
+    })
+    .await
+    .map_err(fail)
 }
 
 #[tauri::command]
@@ -304,22 +326,11 @@ pub async fn scan_receipts(
     on_event: Channel<RunEvent>,
 ) -> CommandResult<pipeline::ScanOutcome> {
     let period = period(&year, &month).map_err(fail)?;
-    let job = start_job(&state, &period, RunKind::Scan).map_err(fail)?;
-    let token = job.guard.token().clone();
-    let progress = progress_sender(on_event, token.clone());
-    let ctx = RunContext {
-        paths: job.paths.clone(),
-        extractor: &job.extractor,
-        statements: &state.poppler,
-        rules: state.rules(),
-        language: state.settings().report_language(),
-        options: ExtractOptions::default(),
-        progress: &progress,
-        cancel: token,
-    };
-    let result = tokio::time::timeout(RUN_TIMEOUT, pipeline::scan_receipts(&ctx)).await;
-    drop(job);
-    timed_out(result).map_err(fail)
+    run_job(&state, &period, RunKind::Scan, on_event, |ctx| {
+        Box::pin(pipeline::scan_receipts(ctx))
+    })
+    .await
+    .map_err(fail)
 }
 
 /// Adds statements to a month in review, keeping its transaction IDs and review draft.
@@ -333,22 +344,11 @@ pub async fn add_statements(
 ) -> CommandResult<AddStatementsResult> {
     let period = period(&year, &month).map_err(fail)?;
     let files = statement_files(statements).map_err(fail)?;
-    let job = start_job(&state, &period, RunKind::AddStatements).map_err(fail)?;
-    let token = job.guard.token().clone();
-    let progress = progress_sender(on_event, token.clone());
-    let ctx = RunContext {
-        paths: job.paths.clone(),
-        extractor: &job.extractor,
-        statements: &state.poppler,
-        rules: state.rules(),
-        language: state.settings().report_language(),
-        options: ExtractOptions::default(),
-        progress: &progress,
-        cancel: token,
-    };
-    let result = tokio::time::timeout(RUN_TIMEOUT, pipeline::add_statements(&ctx, &files)).await;
-    drop(job);
-    timed_out(result).map_err(fail)
+    run_job(&state, &period, RunKind::AddStatements, on_event, |ctx| {
+        Box::pin(async move { pipeline::add_statements(ctx, &files).await })
+    })
+    .await
+    .map_err(fail)
 }
 
 /// Stops the period's running job. Returns whether one was running.
@@ -367,7 +367,7 @@ pub fn get_review(
     state: State<'_, Arc<AppState>>,
     year: String,
     month: String,
-) -> CommandResult<Value> {
+) -> CommandResult<ReviewData> {
     let period = period(&year, &month).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
     pipeline::review_data(&paths).map_err(fail)
@@ -434,7 +434,7 @@ async fn rescan(
     month: &str,
     kind: RescanKind,
     rel_path: &str,
-) -> CommandResult<Value> {
+) -> CommandResult<ReceiptView> {
     let period = period(year, month)?;
     let paths = state.period_paths(&period)?;
     let file = pipeline::resolve_period_file(&paths, kind, rel_path)?;
@@ -446,11 +446,7 @@ async fn rescan(
     };
     let write_lock = state.locks.write_lock(&period);
     let meta = pipeline::rescan(&paths, &extractor, kind, &file, &write_lock).await?;
-    let mut value = serde_json::to_value(&meta).map_err(CommandError::internal)?;
-    value["rel_path"] = paths
-        .relative(&meta.file)
-        .map_or(Value::Null, Value::String);
-    Ok(value)
+    Ok(ReceiptView::new(&paths, meta))
 }
 
 #[tauri::command]
@@ -459,7 +455,7 @@ pub async fn rescan_receipt(
     year: String,
     month: String,
     rel_path: String,
-) -> CommandResult<Value> {
+) -> CommandResult<ReceiptView> {
     rescan(&state, &year, &month, RescanKind::Receipt, &rel_path)
         .await
         .map_err(fail)
@@ -471,7 +467,7 @@ pub async fn rescan_reimbursement(
     year: String,
     month: String,
     rel_path: String,
-) -> CommandResult<Value> {
+) -> CommandResult<ReceiptView> {
     rescan(&state, &year, &month, RescanKind::Reimbursement, &rel_path)
         .await
         .map_err(fail)

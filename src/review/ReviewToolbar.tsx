@@ -5,11 +5,11 @@ import { ActionPopUpButton, PopUpButton, type PopUpAction } from "../components/
 import type { MenuEntry } from "../lib/popUpMenu";
 import { FILTERS, type Filter } from "./effective";
 
-/** How far the toolbar has given way to a narrow window. */
-export type ToolbarLevel = 0 | 1 | 2;
+/** The toolbar's levels, from the full toolbar to the most compact one. */
+export const TOOLBAR_LEVELS = [0, 1, 2] as const;
 
-/** The compact levels past the full toolbar. */
-export const TOOLBAR_LEVELS = 2;
+/** How far the toolbar has given way to a narrow window. */
+export type ToolbarLevel = (typeof TOOLBAR_LEVELS)[number];
 
 /**
  * The status filter as a segmented control with radio semantics: one segment is checked and in

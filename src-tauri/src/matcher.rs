@@ -17,6 +17,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::bank_fees::is_bank_fee;
+use crate::dates::days_between;
 use crate::model::{
     basename, MatchResult, ReceiptMeta, ReceiptsByStatus, Rule, StatementTransaction, Status,
     Transaction,
@@ -70,42 +71,6 @@ fn extract_words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Days since 1970-01-01 for an ISO `YYYY-MM-DD` date. A day past the month's end rolls into
-/// the next month, as JavaScript's date parser does.
-pub fn epoch_days(date: &str) -> Option<i64> {
-    let bytes = date.as_bytes();
-    let shape_ok = bytes.len() == 10
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit());
-    if !shape_ok {
-        return None;
-    }
-    let year: i64 = date[0..4].parse().ok()?;
-    let month: i64 = date[5..7].parse().ok()?;
-    let day: i64 = date[8..10].parse().ok()?;
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return None;
-    }
-    // Days from civil, Howard Hinnant's algorithm, for the first of the month.
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (month + 9) % 12;
-    let doy = (153 * mp + 2) / 5;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some(era * 146_097 + doe - 719_468 + day - 1)
-}
-
-fn days_between(tx_date: &str, receipt_date: Option<&str>) -> Option<i64> {
-    let a = epoch_days(tx_date)?;
-    let b = epoch_days(receipt_date?)?;
-    Some((a - b).abs())
-}
-
 fn is_eur(receipt: &ReceiptMeta) -> bool {
     receipt.currency.as_deref() == Some("EUR")
 }
@@ -127,6 +92,68 @@ fn rule_matches(rule: &Rule, description: &str, receipt: &ReceiptMeta) -> bool {
             .to_lowercase()
             .contains(&rule.transaction_description.to_lowercase())
 }
+
+/// Which receipts an exact-amount pass considers.
+#[derive(Clone, Copy)]
+enum Currency {
+    /// EUR receipts: a single candidate is MATCHED.
+    Eur,
+    /// Receipts without a currency: candidates are always REVIEW.
+    Unknown,
+}
+
+/// How an exact-amount pass treats the receipt's name.
+#[derive(Clone, Copy)]
+enum NameFilter {
+    /// Only receipts sharing a name word with the description.
+    Required,
+    /// Receipts sharing a name word when several candidates exist, otherwise all of them.
+    Preferred,
+}
+
+/// One exact-amount pass over the unmatched transactions.
+struct AmountPass {
+    currency: Currency,
+    name: NameFilter,
+    /// Notes for a single EUR candidate.
+    matched_note: &'static str,
+    /// Notes for a EUR candidate singled out by date.
+    dated_note: &'static str,
+    /// What the REVIEW notes say the receipts matched on.
+    review_label: &'static str,
+}
+
+const NAME_AND_AMOUNT_EUR: AmountPass = AmountPass {
+    currency: Currency::Eur,
+    name: NameFilter::Required,
+    matched_note: "name_amount_match",
+    dated_note: "name_amount_date_match",
+    review_label: "name+amount",
+};
+
+const NAME_AND_AMOUNT_UNKNOWN: AmountPass = AmountPass {
+    currency: Currency::Unknown,
+    name: NameFilter::Required,
+    matched_note: "",
+    dated_note: "",
+    review_label: "name+amount",
+};
+
+const AMOUNT_EUR: AmountPass = AmountPass {
+    currency: Currency::Eur,
+    name: NameFilter::Preferred,
+    matched_note: "amount_match",
+    dated_note: "amount_date_match",
+    review_label: "amount",
+};
+
+const AMOUNT_UNKNOWN: AmountPass = AmountPass {
+    currency: Currency::Unknown,
+    name: NameFilter::Preferred,
+    matched_note: "",
+    dated_note: "",
+    review_label: "amount",
+};
 
 struct Matcher<'a> {
     receipts: &'a [ReceiptMeta],
@@ -275,6 +302,67 @@ impl<'a> Matcher<'a> {
         closest.next().is_none().then_some(first.0)
     }
 
+    fn amount_pass(&mut self, result: &mut [Transaction], pass: &AmountPass) {
+        for out in result.iter_mut() {
+            if out.status != Status::Unmatched {
+                continue;
+            }
+            let filter = match pass.currency {
+                Currency::Eur => is_eur,
+                Currency::Unknown => has_unknown_currency,
+            };
+            let candidates = self.amount_candidates(out.abs_cents, filter);
+            let candidates = match pass.name {
+                NameFilter::Required => candidates
+                    .into_iter()
+                    .filter(|&idx| self.overlaps(&out.description, idx))
+                    .collect(),
+                NameFilter::Preferred => self.prefer_name_overlap(candidates, &out.description),
+            };
+            match pass.currency {
+                Currency::Eur => self.settle_eur(out, candidates, pass),
+                Currency::Unknown => self.review_unknown_currency(out, candidates, pass),
+            }
+        }
+    }
+
+    fn settle_eur(&mut self, out: &mut Transaction, candidates: Vec<usize>, pass: &AmountPass) {
+        match candidates.len() {
+            0 => {}
+            1 => self.match_single(out, candidates[0], pass.matched_note.into()),
+            n => match self.unique_by_date(&candidates, &out.date) {
+                Some(idx) => self.match_single(out, idx, pass.dated_note.into()),
+                None => {
+                    let sorted = self.sort_by_date(candidates, &out.date);
+                    let notes = format!("{n} receipts match {}", pass.review_label);
+                    self.mark_review(out, &sorted, notes);
+                }
+            },
+        }
+    }
+
+    fn review_unknown_currency(
+        &mut self,
+        out: &mut Transaction,
+        candidates: Vec<usize>,
+        pass: &AmountPass,
+    ) {
+        if candidates.is_empty() {
+            return;
+        }
+        let sorted = self.sort_by_date(candidates, &out.date);
+        let notes = if sorted.len() == 1 {
+            "unknown_currency_match".to_string()
+        } else {
+            format!(
+                "{} receipts match {} (unknown currency)",
+                sorted.len(),
+                pass.review_label
+            )
+        };
+        self.mark_review(out, &sorted, notes);
+    }
+
     fn match_single(&mut self, out: &mut Transaction, idx: usize, notes: String) {
         let receipt = &self.receipts[idx];
         out.status = Status::Matched;
@@ -358,91 +446,13 @@ pub fn match_transactions(
         );
     }
 
-    // Pass 1: name and exact amount, EUR.
-    for out in result.iter_mut() {
-        if out.status != Status::Unmatched {
-            continue;
-        }
-        let candidates: Vec<usize> = m
-            .amount_candidates(out.abs_cents, is_eur)
-            .into_iter()
-            .filter(|&idx| m.overlaps(&out.description, idx))
-            .collect();
-        match candidates.len() {
-            0 => {}
-            1 => m.match_single(out, candidates[0], "name_amount_match".into()),
-            n => match m.unique_by_date(&candidates, &out.date) {
-                Some(idx) => m.match_single(out, idx, "name_amount_date_match".into()),
-                None => {
-                    let sorted = m.sort_by_date(candidates, &out.date);
-                    m.mark_review(out, &sorted, format!("{n} receipts match name+amount"));
-                }
-            },
-        }
-    }
-
-    // Pass 1b: name and exact amount, unknown currency.
-    for out in result.iter_mut() {
-        if out.status != Status::Unmatched {
-            continue;
-        }
-        let candidates: Vec<usize> = m
-            .amount_candidates(out.abs_cents, has_unknown_currency)
-            .into_iter()
-            .filter(|&idx| m.overlaps(&out.description, idx))
-            .collect();
-        if candidates.is_empty() {
-            continue;
-        }
-        let sorted = m.sort_by_date(candidates, &out.date);
-        let notes = if sorted.len() == 1 {
-            "unknown_currency_match".to_string()
-        } else {
-            format!(
-                "{} receipts match name+amount (unknown currency)",
-                sorted.len()
-            )
-        };
-        m.mark_review(out, &sorted, notes);
-    }
-
-    // Pass 2: exact amount, EUR.
-    for out in result.iter_mut() {
-        if out.status != Status::Unmatched {
-            continue;
-        }
-        let candidates = m.amount_candidates(out.abs_cents, is_eur);
-        let candidates = m.prefer_name_overlap(candidates, &out.description);
-        match candidates.len() {
-            0 => {}
-            1 => m.match_single(out, candidates[0], "amount_match".into()),
-            n => match m.unique_by_date(&candidates, &out.date) {
-                Some(idx) => m.match_single(out, idx, "amount_date_match".into()),
-                None => {
-                    let sorted = m.sort_by_date(candidates, &out.date);
-                    m.mark_review(out, &sorted, format!("{n} receipts match amount"));
-                }
-            },
-        }
-    }
-
-    // Pass 2b: exact amount, unknown currency.
-    for out in result.iter_mut() {
-        if out.status != Status::Unmatched {
-            continue;
-        }
-        let candidates = m.amount_candidates(out.abs_cents, has_unknown_currency);
-        let candidates = m.prefer_name_overlap(candidates, &out.description);
-        if candidates.is_empty() {
-            continue;
-        }
-        let sorted = m.sort_by_date(candidates, &out.date);
-        let notes = if sorted.len() == 1 {
-            "unknown_currency_match".to_string()
-        } else {
-            format!("{} receipts match amount (unknown currency)", sorted.len())
-        };
-        m.mark_review(out, &sorted, notes);
+    for pass in [
+        NAME_AND_AMOUNT_EUR,
+        NAME_AND_AMOUNT_UNKNOWN,
+        AMOUNT_EUR,
+        AMOUNT_UNKNOWN,
+    ] {
+        m.amount_pass(&mut result, &pass);
     }
 
     // Pass 3: foreign currency within the tolerance, name overlap required.
@@ -548,19 +558,5 @@ mod tests {
             ["acme", "corp", "café"]
         );
         assert!(extract_words("").is_empty());
-    }
-
-    #[test]
-    fn counts_epoch_days_with_month_rollover() {
-        assert_eq!(epoch_days("1970-01-01"), Some(0));
-        assert_eq!(epoch_days("2030-03-01"), epoch_days("2030-02-29"));
-        assert_eq!(
-            epoch_days("2028-02-29").unwrap() + 1,
-            epoch_days("2028-03-01").unwrap()
-        );
-        assert_eq!(epoch_days("2030-01-00"), None);
-        assert_eq!(epoch_days("2030-13-01"), None);
-        assert_eq!(epoch_days("2030-01-32"), None);
-        assert_eq!(epoch_days("2030-1-01"), None);
     }
 }

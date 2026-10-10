@@ -1,11 +1,10 @@
 // The review state the user sees: the match result with pending decisions applied.
 
+import { FILTERS, NO_RECEIPT_CATEGORIES, type Filter, type NoReceiptCategory } from "../lib/menuCommands";
 import { fileName } from "../lib/paths";
 import type { Draft, ReceiptMeta, ReviewData, Status, Transaction } from "../lib/tauri";
 
-/** Notes of transactions the user marked as needing no receipt. */
-export const NO_RECEIPT_CATEGORIES = ["bank_fee", "salary", "transfer", "refund", "no_receipt"] as const;
-export type NoReceiptCategory = (typeof NO_RECEIPT_CATEGORIES)[number];
+export { FILTERS, NO_RECEIPT_CATEGORIES, type Filter, type NoReceiptCategory };
 
 /** The categories money coming in most likely needs no receipt for. */
 const CREDIT_CATEGORIES: readonly NoReceiptCategory[] = ["transfer", "salary", "refund"];
@@ -149,10 +148,6 @@ export function mismatch(receipt: ReceiptMeta, txAbsCents: number): Mismatch | n
   }
   return { kind: "amount", cents: Math.abs(receipt.amount_cents - txAbsCents) };
 }
-
-/** The list filters: transactions still to decide, matched ones, and every transaction. */
-export const FILTERS = ["pending", "matched", "all"] as const;
-export type Filter = (typeof FILTERS)[number];
 
 /** Whether a transaction still waits for a decision: REVIEW or UNMATCHED. */
 export function needsDecision(tx: Pick<Transaction, "status">): boolean {

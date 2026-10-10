@@ -1,0 +1,83 @@
+button.action-popup {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+  color: var(--label);
+}
+
+button.action-popup:active:not(:disabled),
+button.action-popup[aria-expanded="true"] {
+  background: var(--control-fill-strong);
+}
+
+button.action-popup:disabled {
+  opacity: 0.45;
+}
+
+button.action-popup--borderless {
+  background: transparent;
+  color: var(--label-secondary);
+}
+
+button.action-popup--borderless:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+button.action-popup--borderless:active:not(:disabled),
+button.action-popup--borderless[aria-expanded="true"],
+.toolbar-group button.action-popup:active:not(:disabled),
+.toolbar-group button.action-popup[aria-expanded="true"] {
+  background: var(--fill-strong);
+}
+
+.toolbar-group button.action-popup {
+  width: 32px;
+  color: var(--label);
+}
+
+/* Pull-down button: a push button that opens a menu of commands, with a single ⌄ chevron. */
+button.pull-down {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 8px 0 11px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+  color: var(--label);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+button.pull-down:active:not(:disabled),
+button.pull-down[aria-expanded="true"] {
+  background: var(--control-fill-strong);
+}
+
+button.pull-down:disabled {
+  opacity: 0.45;
+}
+
+.pull-down__chevron {
+  flex: none;
+  color: var(--label-secondary);
+}
+
+@media (prefers-contrast: more) {
+  button.action-popup:not(.action-popup--borderless),
+  button.pull-down {
+    border: 1px solid var(--field-border);
+  }
+}

@@ -1,4 +1,5 @@
 .main {
+  --sidebar-width: 220px;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -14,7 +15,7 @@
 
 /* Sheets in the main window drop from under the toolbar over a light dim. */
 .main .sheet-backdrop {
-  padding-top: 52px;
+  padding-top: var(--toolbar-height);
   background: rgb(0 0 0 / 10%);
 }
 
@@ -35,7 +36,7 @@
   flex-direction: column;
   align-items: flex-end;
   box-sizing: border-box;
-  width: var(--sidebar-width, 220px);
+  width: var(--sidebar-width);
   min-height: 0;
   overflow: hidden;
   border-right: 0.5px solid var(--separator);
@@ -45,7 +46,7 @@
 
 .sidebar > * {
   box-sizing: border-box;
-  width: var(--sidebar-width, 220px);
+  width: var(--sidebar-width);
 }
 
 @starting-style {
@@ -80,13 +81,13 @@
 
 @starting-style {
   .presence[data-presence="enter"] .sidebar--overlay {
-    width: var(--sidebar-width, 220px);
+    width: var(--sidebar-width);
     transform: translateX(-100%);
   }
 }
 
 .presence[data-presence="exit"] .sidebar--overlay {
-  width: var(--sidebar-width, 220px);
+  width: var(--sidebar-width);
   transform: translateX(-100%);
 }
 
@@ -173,7 +174,7 @@
 }
 
 .sidebar__list:focus .sidebar__row--selected .sidebar__status {
-  color: rgb(255 255 255 / 85%);
+  color: var(--selected-text-secondary);
 }
 
 /* On the accent background a white ring keeps every status colour, blue included, visible. */
@@ -186,7 +187,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: calc(var(--sidebar-width, 220px) - 20px);
+  width: calc(var(--sidebar-width) - 20px);
   margin: 0 10px 8px;
   padding: 10px;
   border-radius: var(--radius-group);
@@ -230,7 +231,7 @@
 
 .sidebar > .sidebar__error {
   flex-direction: column;
-  width: calc(var(--sidebar-width, 220px) - 20px);
+  width: calc(var(--sidebar-width) - 20px);
   margin: 0 10px 8px;
 }
 
@@ -588,4 +589,19 @@
 
 .tree__note::before {
   content: "← " / "";
+}
+
+/* Text link styled button; links are the only place a hand cursor appears. */
+button.link {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+button.link:hover {
+  text-decoration: underline;
 }

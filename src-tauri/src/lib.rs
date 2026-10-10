@@ -3,6 +3,7 @@ pub mod bank;
 pub mod bank_fees;
 pub mod commands;
 pub mod config;
+pub mod dates;
 pub mod error;
 pub mod excel;
 pub mod extract;

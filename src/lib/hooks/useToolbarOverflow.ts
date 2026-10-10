@@ -14,13 +14,13 @@ function room(header: HTMLElement, trailing: HTMLElement): number {
 }
 
 /**
- * How compact the toolbar's trailing controls must be to fit, from 0 (everything shown) to
- * `levels`. A level steps up while the controls overflow the toolbar, and steps back down once
+ * How compact the toolbar's trailing controls must be to fit: one of `levels`, ordered from
+ * everything shown to the most compact. A level steps up while the controls overflow the toolbar, and steps back down once
  * the toolbar has room for what the lower level measured. A change of `contentKey` (other
  * labels, other controls) starts over from 0. Window resizes are followed through ResizeObserver
  * where it exists.
  */
-export function useToolbarOverflow(slot: HTMLElement | null, levels: number, contentKey: string): number {
+export function useToolbarOverflow<Level>(slot: HTMLElement | null, levels: readonly Level[], contentKey: string): Level {
   const [level, setLevel] = useState(0);
   const latestLevel = useRef(level);
   latestLevel.current = level;
@@ -40,7 +40,7 @@ export function useToolbarOverflow(slot: HTMLElement | null, levels: number, con
     }
     const current = latestLevel.current;
     if (trailing.scrollWidth > trailing.clientWidth + 1) {
-      if (current < levels) {
+      if (current < levels.length - 1) {
         needs.current[current] = trailing.scrollWidth;
         setLevel(current + 1);
       }
@@ -71,5 +71,5 @@ export function useToolbarOverflow(slot: HTMLElement | null, levels: number, con
     return () => observer.disconnect();
   }, [slot, check]);
 
-  return level;
+  return levels[level];
 }

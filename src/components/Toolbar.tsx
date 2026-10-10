@@ -1,3 +1,4 @@
+import "./Toolbar.css";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IS_MACOS } from "../lib/platform";

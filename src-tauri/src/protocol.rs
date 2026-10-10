@@ -104,7 +104,7 @@ pub fn handle<R: Runtime>(
         .try_state::<Arc<crate::app::AppState>>()
         .and_then(|state| state.receipts_root());
     let path = request.uri().path().to_string();
-    std::thread::spawn(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         let result = root
             .ok_or(ProtocolError::NotConfigured)
             .and_then(|root| resolve(&root, &path))

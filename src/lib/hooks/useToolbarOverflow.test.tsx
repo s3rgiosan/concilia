@@ -49,9 +49,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const LEVELS = [0, 1, 2] as const;
+
 function Probe({ contentKey = "en" }: { contentKey?: string }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
-  const level = useToolbarOverflow(slot, 2, contentKey);
+  const level = useToolbarOverflow(slot, LEVELS, contentKey);
   return (
     <header className="titlebar">
       <div className="titlebar__leading" />

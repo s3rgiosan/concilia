@@ -31,7 +31,7 @@ import {
   type ScanResult,
 } from "../lib/tauri";
 import { deferred, makePeriodStatus, makeReceipt, makeReviewData, makeTransaction } from "../test/fixtures";
-import type { RejectKind, ReviewAvailability, ReviewCommands } from "./commands";
+import type { RejectKind, ReviewAvailability, ReviewCommands } from "../lib/menuCommands";
 import { Review, type ReviewProps } from "./Review";
 
 vi.mock("../lib/tauri", async (importOriginal) => ({
