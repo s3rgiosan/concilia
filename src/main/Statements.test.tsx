@@ -140,12 +140,12 @@ describe("statements", () => {
       { id: "00000000-0000-4000-8000-000000000002", path: "/Users/example/Downloads/EXTRATO-2030-02.PDF", bank: "cgd" },
     ]);
     expect(names()).toEqual(["extrato-2030-03.pdf", "EXTRATO-2030-02.PDF"]);
-    expect(screen.queryByText("Only PDF files can be added.")).toBeNull();
+    expect(screen.queryByText(/isn't a PDF/)).toBeNull();
   });
 
   it("offers no bank choice while only one bank exists", async () => {
     await renderStatements([statement()]);
-    expect(screen.queryByLabelText("Bank")).toBeNull();
+    expect(screen.queryByLabelText(/^Bank for/)).toBeNull();
   });
 
   it("changes a statement's bank when there is a choice", async () => {
@@ -153,7 +153,7 @@ describe("statements", () => {
     try {
       const other = statement({ id: "statement-2", path: "/Users/example/Downloads/extrato-2030-02.pdf", bank: "other" });
       const { onStatements } = await renderStatements([statement(), other]);
-      const banks = screen.getAllByLabelText("Bank");
+      const banks = screen.getAllByLabelText(/^Bank for/);
       fireEvent.change(banks[1], { target: { value: "cgd" } });
       expect(onStatements).toHaveBeenCalledWith([statement(), { ...other, bank: "cgd" }]);
     } finally {
@@ -179,12 +179,12 @@ describe("statements", () => {
     vi.mocked(pickStatements).mockResolvedValue(["/Users/example/Downloads/notes.txt", STATEMENT_PATH]);
     await renderStatements();
     await act(async () => fireEvent.click(button("Add Statements…")));
-    expect(screen.getByText("Only PDF files can be added.")).toBeTruthy();
+    expect(screen.getByText("notes.txt isn't a PDF. Only PDF statements can be added.")).toBeTruthy();
     expect(names()).toEqual(["extrato-2030-03.pdf"]);
 
     vi.mocked(pickStatements).mockResolvedValue(["/Users/example/Downloads/extrato-2030-02.pdf"]);
     await act(async () => fireEvent.click(button("Add Statements…")));
-    expect(screen.queryByText("Only PDF files can be added.")).toBeNull();
+    expect(screen.queryByText(/isn't a PDF/)).toBeNull();
   });
 
   it("reports a picker failure", async () => {
@@ -199,7 +199,7 @@ describe("statements", () => {
     await renderStatements();
     act(() => drop([STATEMENT_PATH, "/Users/example/Downloads/photo.png"]));
     expect(names()).toEqual(["extrato-2030-03.pdf"]);
-    expect(screen.getByText("Only PDF files can be added.")).toBeTruthy();
+    expect(screen.getByText("photo.png isn't a PDF. Only PDF statements can be added.")).toBeTruthy();
   });
 
   it("shows the file name with its full path as a tooltip", async () => {

@@ -20,7 +20,7 @@ afterEach(cleanup);
 describe("ReceiptPreview", () => {
   it("frames a PDF without the sidebar", () => {
     render(<ReceiptPreview receipt={makeReceipt("acme.pdf")} />);
-    expect(screen.getByTitle("acme.pdf").getAttribute("src")).toBe("receipt://localhost/2030/03/receipts/acme.pdf#navpanes=0");
+    expect(screen.getByTitle("Preview of acme.pdf").getAttribute("src")).toBe("receipt://localhost/2030/03/receipts/acme.pdf#navpanes=0");
   });
 
   it("shows an image", () => {

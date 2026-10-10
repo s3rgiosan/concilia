@@ -36,15 +36,15 @@ describe("ReceiptRow", () => {
     });
     expect(container.querySelector(".receipt-row__title")?.textContent).toBe("scan.pdf");
     expect(container.querySelector(".receipt-row__amount")).toBeNull();
-    expect(container.querySelector(".receipt-row__meta")?.textContent).toBe("Date unknownlow confidence");
+    expect(container.querySelector(".receipt-row__meta")?.textContent).toBe("Date unknownunsure reading");
   });
 
   it("says how much the amount differs", () => {
     renderRow({ mismatch: { kind: "amount", cents: 1500 } });
     expect(screen.getByText("Differs by €15.00")).toBeTruthy();
     cleanup();
-    renderRow({ mismatch: { kind: "fx" } });
-    expect(screen.getByText("Differs by more than 10%")).toBeTruthy();
+    renderRow({ receipt: makeReceipt("acme.pdf", { vendor: "ACME", currency: "USD" }), mismatch: { kind: "fx" } });
+    expect(screen.getByText("Differs by more than 10% (USD receipt)")).toBeTruthy();
   });
 
   it("focuses on click and shows it is focused", () => {
@@ -59,7 +59,7 @@ describe("ReceiptRow", () => {
   it("rescans and opens from its menu", () => {
     const { onRescan, onOpen } = renderRow();
     expect(screen.getByRole("combobox", { name: "Actions for ACME" })).toBeTruthy();
-    pick("Rescan");
+    pick("Read Again");
     pick("Open in Preview");
     expect(onRescan).toHaveBeenCalledTimes(1);
     expect(onOpen).toHaveBeenCalledTimes(1);
@@ -70,17 +70,18 @@ describe("ReceiptRow", () => {
     expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(true);
   });
 
-  it("shows a spinner and disables Rescan while rescanning", () => {
+  it("shows a spinner and disables Read Again while rescanning", () => {
     renderRow({ rescanning: true });
-    expect(screen.getByRole("status", { name: "Rescanning…" })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Reading…" })).toBeTruthy();
     const menu = screen.getByRole("combobox") as HTMLSelectElement;
-    expect(Array.from(menu.options).find((o) => o.textContent === "Rescan")?.disabled).toBe(true);
+    expect(Array.from(menu.options).find((o) => o.textContent === "Read Again")?.disabled).toBe(true);
   });
 
   it("runs its decision button", () => {
     const onClick = vi.fn();
-    renderRow({ action: { label: "Accept", onClick } });
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    renderRow({ action: { label: "Assign", accessibleName: "Assign ACME", onClick } });
+    expect(screen.getByText("Assign").textContent).toBe("Assign");
+    fireEvent.click(screen.getByRole("button", { name: "Assign ACME" }));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

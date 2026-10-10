@@ -131,7 +131,7 @@ describe("Welcome", () => {
 
   it("asks for the project in Settings when the key names none", () => {
     renderWelcome(makeView({ missing: ["project"], configured: false, service_account: { client_email: "reader@acme-test.iam.gserviceaccount.com", project_id: null } }));
-    expect(row("Google Cloud project").textContent).toBe("Google Cloud projectRequiredOpen Settings");
+    expect(row("Google Cloud project").textContent).toBe("Google Cloud projectEnter your Google Cloud project in Settings.Open Settings");
     fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
     expect(openSettings).toHaveBeenCalledTimes(1);
   });

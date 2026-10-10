@@ -28,6 +28,7 @@ const STATEMENTS_SCREEN: MenuModel = {
   configured: true,
   sidebarShown: true,
   inspectorShown: true,
+  rejectKind: "removeMatch",
   acceptsStatements: true,
   canReconcile: true,
   hasResult: false,
@@ -141,7 +142,10 @@ describe("labels", () => {
       about: "About {app}",
       hide: "Hide {app}",
       quit: "Quit {app}",
-      accept: "Accept Receipt",
+      accept: "Assign Receipt",
+      reject: "Remove Match",
+      rescan: "Read Receipt Again",
+      find: "Find",
       toggle_sidebar: "Hide Sidebar",
       toggle_inspector: "Hide Inspector",
     });
@@ -194,6 +198,19 @@ describe("labels", () => {
     rerender({ m: STATEMENTS_SCREEN });
     await flush();
     expect(labels()).toMatchObject({ toggle_sidebar: "Hide Sidebar", toggle_inspector: "Hide Inspector" });
+  });
+
+  it("names the reject item by what it does to the selected transaction", async () => {
+    const { rerender } = setup({ ...REVIEW_SCREEN, rejectKind: "noneOfThese" });
+    await flush();
+    expect(labels().reject).toBe("None of These");
+    rerender({ m: REVIEW_SCREEN });
+    await flush();
+    expect(labels().reject).toBe("Remove Match");
+    await act(async () => {
+      await i18n.changeLanguage("pt");
+    });
+    expect(labels().reject).toBe("Remover associação");
   });
 
   it("sends the labels before the state", async () => {

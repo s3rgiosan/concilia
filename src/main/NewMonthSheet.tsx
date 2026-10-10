@@ -19,7 +19,7 @@ export function NewMonthSheet({
   return (
     <Sheet title={t("newMonth.title")} submitLabel={t("newMonth.create")} onCancel={onCancel} onSubmit={() => onCreate(period)} width={360}>
       <div className="sheet__grid">
-        <label htmlFor="new-month-month">{t("form.month")}:</label>
+        <label htmlFor="new-month-month">{t("form.month")}</label>
         <PopUpButton
           id="new-month-month"
           label={t("form.month")}
@@ -27,7 +27,7 @@ export function NewMonthSheet({
           options={monthOptions(t)}
           onChange={(month) => setPeriod((prev) => ({ ...prev, month }))}
         />
-        <label htmlFor="new-month-year">{t("form.year")}:</label>
+        <label htmlFor="new-month-year">{t("form.year")}</label>
         <PopUpButton
           id="new-month-year"
           label={t("form.year")}

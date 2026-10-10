@@ -154,7 +154,7 @@ export function RulesTab({ onError }: { onError: (e: unknown) => void }) {
       </div>
       {editing ? (
         <Sheet
-          title={editing.index === null ? t("settings.rules.addRule") : t("settings.rules.editRule")}
+          title={editing.index === null ? t("settings.rules.addRuleTitle") : t("settings.rules.editRuleTitle")}
           submitLabel={editing.index === null ? t("common.add") : t("common.save")}
           submitDisabled={incomplete}
           busy={saving}

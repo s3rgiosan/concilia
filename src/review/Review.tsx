@@ -1,10 +1,11 @@
 import "./Review.css";
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
 import { useTranslation } from "react-i18next";
+import { ErrorText } from "../components/ErrorText";
 import { Icon } from "../components/Icon";
 import type { PopUpAction } from "../components/PopUpButton";
 import { ToolbarPortal, type ToolbarSlots } from "../components/Toolbar";
-import { friendlyError } from "../lib/errors";
+import { errorDetail, friendlyError } from "../lib/errors";
 import { useLatest } from "../lib/hooks/useLatest";
 import { useDockProgress } from "../lib/hooks/useDockProgress";
 import { useRun } from "../lib/hooks/useRun";
@@ -30,7 +31,7 @@ import {
   type Transaction,
 } from "../lib/tauri";
 import { RunProgress } from "../main/RunProgress";
-import type { ReviewAvailability, ReviewCommands } from "./commands";
+import type { RejectKind, ReviewAvailability, ReviewCommands } from "./commands";
 import { assign, changedIds, confirm, forDraft, noReceipt, patchDraftReceipt, unmatch, type Decision } from "./decisions";
 import {
   claimedFiles,
@@ -81,6 +82,8 @@ export interface ReviewProps {
   onError: (e: unknown) => void;
   /** Runs whenever the commands that can run change, such as for the app menu. */
   onAvailabilityChange?: (can: ReviewAvailability) => void;
+  /** Runs whenever the selected transaction changes what Reject does, such as for the app menu's label. */
+  onRejectKindChange?: (kind: RejectKind) => void;
   /** Runs whenever the inspector is shown or hidden, such as for the app menu's label. */
   onInspectorChange?: (shown: boolean) => void;
   ref?: Ref<ReviewCommands>;
@@ -90,7 +93,7 @@ export interface ReviewProps {
  * The review of a month's matches: a list of transactions beside an inspector for the selected
  * one. Decisions save as a draft until Finalize applies them, and each can be undone.
  */
-export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, onInspectorChange, ref }: ReviewProps) {
+export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, onRejectKindChange, onInspectorChange, ref }: ReviewProps) {
   const { t } = useTranslation();
   const { year, month } = period;
   const listId = useId();
@@ -394,6 +397,12 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     reportAvailability.current?.(JSON.parse(canKey) as ReviewAvailability);
   }, [canKey, reportAvailability]);
 
+  const rejectKind: RejectKind = selectedTx?.status === "REVIEW" ? "noneOfThese" : "removeMatch";
+  const reportRejectKind = useLatest(onRejectKindChange);
+  useEffect(() => {
+    reportRejectKind.current?.(rejectKind);
+  }, [rejectKind, reportRejectKind]);
+
   const reportInspector = useLatest(onInspectorChange);
   useEffect(() => {
     reportInspector.current?.(inspectorShown);
@@ -478,7 +487,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         {subtitle}
         <div className="banner banner--error" role="alert">
           <Icon name="warning" size={14} />
-          <span className="grow">{friendlyError(loadError, t)}</span>
+          <span className="grow">
+            <ErrorText error={loadError} />
+          </span>
           <button type="button" className="banner__action" onClick={load}>
             {t("common.tryAgain")}
           </button>
@@ -560,7 +571,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
             }}
             onKeyDown={onListKeyDown}
           />
-          {rows.length === 0 ? <p className="review__empty">{t("review.noTransactions")}</p> : null}
+          {rows.length === 0 ? (
+            <p className="review__empty">{search.trim() ? t("review.noResults", { query: search.trim() }) : t("review.noTransactions")}</p>
+          ) : null}
         </div>
       </div>
 
@@ -570,9 +583,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
 
       {scanState.phase === "running" || scanState.phase === "failed" ? (
         <div className="sheet-backdrop">
-          <div className="sheet sheet--wide" role="dialog" aria-modal="true" aria-label={t("review.scanTitle")}>
+          <div className="sheet sheet--wide" role="dialog" aria-modal="true" aria-label={t("review.scan")}>
             <RunProgress
-              title={t("review.scanTitle")}
+              title={t("review.scan")}
               steps={buildSteps("scan", scanState.events, scanState.phase === "failed" ? "failed" : null, t)}
               running={scanState.phase === "running"}
               cancelling={scanState.phase === "running" && scanState.cancelling}
@@ -582,7 +595,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
               <>
                 <div className="banner banner--error" role="alert">
                   <Icon name="warning" size={14} />
-                  <span>{friendlyError(scanState.error, t)}</span>
+                  <span>
+                    <ErrorText error={scanState.error} />
+                  </span>
                 </div>
                 <div className="sheet__actions">
                   <button type="button" className="default" onClick={scan.reset}>
@@ -614,16 +629,27 @@ function SaveStatus({ state }: { state: SaveState }) {
   const { t } = useTranslation();
   switch (state.kind) {
     case "saving":
-      return <span className="review-save"> · {t("review.saveState.saving")}</span>;
-    case "saved":
-      return <span className="review-save"> · {t("review.saveState.saved")}</span>;
-    case "failed": {
-      const detail = t("review.saveState.failedDetail", { message: friendlyError(state.error, t) });
       return (
-        <span className="review-save review-save--failed" role="alert" title={detail}>
-          {" · "}
+        <span className="review-save">
+          <span aria-hidden="true"> · </span>
+          {t("review.saveState.saving")}
+        </span>
+      );
+    case "saved":
+      return (
+        <span className="review-save">
+          <span aria-hidden="true"> · </span>
+          {t("review.saveState.saved")}
+        </span>
+      );
+    case "failed": {
+      const detail = errorDetail(state.error);
+      const reason = [friendlyError(state.error, t), detail ? t("errors.details", { detail }) : null].filter(Boolean).join(" ");
+      return (
+        <span className="review-save review-save--failed" role="alert" title={reason}>
+          <span aria-hidden="true"> · </span>
           <Icon name="warning" size={11} /> {t("review.saveState.failed")}
-          <span className="visually-hidden">: {detail}</span>
+          <span className="visually-hidden">: {reason}</span>
         </span>
       );
     }

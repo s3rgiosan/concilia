@@ -23,10 +23,10 @@ describe("buildSteps", () => {
   it("lists every reconcile step as pending before any event", () => {
     const steps = build("reconcile", []);
     expect(steps.map((s) => [s.id, s.label, s.status])).toEqual([
-      ["parse", "Parsing statements", "pending"],
+      ["parse", "Reading statements", "pending"],
       ["receipts", "Scanning receipts", "pending"],
       ["extract", "Extracting receipt data", "pending"],
-      ["match", "Matching", "pending"],
+      ["match", "Matching receipts", "pending"],
       ["reimbursements", "Reading reimbursements", "pending"],
       ["export", "Generating report", "pending"],
     ]);

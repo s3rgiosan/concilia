@@ -38,7 +38,7 @@ describe("ErrorBoundary", () => {
         <Bomb />
       </ErrorBoundary>,
     );
-    expect(screen.getByRole("alert").textContent).toContain("Something went wrong.");
+    expect(screen.getByRole("alert").textContent).toContain("Concilia ran into a problem. Try again, and if it keeps happening, restart the app.");
     expect(error.mock.calls.some((c) => c[0] === "view crashed")).toBe(true);
 
     shouldThrow = false;

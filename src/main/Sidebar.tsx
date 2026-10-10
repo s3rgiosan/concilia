@@ -1,7 +1,7 @@
 import { useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { ErrorText } from "../components/ErrorText";
 import { Icon } from "../components/Icon";
-import { friendlyError } from "../lib/errors";
 import { groupByYear, periodKey, statusLine, type Period } from "../lib/period";
 import type { PeriodSummary } from "../lib/tauri";
 
@@ -123,7 +123,9 @@ export function Sidebar({
       </div>
       {error ? (
         <div className="banner banner--error sidebar__error" role="alert">
-          <span className="grow">{friendlyError(error, t)}</span>
+          <span className="grow">
+            <ErrorText error={error} />
+          </span>
           <button type="button" className="banner__action" onClick={onRetry}>
             {t("common.tryAgain")}
           </button>

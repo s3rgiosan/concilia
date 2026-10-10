@@ -25,3 +25,12 @@ show these differences are kept out of the fixtures.
 - **Finalize input.** Finalize derives the reviewed state from `match-result.json` and the
   saved draft, and only touches receipts inside the period's `receipts/` folder. Node took
   both lists from the review screen.
+- **Report labels.** The Rust report words some sheet names and labels differently. The
+  fixtures keep the Node wording; `tests/excel.rs` maps it to the current wording before
+  comparing, and recomputes the width of any column whose labels changed. English: sheet
+  `Validated` is `All Transactions`, sheet `Review` is `Needs Review`, the totals header
+  `Label` is `Category`, and "FX" in notes reads "Foreign-currency". Portuguese: sheet
+  `Validados` is `Todas as transações`, `Revisão` is `Por rever`, `Sem Associação` is
+  `Sem associação`, the capitalised words in column headers are lower case ("Data da
+  transação", "Ficheiro do recibo", …), "Regra de correspondência" is "Regra de associação",
+  and "FX" in notes reads "moeda estrangeira".

@@ -24,9 +24,11 @@ describe("FinalizeSheet", () => {
     renderSheet();
     const sheet = screen.getByRole("alertdialog", { name: "Finalize March 2030?" });
     const description = document.getElementById(sheet.getAttribute("aria-describedby")!);
-    expect(description?.textContent).toBe(
-      "38 receipts will be moved: 31 to _matched, 2 to _review, 5 to _unmatched. Your draft will be deleted. You can't undo this.",
-    );
+    const lines = Array.from(description?.querySelectorAll(".sheet__line") ?? []).map((line) => line.textContent);
+    expect(lines).toEqual([
+      "38 receipts will be moved: 31 to _matched, 2 to _review and 5 to _unmatched. They stay in this month's receipts folder.",
+      "Your decisions are saved and the files are moved. You can't undo this.",
+    ]);
     expect(finalizeButton().classList.contains("destructive")).toBe(true);
     expect(finalizeButton().disabled).toBe(false);
     expect(screen.queryByRole("checkbox")).toBeNull();
@@ -41,18 +43,18 @@ describe("FinalizeSheet", () => {
 
   it("counts one receipt and none", () => {
     renderSheet({ counts: { matched: 1, review: 0, unmatched: 0, total: 1 } });
-    expect(screen.getByText(/^1 receipt will be moved: 1 to _matched, 0 to _review, 0 to _unmatched\./)).toBeTruthy();
+    expect(screen.getByText(/^1 receipt will be moved: 1 to _matched, 0 to _review and 0 to _unmatched\./)).toBeTruthy();
     cleanup();
     renderSheet({ counts: { matched: 0, review: 0, unmatched: 0, total: 0 } });
-    expect(screen.getByText(/^No receipts will be moved\. Your draft will be deleted\./)).toBeTruthy();
+    expect(screen.getByText("No receipts will be moved.")).toBeTruthy();
   });
 
   it("warns about transactions still needing a decision", () => {
     renderSheet({ pending: 6 });
-    expect(screen.getByText("6 transactions still need a decision.")).toBeTruthy();
+    expect(screen.getByText("6 transactions still need a decision. They will be sorted as they are now.")).toBeTruthy();
     cleanup();
     renderSheet({ pending: 1 });
-    expect(screen.getByText("1 transaction still needs a decision.")).toBeTruthy();
+    expect(screen.getByText("1 transaction still needs a decision. It will be sorted as it is now.")).toBeTruthy();
     cleanup();
     renderSheet();
     expect(screen.queryByText(/still need/)).toBeNull();

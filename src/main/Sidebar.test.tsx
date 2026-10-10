@@ -59,7 +59,7 @@ describe("Sidebar", () => {
         .map((o) => o.textContent),
     ]);
     expect(years).toEqual([
-      ["year-2030", ["MarchReady · 38 receipts", "FebruaryIn review · 6 left", "JanuaryFinalized"]],
+      ["year-2030", ["MarchReady · 38 receipts", "FebruaryIn review · 6 to decide", "JanuaryFinalized"]],
       ["year-2029", ["DecemberNo receipts"]],
     ]);
     expect(screen.getByRole("group", { name: "2030" })).toBeTruthy();
@@ -129,7 +129,7 @@ describe("Sidebar", () => {
 
   it("explains a listing that failed and lists again on Try Again", () => {
     const { onRetry } = renderSidebar({ error: { kind: "io", message: "unreadable" } });
-    expect(screen.getByRole("alert").textContent).toBe("Concilia couldn't read or write a file: unreadableTry Again");
+    expect(screen.getByRole("alert").textContent).toContain("Details: unreadable");
     fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

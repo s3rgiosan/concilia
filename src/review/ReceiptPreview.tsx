@@ -15,7 +15,7 @@ export function ReceiptPreview({ receipt }: { receipt: ReceiptMeta | null }) {
       {isImage(receipt.file) ? (
         <img className="receipt-preview__image" src={url} alt={name} />
       ) : (
-        <iframe className="receipt-preview__frame" title={name} src={`${url}#navpanes=0`} />
+        <iframe className="receipt-preview__frame" title={t("review.previewOf", { name })} src={`${url}#navpanes=0`} />
       )}
     </div>
   );

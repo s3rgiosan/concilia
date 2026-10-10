@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { ErrorText } from "../components/ErrorText";
 import { FormRow, FormSection } from "../components/Form";
 import { Sheet } from "../components/Sheet";
 import { TextSetting } from "../components/TextSetting";
-import { friendlyError } from "../lib/errors";
+import { errorDetail, friendlyError } from "../lib/errors";
 import { importServiceAccount, removeServiceAccount, testGeminiConnection, type AppStateView } from "../lib/tauri";
 import type { PaneProps } from "./types";
 
-type TestState = { kind: "idle" } | { kind: "testing" } | { kind: "ok" } | { kind: "failed"; message: string };
+type TestState = { kind: "idle" } | { kind: "testing" } | { kind: "ok" } | { kind: "failed"; error: unknown };
 
 export function GeminiTab({ state, save, replace, onError }: PaneProps & { replace: (view: AppStateView) => void }) {
   const { t } = useTranslation();
@@ -42,19 +43,31 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
     setTest({ kind: "testing" });
     testGeminiConnection().then(
       () => setTest({ kind: "ok" }),
-      (e) => setTest({ kind: "failed", message: friendlyError(e, t) }),
+      (error) => setTest({ kind: "failed", error }),
     );
   }
 
-  let keyDescription: string;
+  let keyDescription: ReactNode;
   if (state.service_account_error) {
-    keyDescription = t("settings.gemini.keyUnreadable", { message: state.service_account_error });
+    keyDescription = (
+      <>
+        {t("settings.gemini.keyUnreadable")}
+        <span className="error-detail">{t("errors.details", { detail: state.service_account_error })}</span>
+      </>
+    );
   } else if (account) {
     keyDescription = account.client_email;
   } else {
     keyDescription = t("settings.gemini.none");
   }
 
+  const testFailure = test.kind === "failed" ? test.error : null;
+  const testFailureTitle =
+    testFailure === null
+      ? undefined
+      : [friendlyError(testFailure, t), errorDetail(testFailure) ? t("errors.details", { detail: errorDetail(testFailure) }) : null]
+          .filter(Boolean)
+          .join(" ");
 
   const projectPlaceholder = account?.project_id
     ? t("settings.gemini.projectFromKey", { project: account.project_id })
@@ -66,7 +79,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
         <FormRow label={t("settings.gemini.key")} description={keyDescription}>
           {account ? (
             <button type="button" className="destructive" onClick={() => setConfirmRemove(true)} disabled={locked}>
-              {t("common.remove")}
+              {t("settings.gemini.remove")}
             </button>
           ) : null}
           <button type="button" onClick={importKey} disabled={locked}>
@@ -74,7 +87,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
           </button>
         </FormRow>
       </FormSection>
-      <FormSection footer={test.kind === "failed" ? test.message : undefined}>
+      <FormSection footer={testFailure !== null ? <ErrorText error={testFailure} /> : undefined}>
         <FormRow label={t("settings.gemini.project")} htmlFor="project">
           <TextSetting
             id="project"
@@ -85,11 +98,12 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
             onCommit={(project) => save((s) => ({ ...s, gemini: { ...s.gemini, project: project || null } }))}
           />
         </FormRow>
-        <FormRow label={t("settings.gemini.location")} htmlFor="location">
+        <FormRow label={t("settings.gemini.region")} htmlFor="location">
           <TextSetting
             id="location"
-            label={t("settings.gemini.location")}
+            label={t("settings.gemini.region")}
             value={gemini.location}
+            placeholder="europe-west1"
             disabled={locked}
             onCommit={(location) => save((s) => ({ ...s, gemini: { ...s.gemini, location } }))}
           />
@@ -99,12 +113,13 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
             id="model"
             label={t("settings.gemini.model")}
             value={gemini.model}
+            placeholder="gemini-2.5-flash"
             disabled={locked}
             onCommit={(model) => save((s) => ({ ...s, gemini: { ...s.gemini, model } }))}
           />
         </FormRow>
-        <FormRow label="">
-          <span className="value value--status" role="status" title={test.kind === "failed" ? test.message : undefined}>
+        <FormRow label={t("settings.gemini.connection")}>
+          <span className="value value--status" role="status" title={testFailureTitle}>
             {test.kind === "ok" ? (
               <>
                 <span className="dot dot--green" aria-hidden="true" />
@@ -127,7 +142,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
         <Sheet
           title={t("settings.gemini.removeTitle")}
           message={t("settings.gemini.removeMessage")}
-          submitLabel={t("common.remove")}
+          submitLabel={t("settings.gemini.removeConfirm")}
           destructive
           busy={removing}
           onCancel={() => setConfirmRemove(false)}

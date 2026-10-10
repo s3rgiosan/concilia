@@ -21,6 +21,9 @@ export const REVIEW_COMMANDS = [
   "finalize",
 ] as const;
 
+/** What Reject does for the selected transaction: None of These for REVIEW, Remove Match for MATCHED. */
+export type RejectKind = "noneOfThese" | "removeMatch";
+
 export type ReviewCommand = (typeof REVIEW_COMMANDS)[number];
 
 /** Whether each command can run now. */
@@ -33,7 +36,7 @@ export type ReviewAvailability = Record<ReviewCommand, boolean>;
 export interface ReviewCommands {
   /** Accepts the focused candidate of a REVIEW transaction, or assigns it to an UNMATCHED one. */
   accept: () => void;
-  /** Sends the selected transaction back to UNMATCHED: None of These for REVIEW, Dispute for MATCHED. */
+  /** Sends the selected transaction back to UNMATCHED: None of These for REVIEW, Remove Match for MATCHED. */
   reject: () => void;
   noReceipt: (category: NoReceiptCategory) => void;
   /** Reads the focused receipt again. */

@@ -25,7 +25,12 @@ export function FinalizeSheet({
   return (
     <Sheet
       title={t("review.finalizeConfirm.title", { period })}
-      message={`${moves} ${t("review.finalizeConfirm.irreversible")}`}
+      message={
+        <>
+          <span className="sheet__line">{moves}</span>
+          <span className="sheet__line">{t("review.finalizeConfirm.irreversible")}</span>
+        </>
+      }
       submitLabel={t("review.finalizeConfirm.confirm")}
       destructive
       busy={busy}

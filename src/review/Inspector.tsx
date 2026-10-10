@@ -17,7 +17,7 @@ export interface InspectorHandlers {
   onFocusReceipt: (receipt: ReceiptMeta) => void;
   /** Accepts a REVIEW candidate or assigns a pool receipt to an UNMATCHED transaction. */
   onAccept: (receipt: ReceiptMeta) => void;
-  /** None of These for REVIEW, Dispute for MATCHED. */
+  /** None of These for REVIEW, Remove Match for MATCHED. */
   onReject: () => void;
   onNoReceipt: (category: NoReceiptCategory) => void;
   onRescan: (receipt: ReceiptMeta) => void;
@@ -62,7 +62,7 @@ export function Inspector({
     />
   );
 
-  const receiptRow = (receipt: ReceiptMeta, txAbsCents: number | null, action?: { label: string; onClick: () => void }) => (
+  const receiptRow = (receipt: ReceiptMeta, txAbsCents: number | null, action?: { label: string; accessibleName: string; onClick: () => void }) => (
     <ReceiptRow
       key={receipt.file}
       receipt={receipt}
@@ -117,7 +117,7 @@ export function Inspector({
         body =
           receipts.length > 0 ? (
             <ul className="receipt-list">
-              {receipts.map((r) => receiptRow(r, tx.abs_cents, { label: t("review.actions.accept"), onClick: () => handlers.onAccept(r) }))}
+              {receipts.map((r) => receiptRow(r, tx.abs_cents, { label: t("review.actions.assign"), accessibleName: t("review.assignReceipt", { name: receiptTitle(r) }), onClick: () => handlers.onAccept(r) }))}
             </ul>
           ) : (
             <p className="inspector__note">{t("review.candidatesTaken")}</p>
@@ -136,7 +136,7 @@ export function Inspector({
         body =
           receipts.length > 0 ? (
             <ul className="receipt-list">
-              {receipts.map((r) => receiptRow(r, tx.abs_cents, { label: t("review.actions.assign"), onClick: () => handlers.onAccept(r) }))}
+              {receipts.map((r) => receiptRow(r, tx.abs_cents, { label: t("review.actions.assign"), accessibleName: t("review.assignReceipt", { name: receiptTitle(r) }), onClick: () => handlers.onAccept(r) }))}
             </ul>
           ) : (
             <p className="inspector__note">{t("review.noCandidates")}</p>
@@ -149,13 +149,13 @@ export function Inspector({
         if (isNoReceipt(tx.notes)) {
           body = <p className="inspector__note">{t("review.noReceiptNeeded", { category: noReceiptLabel(tx.notes, t) })}</p>;
         } else if (receipts.length === 0) {
-          body = <p className="inspector__note">{t("review.noReceipt")}</p>;
+          body = <p className="inspector__note">{t("review.noReceiptCategories.noReceipt")}</p>;
         } else {
           body = <ul className="receipt-list">{receipts.map((r) => receiptRow(r, tx.abs_cents))}</ul>;
         }
         actions = (
           <button type="button" onClick={handlers.onReject}>
-            {t("review.actions.dispute")}
+            {t("review.actions.removeMatch")}
           </button>
         );
         break;

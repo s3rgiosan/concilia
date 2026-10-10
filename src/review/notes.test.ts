@@ -23,8 +23,8 @@ describe("matchReason", () => {
     expect(matchReason("", t)).toBe("");
   });
 
-  it("names the currency of an FX match", () => {
-    expect(matchReason("fx_match (USD)", t)).toBe("FX match (USD)");
+  it("names the currency of a foreign-currency match", () => {
+    expect(matchReason("fx_match (USD)", t)).toBe("Foreign-currency match (USD)");
   });
 
   it("names the vendor of a rule match", () => {
@@ -33,7 +33,7 @@ describe("matchReason", () => {
 
   it("describes a rule or FX match without detail", () => {
     expect(matchReason("rule_match", t)).toBe("Rule match ()");
-    expect(matchReason("fx_match", t)).toBe("FX match ()");
+    expect(matchReason("fx_match", t)).toBe("Foreign-currency match ()");
   });
 
   it.each([
@@ -61,8 +61,8 @@ describe("matchReason", () => {
   });
 
   it("counts FX receipts with their tolerance", () => {
-    expect(matchReason("1 fx receipts within 10%", t)).toBe("1 FX receipt within 10%");
-    expect(matchReason("3 fx receipts within 10%", t)).toBe("3 FX receipts within 10%");
+    expect(matchReason("1 fx receipts within 10%", t)).toBe("1 foreign-currency receipt within 10%");
+    expect(matchReason("3 fx receipts within 10%", t)).toBe("3 foreign-currency receipts within 10%");
   });
 
   it("shows unknown codes as they are", () => {

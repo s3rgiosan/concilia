@@ -1,6 +1,6 @@
 //! The Excel report.
 //!
-//! Sheets, in order: Totals, Validated (every transaction), Matched and Review (one row per
+//! Sheets, in order: Totals, All Transactions, Matched and Needs Review (one row per
 //! receipt of a MATCHED or REVIEW transaction), Unmatched (receipts no transaction uses), and
 //! Reimbursements when there are any. [`build`] lays the sheets out as data; [`write`] saves
 //! them as `.xlsx`.
@@ -427,7 +427,7 @@ mod tests {
         let en = strings(Language::En);
         assert_eq!(
             format_notes("fx_match (USD ±10%)", en),
-            "FX match (USD ±10%)"
+            "Foreign-currency match (USD ±10%)"
         );
         assert_eq!(format_notes("rule_match (ACME)", en), "Rule match (ACME)");
         assert_eq!(
@@ -440,11 +440,11 @@ mod tests {
         );
         assert_eq!(
             format_notes("3 fx receipts within ±10%", en),
-            "3 FX receipts within ±10%"
+            "3 foreign-currency receipts within ±10%"
         );
         assert_eq!(
             format_notes("1 fx receipts within ±10%", en),
-            "1 FX receipt within ±10%"
+            "1 foreign-currency receipt within ±10%"
         );
         assert_eq!(
             format_notes("2 receipts match name+amount (unknown currency)", en),

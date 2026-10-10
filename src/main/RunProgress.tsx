@@ -44,7 +44,12 @@ export function RunProgress({
             </span>
             <div className="grow">
               <span className="step__label">{step.label}</span>
-              {step.detail ? <span className="step__detail muted"> · {step.detail}</span> : null}
+              {step.detail ? (
+                <span className="step__detail muted">
+                  <span aria-hidden="true"> · </span>
+                  {step.detail}
+                </span>
+              ) : null}
               {step.progress && step.progress.total > 0 ? (
                 <progress
                   className="step__progress"
@@ -61,7 +66,7 @@ export function RunProgress({
         <footer className="run__actions">
           <span className="grow" />
           <button type="button" onClick={onCancel} disabled={cancelling}>
-            {cancelling ? t("progress.cancelling") : t("progress.cancel")}
+            {cancelling ? t("progress.cancelling") : t("common.cancel")}
           </button>
         </footer>
       ) : null}

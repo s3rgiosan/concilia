@@ -26,7 +26,7 @@ export function ReceiptRow({
   focused: boolean;
   mismatch: Mismatch | null;
   rescanning: boolean;
-  action?: { label: string; onClick: () => void };
+  action?: { label: string; accessibleName: string; onClick: () => void };
   onFocus: () => void;
   onRescan: () => void;
   onOpen: () => void;
@@ -39,7 +39,7 @@ export function ReceiptRow({
       difference = t("review.mismatch.amount", { amount: formatMoney(mismatch.cents, "EUR", i18n.language) });
       break;
     case "fx":
-      difference = t("review.mismatch.fx");
+      difference = t("review.mismatch.fx", { currency: receipt.currency ?? "" });
       break;
     default:
       break;
@@ -76,7 +76,7 @@ export function ReceiptRow({
           ]}
         />
         {action ? (
-          <button type="button" onClick={action.onClick}>
+          <button type="button" aria-label={action.accessibleName} onClick={action.onClick}>
             {action.label}
           </button>
         ) : null}

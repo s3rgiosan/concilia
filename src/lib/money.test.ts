@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatMoney, formatSignedMoney } from "./money";
+import { formatMoney, formatPercent, formatSignedMoney } from "./money";
 
 const NBSP = " ";
 
@@ -67,5 +67,13 @@ describe("formatSignedMoney", () => {
     });
     expect(formatSignedMoney(1000, "EUR", "en")).toBe("+10.00 EUR");
     expect(formatSignedMoney(-1000, "EUR", "en")).toBe("-10.00 EUR");
+  });
+});
+
+describe("formatPercent", () => {
+  it("formats a whole percentage in each language", () => {
+    expect(formatPercent(74, "en")).toBe("74%");
+    expect(formatPercent(74, "pt")).toBe(`74${NBSP}%`);
+    expect(formatPercent(0, "en")).toBe("0%");
   });
 });

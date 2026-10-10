@@ -609,6 +609,16 @@ button.link:hover {
   background: var(--fill);
 }
 
+/* The backend's own words for an error, under its sentence. */
+.error-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--label-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .banner--error {
   background: color-mix(in srgb, var(--red) 14%, transparent);
 }
@@ -974,6 +984,19 @@ button.icon.titlebar__button {
 
 .sheet__grid > label {
   text-align: right;
+}
+
+.sheet__grid > label::after {
+  content: ":";
+  content: ":" / "";
+}
+
+.sheet__line {
+  display: block;
+}
+
+.sheet__line + .sheet__line {
+  margin-top: 6px;
 }
 
 .sheet__grid > .popup-button {

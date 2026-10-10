@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { ErrorText } from "../components/ErrorText";
 import { FormRow, FormSection, Toggle } from "../components/Form";
 import { PopUpButton } from "../components/PopUpButton";
-import { friendlyError } from "../lib/errors";
 import { useInstallUpdate } from "../lib/hooks/useInstallUpdate";
 import { appVersion, checkForUpdates, popplerStatus, type Language, type PopplerStatus, type UpdateInfo } from "../lib/tauri";
 import type { PaneProps } from "./types";
@@ -12,13 +12,13 @@ type LanguageChoice = Language | "system";
 export function GeneralTab({ state, save, onError }: PaneProps) {
   const { t } = useTranslation();
   const [version, setVersion] = useState("");
-  const [poppler, setPoppler] = useState<PopplerStatus | string | null>(null);
+  const [poppler, setPoppler] = useState<PopplerStatus | { error: unknown } | null>(null);
   const disabled = state.read_only;
 
   useEffect(() => {
     appVersion().then(setVersion, onError);
-    popplerStatus().then(setPoppler, (e) => setPoppler(friendlyError(e, t)));
-  }, [onError, t]);
+    popplerStatus().then(setPoppler, (error) => setPoppler({ error }));
+  }, [onError]);
 
   const languages: { value: LanguageChoice; label: string }[] = [
     { value: "system", label: t("settings.general.languageSystem") },
@@ -26,9 +26,9 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
     { value: "pt", label: t("lang.pt") },
   ];
 
-  let pdfTools = "";
-  if (typeof poppler === "string") {
-    pdfTools = poppler;
+  let pdfTools: ReactNode = t("common.loading");
+  if (poppler && "error" in poppler) {
+    pdfTools = <ErrorText error={poppler.error} />;
   } else if (poppler) {
     pdfTools = t(poppler.bundled ? "settings.general.pdfToolsBundled" : "settings.general.pdfToolsSystem", { version: poppler.version });
   }
@@ -67,7 +67,7 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
 
       <FormSection title={t("settings.general.pdfSection")}>
         <FormRow label={t("settings.general.pdfTools")}>
-          <span className="value">{pdfTools || t("common.loading")}</span>
+          <span className="value">{pdfTools}</span>
         </FormRow>
       </FormSection>
     </div>

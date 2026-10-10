@@ -46,12 +46,15 @@ impl ErrorKind {
     }
 }
 
-/// A failed command as the frontend receives it: `{ "kind": ..., "message": ... }`.
+/// A failed command as the frontend receives it: `{ "kind": ..., "message": ... }`, plus a
+/// `code` when the failure is a known case that has its own copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, thiserror::Error)]
 #[error("{message}")]
 pub struct CommandError {
     pub kind: ErrorKind,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 impl CommandError {
@@ -59,6 +62,16 @@ impl CommandError {
         CommandError {
             kind,
             message: message.into(),
+            code: None,
+        }
+    }
+
+    /// An error of a known case, which the frontend words by `code`.
+    pub fn coded(kind: ErrorKind, code: &str, message: impl Into<String>) -> CommandError {
+        CommandError {
+            kind,
+            message: message.into(),
+            code: Some(code.to_string()),
         }
     }
 
@@ -96,8 +109,13 @@ impl From<PipelineError> for CommandError {
             PipelineError::Finalized => ErrorKind::Finalized,
             PipelineError::Cancelled => ErrorKind::Cancelled,
             PipelineError::Io(_) => ErrorKind::Io,
+            PipelineError::Coded { kind, .. } => *kind,
         };
-        CommandError::new(kind, error.to_string())
+        let message = error.to_string();
+        match error {
+            PipelineError::Coded { code, .. } => CommandError::coded(kind, code, message),
+            _ => CommandError::new(kind, message),
+        }
     }
 }
 
@@ -175,6 +193,22 @@ mod tests {
             serde_json::to_value(&error).unwrap(),
             serde_json::json!({ "kind": "poppler_missing", "message": "pdftotext not found; install poppler" })
         );
+    }
+
+    #[test]
+    fn serializes_the_code_only_when_present() {
+        let error = CommandError::coded(ErrorKind::NotFound, "not_reconciled", "x");
+        assert_eq!(
+            serde_json::to_value(&error).unwrap(),
+            serde_json::json!({ "kind": "not_found", "message": "x", "code": "not_reconciled" })
+        );
+        let error = CommandError::from(PipelineError::coded(
+            ErrorKind::InvalidInput,
+            "not_pdf",
+            "a.txt is not a PDF file",
+        ));
+        assert_eq!(error.code.as_deref(), Some("not_pdf"));
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
     }
 
     #[test]

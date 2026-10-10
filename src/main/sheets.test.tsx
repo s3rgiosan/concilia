@@ -31,6 +31,12 @@ describe("NewMonthSheet", () => {
     expect(document.activeElement).toBe(within(sheet).getByLabelText("Month"));
   });
 
+  it("writes its labels without punctuation", () => {
+    renderSheet();
+    const labels = Array.from(document.querySelectorAll(".sheet__grid > label")).map((label) => label.textContent);
+    expect(labels).toEqual(["Month", "Year"]);
+  });
+
   it("offers every year from next year down to 2000", () => {
     renderSheet();
     const years = within(screen.getByLabelText("Year")).getAllByRole("option").map((o) => o.textContent);
@@ -65,9 +71,9 @@ describe("RerunSheet", () => {
 
   it("asks before re-running and explains what happens", () => {
     renderSheet();
-    const sheet = screen.getByRole("alertdialog", { name: "Re-run March 2030?" });
+    const sheet = screen.getByRole("alertdialog", { name: "Reconcile March 2030 again?" });
     expect(sheet.getAttribute("aria-describedby")).toBeTruthy();
-    expect(within(sheet).getByText("Sorted receipts move back into the receipts folder and Gemini reads every receipt again.")).toBeTruthy();
+    expect(within(sheet).getByText("Receipts that were sorted move back to the receipts folder, and Concilia reads every receipt again. This can take a while.")).toBeTruthy();
   });
 
   it("makes Cancel the default button", () => {
@@ -75,7 +81,7 @@ describe("RerunSheet", () => {
     const cancel = screen.getByRole("button", { name: "Cancel" });
     expect(cancel.className).toBe("default");
     expect(document.activeElement).toBe(cancel);
-    expect(screen.getByRole("button", { name: "Re-run" }).className).toBe("destructive");
+    expect(screen.getByRole("button", { name: "Reconcile Again" }).className).toBe("destructive");
     fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Enter" });
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -83,7 +89,7 @@ describe("RerunSheet", () => {
 
   it("re-runs on confirm", () => {
     const { onConfirm } = renderSheet();
-    fireEvent.click(screen.getByRole("button", { name: "Re-run" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reconcile Again" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

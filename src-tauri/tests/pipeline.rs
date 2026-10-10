@@ -30,6 +30,13 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
+fn assert_code(error: &PipelineError, code: &str) {
+    assert!(
+        matches!(error, PipelineError::Coded { code: c, .. } if *c == code),
+        "{error:?}"
+    );
+}
+
 const ACME_ID: &str = "tx-001-2030-03-01--1000";
 const FEE_ID: &str = "tx-002-2030-03-02--100";
 const GLOBEX_ID: &str = "tx-003-2030-03-03--2000";
@@ -331,7 +338,7 @@ async fn reconciles_one_statement() {
         files(&result.unmatched_receipts),
         [initech.to_string_lossy()]
     );
-    assert!(report_sheet_names(&h.paths.report()).contains(&"Validated".to_string()));
+    assert!(report_sheet_names(&h.paths.report()).contains(&"All Transactions".to_string()));
 
     let mut expected = vec![
         RunEvent::Parsing { count: 1 },
@@ -409,7 +416,7 @@ async fn reconciling_without_statements_or_transactions_is_invalid() {
 
     let error = pipeline::reconcile(&h.ctx(), &[], false).await.unwrap_err();
 
-    assert!(matches!(error, PipelineError::InvalidInput(_)), "{error:?}");
+    assert_code(&error, "no_transactions");
     assert!(!h.paths.match_result().exists());
     assert_eq!(h.extractor.call_count(), 0);
 }
@@ -423,7 +430,7 @@ async fn statements_without_transactions_fail_to_parse() {
         .await
         .unwrap_err();
 
-    assert!(matches!(error, PipelineError::Parse(_)), "{error:?}");
+    assert_code(&error, "no_bank_match");
     assert!(!h.paths.transactions().exists());
 }
 
@@ -442,11 +449,7 @@ async fn statements_must_be_existing_pdf_files() {
         let error = pipeline::reconcile(&h.ctx(), &[statement], false)
             .await
             .unwrap_err();
-        assert!(
-            matches!(error, PipelineError::InvalidInput(_)),
-            "{}: {error:?}",
-            path.display()
-        );
+        assert_code(&error, "not_pdf");
     }
     assert_eq!(h.statements.calls.load(Ordering::SeqCst), 0);
 }
@@ -690,7 +693,7 @@ async fn scanning_needs_a_reconciled_period() {
 
     let error = pipeline::scan_receipts(&h.ctx()).await.unwrap_err();
 
-    assert!(matches!(error, PipelineError::NotFound(_)), "{error:?}");
+    assert_code(&error, "not_reconciled");
     assert_eq!(h.extractor.call_count(), 0);
 }
 
@@ -809,10 +812,7 @@ fn resolves_files_inside_the_right_folder() {
         (RescanKind::Receipt, "2030/03/reimbursements/taxi.jpg"),
     ] {
         let error = pipeline::resolve_period_file(&paths, kind, relative).unwrap_err();
-        assert!(
-            matches!(error, PipelineError::InvalidInput(_)),
-            "{relative}: {error:?}"
-        );
+        assert_code(&error, "receipt_outside_period");
     }
 }
 
@@ -844,10 +844,7 @@ fn refuses_files_outside_the_receipts_folder() {
     ] {
         let error =
             pipeline::resolve_period_file(&paths, RescanKind::Receipt, relative).unwrap_err();
-        assert!(
-            matches!(error, PipelineError::InvalidInput(_)),
-            "{relative}: {error:?}"
-        );
+        assert_code(&error, "receipt_outside_period");
     }
 }
 
@@ -861,7 +858,7 @@ fn reports_missing_period_files_as_not_found() {
         pipeline::resolve_period_file(&paths, RescanKind::Receipt, "2030/03/receipts/gone.pdf")
             .unwrap_err();
 
-    assert!(matches!(error, PipelineError::NotFound(_)), "{error:?}");
+    assert_code(&error, "file_missing");
 }
 
 #[cfg(unix)]
@@ -878,7 +875,7 @@ fn refuses_symlinks_leading_out_of_the_receipts_folder() {
         pipeline::resolve_period_file(&paths, RescanKind::Receipt, "2030/03/receipts/link.pdf")
             .unwrap_err();
 
-    assert!(matches!(error, PipelineError::InvalidInput(_)), "{error:?}");
+    assert_code(&error, "receipt_outside_period");
 }
 
 fn period_paths(root: &Path, month: &str) -> PeriodPaths {
@@ -1218,7 +1215,7 @@ async fn exports_the_plain_result_when_the_draft_does_not_apply() {
 fn exporting_needs_a_match_result() {
     let dir = tempfile::tempdir().unwrap();
     let error = pipeline::export_report(&period().paths(dir.path()), Language::En).unwrap_err();
-    assert!(matches!(error, PipelineError::NotFound(_)), "{error:?}");
+    assert_code(&error, "not_reconciled");
 }
 
 // Review data, status and drafts.
@@ -1274,7 +1271,7 @@ async fn review_data_adds_period_relative_paths() {
 fn review_data_needs_a_match_result() {
     let dir = tempfile::tempdir().unwrap();
     let error = pipeline::review_data(&period().paths(dir.path())).unwrap_err();
-    assert!(matches!(error, PipelineError::NotFound(_)), "{error:?}");
+    assert_code(&error, "not_reconciled");
 }
 
 #[test]

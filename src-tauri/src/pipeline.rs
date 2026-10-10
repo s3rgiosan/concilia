@@ -11,6 +11,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::bank::{normalize_statements, Bank};
+use crate::error::ErrorKind;
 use crate::excel;
 use crate::extract::{
     extract_all, ExtractAllError, ExtractError, ExtractOptions, ReceiptExtractor,
@@ -48,6 +49,31 @@ pub enum PipelineError {
     Cancelled,
     #[error("{0}")]
     Io(String),
+    /// A known case the frontend words by `code`.
+    #[error("{message}")]
+    Coded {
+        kind: ErrorKind,
+        code: &'static str,
+        message: String,
+    },
+}
+
+impl PipelineError {
+    pub fn coded(kind: ErrorKind, code: &'static str, message: impl Into<String>) -> Self {
+        PipelineError::Coded {
+            kind,
+            code,
+            message: message.into(),
+        }
+    }
+
+    fn not_reconciled() -> Self {
+        PipelineError::coded(
+            ErrorKind::NotFound,
+            "not_reconciled",
+            "this period has not been reconciled yet",
+        )
+    }
 }
 
 impl From<FsError> for PipelineError {
@@ -261,8 +287,10 @@ pub async fn reconcile(
     let transactions: Vec<StatementTransaction> = if statements.is_empty() {
         (ctx.progress)(RunEvent::Parsing { count: 0 });
         read_json_opt(&ctx.paths.transactions())?.ok_or_else(|| {
-            PipelineError::InvalidInput(
-                "add a bank statement; this period has no transactions yet".into(),
+            PipelineError::coded(
+                ErrorKind::InvalidInput,
+                "no_transactions",
+                "add a bank statement; this period has no transactions yet",
             )
         })?
     } else {
@@ -272,10 +300,11 @@ pub async fn reconcile(
         let mut parsed = Vec::new();
         for statement in statements {
             if !is_pdf(&statement.path) || !statement.path.is_file() {
-                return Err(PipelineError::InvalidInput(format!(
-                    "{} is not a PDF file",
-                    statement.path.display()
-                )));
+                return Err(PipelineError::coded(
+                    ErrorKind::InvalidInput,
+                    "not_pdf",
+                    format!("{} is not a PDF file", statement.path.display()),
+                ));
             }
             let text = ctx.statements.text(&statement.path).await?;
             ctx.check_cancelled()?;
@@ -284,9 +313,10 @@ pub async fn reconcile(
         let transactions =
             normalize_statements(&parsed).map_err(|e| PipelineError::Parse(e.to_string()))?;
         if transactions.is_empty() {
-            return Err(PipelineError::Parse(
-                "no transactions found in the statements; check the bank selected for each file"
-                    .into(),
+            return Err(PipelineError::coded(
+                ErrorKind::Parse,
+                "no_bank_match",
+                "no transactions found in the statements; check the bank selected for each file",
             ));
         }
         write_json(&ctx.paths.transactions(), &transactions)?;
@@ -307,8 +337,8 @@ pub async fn reconcile(
 pub async fn scan_receipts(
     ctx: &RunContext<'_>,
 ) -> Result<(Summary, Vec<DroppedDecision>), PipelineError> {
-    let transactions: Vec<StatementTransaction> = read_json_opt(&ctx.paths.transactions())?
-        .ok_or_else(|| PipelineError::NotFound("this period has not been reconciled yet".into()))?;
+    let transactions: Vec<StatementTransaction> =
+        read_json_opt(&ctx.paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
     if ctx.paths.applied_marker().exists() {
         return Err(PipelineError::Finalized);
     }
@@ -354,7 +384,13 @@ pub fn resolve_period_file(
     kind: RescanKind,
     relative: &str,
 ) -> Result<PeriodFile, PipelineError> {
-    let outside = || PipelineError::InvalidInput("the file is not a receipt of this period".into());
+    let outside = || {
+        PipelineError::coded(
+            ErrorKind::InvalidInput,
+            "receipt_outside_period",
+            "the file is not a receipt of this period",
+        )
+    };
     let rest = relative
         .strip_prefix(&paths.prefix)
         .and_then(|r| r.strip_prefix('/'))
@@ -374,9 +410,13 @@ pub fn resolve_period_file(
     if !stored_path.starts_with(folder) || !is_receipt_name(rest) {
         return Err(outside());
     }
-    let canonical = stored_path
-        .canonicalize()
-        .map_err(|_| PipelineError::NotFound("the receipt file no longer exists".into()))?;
+    let canonical = stored_path.canonicalize().map_err(|_| {
+        PipelineError::coded(
+            ErrorKind::NotFound,
+            "file_missing",
+            "the receipt file no longer exists",
+        )
+    })?;
     let folder_real = folder.canonicalize().map_err(|e| io(folder, e))?;
     if !canonical.starts_with(&folder_real) || !canonical.is_file() {
         return Err(outside());
@@ -406,7 +446,13 @@ pub async fn rescan(
     let extracted =
         tokio::time::timeout(RESCAN_TIMEOUT, extractor.extract(Path::new(&file.stored)))
             .await
-            .map_err(|_| PipelineError::Io("Gemini took too long to read the receipt".into()))?;
+            .map_err(|_| {
+                PipelineError::coded(
+                    ErrorKind::Io,
+                    "read_timeout",
+                    "Gemini took too long to read the receipt",
+                )
+            })?;
     let mut meta = match extracted {
         Ok(meta) => meta,
         Err(ExtractError::Fatal(message)) => return Err(PipelineError::Unauthorized(message)),
@@ -471,8 +517,8 @@ fn inside_receipts(paths: &PeriodPaths, file: &str) -> bool {
 /// result and report, marks the period finalized and deletes the draft. Either every file
 /// moves and both files are written, or nothing changes.
 pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineError> {
-    let result: MatchResult = read_json_opt(&paths.match_result())?
-        .ok_or_else(|| PipelineError::NotFound("this period has not been reconciled yet".into()))?;
+    let result: MatchResult =
+        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
     let draft: Draft = read_json_opt(&paths.draft())?.unwrap_or_default();
     let merged =
         merge_draft(&result, &draft).map_err(|e| PipelineError::InvalidInput(e.to_string()))?;
@@ -561,8 +607,8 @@ fn time_now_iso() -> String {
 /// Writes the report from the match result with pending review decisions applied, and
 /// returns its path. Decisions that cannot be applied are left out.
 pub fn export_report(paths: &PeriodPaths, language: Language) -> Result<PathBuf, PipelineError> {
-    let result: MatchResult = read_json_opt(&paths.match_result())?
-        .ok_or_else(|| PipelineError::NotFound("this period has not been reconciled yet".into()))?;
+    let result: MatchResult =
+        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
     let draft: Draft = read_json_opt(&paths.draft())
         .unwrap_or_else(|error| {
             log::warn!("report without the review draft: {error}");
@@ -587,8 +633,8 @@ pub fn export_report(paths: &PeriodPaths, language: Language) -> Result<PathBuf,
 /// What the review screen loads: the match result and reimbursements, each receipt with its
 /// period-relative `rel_path` for previews.
 pub fn review_data(paths: &PeriodPaths) -> Result<Value, PipelineError> {
-    let result: MatchResult = read_json_opt(&paths.match_result())?
-        .ok_or_else(|| PipelineError::NotFound("this period has not been reconciled yet".into()))?;
+    let result: MatchResult =
+        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
     let reimbursements = read_cache(&paths.reimbursements_cache());
     let with_path = |meta: &ReceiptMeta| -> Value {
         let mut value = serde_json::to_value(meta).unwrap_or(Value::Null);

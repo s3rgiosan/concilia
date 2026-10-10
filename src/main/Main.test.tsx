@@ -307,7 +307,7 @@ describe("first run", () => {
     vi.mocked(pickReceiptsRoot).mockRejectedValue({ kind: "internal", message: "no dialog" });
     await renderMain(UNCONFIGURED);
     await act(async () => fireEvent.click(button("Choose…")));
-    expect(screen.getByRole("alert").textContent).toBe("Something went wrong: no dialog");
+    expect(screen.getByRole("alert").textContent).toContain("Details: no dialog");
   });
 });
 
@@ -316,7 +316,7 @@ describe("load error", () => {
     vi.mocked(getAppState).mockRejectedValueOnce({ kind: "keychain", message: "denied" });
     render(<Main />);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Concilia can't use the Keychain: denied");
+    expect(alert.textContent).toContain("Details: denied");
 
     vi.mocked(getAppState).mockResolvedValueOnce(UNCONFIGURED);
     fireEvent.click(button("Try Again"));
@@ -350,7 +350,7 @@ describe("update banner", () => {
     act(() => pushProgress({ downloaded: 25, total: 100 }));
     expect(button("Downloading… 25%").disabled).toBe(true);
     await act(async () => install.reject({ kind: "network", message: "offline" }));
-    expect(screen.getByRole("alert").textContent).toBe("Concilia can't reach the server. Check your internet connection.");
+    expect(screen.getByRole("alert").textContent).toBe("Concilia can't reach Google. Check your internet connection and try again.Details: offline");
   });
 });
 
@@ -359,7 +359,7 @@ describe("sidebar", () => {
     await renderMain();
     expect(months()).toEqual([
       "* MarchNo receipts",
-      "FebruaryIn review · 6 left",
+      "FebruaryIn review · 6 to decide",
       "JanuaryFinalized",
       "NovemberReady · 12 receipts",
     ]);
@@ -406,7 +406,7 @@ describe("sidebar", () => {
     vi.mocked(listPeriods).mockRejectedValueOnce({ kind: "io", message: "unreadable" });
     await renderMain();
     const nav = screen.getByRole("navigation", { name: "Months" });
-    expect(within(nav).getByRole("alert").textContent).toBe("Concilia couldn't read or write a file: unreadableTry Again");
+    expect(within(nav).getByRole("alert").textContent).toContain("Details: unreadable");
     await act(async () => fireEvent.click(button("Try Again", nav)));
     expect(within(nav).queryByRole("alert")).toBeNull();
     expect(months()).toHaveLength(4);
@@ -483,7 +483,7 @@ describe("month without a match", () => {
     vi.mocked(revealPeriod).mockRejectedValue({ kind: "not_found", message: "No folder for March 2030." });
     await renderMain();
     await act(async () => fireEvent.click(button("Show in Finder")));
-    expect(screen.getByRole("alert").textContent).toBe("No folder for March 2030.");
+    expect(screen.getByRole("alert").textContent).toContain("Details: No folder for March 2030.");
     fireEvent.click(button("Close"));
     expect(screen.queryByRole("alert")).toBeNull();
 
@@ -519,9 +519,9 @@ describe("month in review", () => {
     await renderMain();
     selectMonth(/February/);
     expect(await screen.findByText("Review 2030-02")).toBeTruthy();
-    expect(subtitle()).toBe("In review · 6 left");
+    expect(subtitle()).toBe("In review · 6 to decide");
     expect(within(toolbar()).queryByRole("button", { name: "Reconcile" })).toBeNull();
-    expect(moreActions()).toEqual(["Open Report", "Show in Finder", "Re-run…"]);
+    expect(moreActions()).toEqual(["Open Report", "Show in Finder", "Reconcile Again…"]);
   });
 
   it("opens the report", async () => {
@@ -540,14 +540,14 @@ describe("month in review", () => {
     selectMonth(/January/);
     await screen.findByText("Review 2030-01");
     await act(async () => moreAction("Open Report"));
-    expect(screen.getByRole("alert").textContent).toBe("No report yet.");
+    expect(screen.getByRole("alert").textContent).toContain("Details: No report yet.");
   });
 
   it("reports an error from the review", async () => {
     await renderMain();
     selectMonth(/February/);
     fireEvent.click(await screen.findByRole("button", { name: "Fail Review" }));
-    expect(screen.getByRole("alert").textContent).toBe("Concilia couldn't read or write a file: draft unreadable");
+    expect(screen.getByRole("alert").textContent).toContain("Details: draft unreadable");
   });
 
   it("lists the months again when the review changes the month", async () => {
@@ -564,18 +564,18 @@ describe("month in review", () => {
     await renderMain();
     selectMonth(/February/);
     await screen.findByText("Review 2030-02");
-    moreAction("Re-run…");
-    const sheet = screen.getByRole("alertdialog", { name: "Re-run February 2030?" });
+    moreAction("Reconcile Again…");
+    const sheet = screen.getByRole("alertdialog", { name: "Reconcile February 2030 again?" });
     fireEvent.click(button("Cancel", sheet));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(startReconcile).not.toHaveBeenCalled();
 
-    moreAction("Re-run…");
-    fireEvent.click(button("Re-run", screen.getByRole("alertdialog")));
+    moreAction("Reconcile Again…");
+    fireEvent.click(button("Reconcile Again", screen.getByRole("alertdialog")));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(startReconcile).toHaveBeenCalledWith("2030", "02", [], true, expect.any(Function));
     run.push({ step: "parsing", count: 0 });
-    expect(steps()[0]).toBe("running: Parsing statements · using the saved transactions");
+    expect(steps()[0]).toBe("running: Reading statements · using the saved transactions");
   });
 });
 
@@ -592,7 +592,7 @@ describe("reconcile", () => {
     run.push({ step: "receipts_found", count: 40 });
     run.push({ step: "extracting", current: 10, total: 40 });
     expect(steps().slice(0, 3)).toEqual([
-      "done: Parsing statements · 1 file",
+      "done: Reading statements · 1 file",
       "done: Scanning receipts · 40 found",
       "running: Extracting receipt data · 10 / 40",
     ]);
@@ -607,7 +607,7 @@ describe("reconcile", () => {
     const run = await startReconciling();
     fireEvent.click(button("Cancel", toolbar()));
     expect(run.cancel).toHaveBeenCalledTimes(1);
-    expect(button("Stopping…", toolbar()).disabled).toBe(true);
+    expect(button("Cancelling…", toolbar()).disabled).toBe(true);
   });
 
   it("goes straight to the review with the run's figures when it succeeds", async () => {
@@ -616,12 +616,12 @@ describe("reconcile", () => {
     await act(async () => run.result.resolve(SUMMARY));
     expect(screen.getByText("Review 2030-03")).toBeTruthy();
     expect(subtitle()).toBe("40 transactions · 36 receipts · 75% matched");
-    expect(months()[0]).toBe("* MarchIn review · 10 left");
+    expect(months()[0]).toBe("* MarchIn review · 10 to decide");
     expect(listPeriods).toHaveBeenCalledTimes(2);
 
     selectMonth(/February/);
     selectMonth(/March/);
-    expect(subtitle()).toBe("In review · 10 left");
+    expect(subtitle()).toBe("In review · 10 to decide");
   });
 
   it("forgets the statements of a month that ran", async () => {
@@ -651,9 +651,9 @@ describe("reconcile", () => {
     run.push({ step: "parsing", count: 1 });
     await act(async () => run.result.reject({ kind: "parse", message: "no transactions found" }));
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("Concilia couldn't read the statement: no transactions foundTry Again");
+    expect(alert.textContent).toContain("Details: no transactions found");
     expect(alert.className).toContain("banner--error");
-    expect(steps()[0]).toBe("failed: Parsing statements · 1 file");
+    expect(steps()[0]).toBe("failed: Reading statements · 1 file");
     expect(within(toolbar()).queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(months()[0]).toBe("* MarchNo receipts");
 
@@ -667,7 +667,7 @@ describe("reconcile", () => {
     fireEvent.click(button("Cancel", toolbar()));
     await act(async () => run.result.reject({ kind: "cancelled", message: "cancelled" }));
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("The reconciliation was stopped.Try Again");
+    expect(alert.textContent).toBe("Reconciliation stopped.Try Again");
     expect(alert.className).toContain("banner--info");
   });
 
@@ -762,7 +762,7 @@ describe("app menu", () => {
     act(() => pushMenu("open_report"));
     expect(openReport).toHaveBeenCalledWith("2030", "02");
     act(() => pushMenu("rerun"));
-    expect(screen.getByRole("alertdialog", { name: "Re-run February 2030?" })).toBeTruthy();
+    expect(screen.getByRole("alertdialog", { name: "Reconcile February 2030 again?" })).toBeTruthy();
   });
 });
 

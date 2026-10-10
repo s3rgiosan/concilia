@@ -153,10 +153,10 @@ async fn reconciles_and_finalizes_a_period() {
         names,
         [
             "Totais",
-            "Validados",
+            "Todas as transações",
             "Associados",
-            "Revisão",
-            "Sem Associação",
+            "Por rever",
+            "Sem associação",
             "Reembolsos"
         ]
     );

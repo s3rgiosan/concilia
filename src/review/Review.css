@@ -230,6 +230,7 @@
 
 .inspector__meta > * + *::before {
   content: "·";
+  content: "·" / "";
   margin-right: 8px;
 }
 
@@ -359,6 +360,7 @@
 
 .receipt-row__meta > * + *::before {
   content: "·";
+  content: "·" / "";
   margin-right: 6px;
 }
 

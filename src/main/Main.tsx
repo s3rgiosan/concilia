@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { ActionPopUpButton, type PopUpAction } from "../components/PopUpButton";
 import { Toolbar, ToolbarPortal } from "../components/Toolbar";
-import { errorKind, friendlyError } from "../lib/errors";
+import { errorKind } from "../lib/errors";
+import { ErrorText } from "../components/ErrorText";
 import { useDockProgress } from "../lib/hooks/useDockProgress";
 import { useMenu } from "../lib/hooks/useMenu";
 import { useAppState } from "../lib/hooks/useAppState";
@@ -18,6 +19,7 @@ import {
   parsePeriodKey,
   periodKey,
   periodLabel,
+  runSummaryText,
   statusLine,
   type Period,
 } from "../lib/period";
@@ -30,7 +32,7 @@ import { RunProgress } from "./RunProgress";
 import { Sidebar, type RunningMonth } from "./Sidebar";
 import { Statements, type Statement } from "./Statements";
 import { UpdateBanner } from "./UpdateBanner";
-import type { ReviewAvailability, ReviewCommands } from "../review/commands";
+import type { RejectKind, ReviewAvailability, ReviewCommands } from "../review/commands";
 import { Welcome } from "./Welcome";
 
 const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.Review })));
@@ -67,7 +69,7 @@ function runProgress(state: RunState<Summary>): string | null {
  * by where the month stands. Before the app is configured it shows the welcome steps instead.
  */
 export function Main() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { state, error: loadError, replace, reload } = useAppState();
   const fallback = useMemo(() => defaultPeriod(new Date()), []);
   const [storedKey, setStoredKey] = useSafeStorage("main.period", periodKey(fallback));
@@ -88,6 +90,7 @@ export function Main() {
   const reviewCommands = useRef<ReviewCommands>(null);
   const [reviewCan, setReviewCan] = useState<ReviewAvailability | null>(null);
   const [inspectorShown, setInspectorShown] = useState(true);
+  const [rejectKind, setRejectKind] = useState<RejectKind>("removeMatch");
   /** The statements area's file picker, for the app menu. */
   const statementsPicker = useRef<{ browse: () => void }>(null);
   const run = useRun<Summary>();
@@ -199,6 +202,7 @@ export function Main() {
       configured,
       sidebarShown,
       inspectorShown,
+      rejectKind,
       acceptsStatements: onStatementsScreen && !running,
       canReconcile: monthStatements.length > 0 || summary.transactions > 0,
       hasResult: reviewable,
@@ -241,7 +245,9 @@ export function Main() {
         {failed !== null ? (
           <div className={`banner ${cancelled ? "banner--info" : "banner--error"}`} role="alert">
             <Icon name="warning" size={14} />
-            <span className="grow">{cancelled ? t("month.stopped") : friendlyError(failed, t)}</span>
+            <span className="grow">
+              <ErrorText error={failed} />
+            </span>
             <button type="button" className="banner__action" onClick={tryAgain}>
               {t("common.tryAgain")}
             </button>
@@ -252,13 +258,13 @@ export function Main() {
     if (runState.phase === "running") {
       trailing = (
         <button type="button" onClick={run.cancel} disabled={runState.cancelling}>
-          {runState.cancelling ? t("progress.cancelling") : t("progress.cancel")}
+          {runState.cancelling ? t("progress.cancelling") : t("common.cancel")}
         </button>
       );
     }
   } else if (state && listReady) {
     const status = statusLine(summary, t).label;
-    const runSummary = lastRun?.key === key ? t("month.summary", { ...lastRun.summary }) : undefined;
+    const runSummary = lastRun?.key === key ? runSummaryText(lastRun.summary, i18n.language, t) : undefined;
     const actions: PopUpAction[] = [
       {
         label: t("month.openReport"),
@@ -287,6 +293,7 @@ export function Main() {
             onChanged={refresh}
             onError={setMessage}
             onAvailabilityChange={setReviewCan}
+            onRejectKindChange={setRejectKind}
             onInspectorChange={setInspectorShown}
           />
         </Suspense>
@@ -363,7 +370,9 @@ export function Main() {
           {loadError ? (
             <div className="banner banner--error" role="alert">
               <Icon name="warning" size={14} />
-              <span className="grow">{friendlyError(loadError, t)}</span>
+              <span className="grow">
+                <ErrorText error={loadError} />
+              </span>
               <button type="button" className="banner__action" onClick={reload}>
                 {t("common.tryAgain")}
               </button>
@@ -372,7 +381,9 @@ export function Main() {
           {message !== null ? (
             <div className="banner banner--error" role="alert">
               <Icon name="warning" size={14} />
-              <span className="grow">{friendlyError(message, t)}</span>
+              <span className="grow">
+                <ErrorText error={message} />
+              </span>
               <button type="button" className="icon" aria-label={t("common.close")} onClick={() => setMessage(null)}>
                 <Icon name="xmark" size={12} />
               </button>

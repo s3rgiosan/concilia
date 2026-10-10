@@ -703,7 +703,16 @@ fn finalizing_needs_a_match_result() {
 
     let error = f.finalize().unwrap_err();
 
-    assert!(matches!(error, PipelineError::NotFound(_)), "{error:?}");
+    assert!(
+        matches!(
+            &error,
+            PipelineError::Coded {
+                code: "not_reconciled",
+                ..
+            }
+        ),
+        "{error:?}"
+    );
     assert!(f.exists("acme.pdf"));
     assert!(!f.paths.applied_marker().exists());
 }

@@ -51,11 +51,12 @@ export function Statements({
   onError: (e: unknown) => void;
 }) {
   const { t, i18n } = useTranslation();
-  const [rejected, setRejected] = useState(false);
+  const [rejected, setRejected] = useState<string | null>(null);
 
   function add(paths: string[]) {
     const pdfs = paths.filter(isPdf);
-    setRejected(pdfs.length < paths.length);
+    const firstRejected = paths.find((p) => !isPdf(p));
+    setRejected(firstRejected === undefined ? null : fileName(firstRejected));
     const known = new Set(statements.map((s) => s.path));
     const fresh = pdfs.filter((p) => !known.has(p)).map((path) => ({ id: crypto.randomUUID(), path, bank: BANKS[0].value }));
     if (fresh.length > 0) {
@@ -105,7 +106,7 @@ export function Statements({
                   </span>
                   {BANKS.length > 1 ? (
                     <PopUpButton
-                      label={t("month.bank")}
+                      label={t("month.bankFor", { name: fileName(statement.path) })}
                       value={statement.bank}
                       options={BANKS}
                       onChange={(bank) => onStatements(statements.map((s) => (s.id === statement.id ? { ...s, bank } : s)))}
@@ -129,7 +130,7 @@ export function Statements({
           </>
         )}
       </div>
-      {rejected ? <p className="statements__note muted">{t("month.notPdf")}</p> : null}
+      {rejected !== null ? <p className="statements__note muted">{t("month.notPdf", { name: rejected })}</p> : null}
       {summary.status === "empty" && receiptsRoot ? (
         <div className="receipts-hint">
           <Icon name="folder" size={14} className="receipts-hint__icon" />

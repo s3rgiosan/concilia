@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
-import type { PeriodSummary } from "./tauri";
+import { formatPercent } from "./money";
+import type { PeriodSummary, Summary } from "./tauri";
 
 export interface Period {
   year: string;
@@ -104,6 +105,15 @@ export function statusLine(summary: PeriodSummary, t: TFunction): { tone: DotTon
     default:
       return { tone: "gray", label: t("month.status.empty") };
   }
+}
+
+/** The figures of a run: "12 transactions · 9 receipts · 75% matched". */
+export function runSummaryText(summary: Summary, language: string, t: TFunction): string {
+  return [
+    t("month.summary.transactions", { count: summary.totalTransactions }),
+    t("month.summary.receipts", { count: summary.totalReceipts }),
+    t("month.summary.matched", { percent: formatPercent(summary.matchRate, language) }),
+  ].join(" · ");
 }
 
 /** Whether the month has been matched, so it opens in the review. */

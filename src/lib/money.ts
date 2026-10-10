@@ -11,6 +11,13 @@ function format(cents: number, currency: string | null, language: string, signDi
   }
 }
 
+/** A whole-number percentage as text in the given language: "74%" in English, "74 %" in Portuguese. */
+export function formatPercent(percent: number, language: string): string {
+  const locale = LOCALES[language] ?? "en-GB";
+  const digits = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(percent);
+  return language === "pt" ? `${digits}\u00a0%` : `${digits}%`;
+}
+
 /** An amount in cents as currency text in the given language, such as "€10.00" or "10,00 €". */
 export function formatMoney(cents: number, currency: string | null, language: string): string {
   return format(cents, currency, language, "auto");

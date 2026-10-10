@@ -23,6 +23,13 @@ function renderProgress(patch: Partial<Parameters<typeof RunProgress>[0]> = {}) 
 }
 
 describe("RunProgress", () => {
+  it("hides the separator before a detail from assistive technology", () => {
+    const { container } = renderProgress();
+    const separators = container.querySelectorAll(".step__detail > [aria-hidden=true]");
+    expect(separators).toHaveLength(3);
+    expect(separators[0].textContent).toBe(" · ");
+  });
+
   it("lists each step with its status and detail", () => {
     const { container } = renderProgress();
     expect(screen.getByRole("heading", { name: "Reconciling March 2030" })).toBeTruthy();
@@ -69,7 +76,7 @@ describe("RunProgress", () => {
 
   it("disables Cancel while stopping", () => {
     renderProgress({ cancelling: true });
-    expect((screen.getByRole("button", { name: "Stopping…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Cancelling…" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 

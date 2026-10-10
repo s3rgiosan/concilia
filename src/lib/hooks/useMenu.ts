@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { menuState, runMenuCommand, type ReviewAvailability, type ReviewCommands } from "../../review/commands";
+import { menuState, runMenuCommand, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../../review/commands";
 import { isPreview } from "../preview";
 import { onMenu, setMenu, setMenuState, subscribe } from "../tauri";
 import { useLatest } from "./useLatest";
@@ -11,6 +11,8 @@ export interface MenuModel {
   configured: boolean;
   sidebarShown: boolean;
   inspectorShown: boolean;
+  /** What Reject does for the selected transaction, which names its menu item. */
+  rejectKind: RejectKind;
   /** The month is shown as statements to add and reconcile, and no run is going. */
   acceptsStatements: boolean;
   /** The month has statements added or transactions to reconcile. */
@@ -80,7 +82,6 @@ const LABEL_KEYS = [
   "rerun",
   "finalize",
   "accept",
-  "reject",
   "no_receipt",
   "no_receipt_bank_fee",
   "no_receipt_salary",
@@ -162,7 +163,7 @@ function inTextField(): boolean {
 export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: RefObject<ReviewCommands | null>) {
   const { t, i18n } = useTranslation();
   const language = i18n.language;
-  const { sidebarShown, inspectorShown } = model;
+  const { sidebarShown, inspectorShown, rejectKind } = model;
 
   const labels = useMemo(() => {
     const result: Record<string, string> = {};
@@ -171,9 +172,10 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
     }
     result.toggle_sidebar = t(sidebarShown ? "menu.hide_sidebar" : "menu.show_sidebar");
     result.toggle_inspector = t(inspectorShown ? "menu.hide_inspector" : "menu.show_inspector");
+    result.reject = t(rejectKind === "noneOfThese" ? "menu.reject_review" : "menu.reject");
     return result;
     // The language is a dependency because `t` keeps its identity while the language changes.
-  }, [t, language, sidebarShown, inspectorShown]);
+  }, [t, language, sidebarShown, inspectorShown, rejectKind]);
 
   const enabled = menuEnabled(model);
   const enabledKey = JSON.stringify(enabled);

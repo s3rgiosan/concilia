@@ -1,4 +1,4 @@
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { FormRow, FormSection } from "../components/Form";
 import { Icon } from "../components/Icon";
 import { pickReceiptsRoot } from "../lib/tauri";
@@ -19,7 +19,7 @@ export function FolderTab({ state, save, onError }: PaneProps) {
   }
 
   return (
-    <FormSection footer={t("settings.folder.hint")}>
+    <FormSection footer={<Trans i18nKey="settings.folder.hint" components={{ code: <code /> }} />}>
       <FormRow
         label={t("settings.folder.receiptsRoot")}
         description={

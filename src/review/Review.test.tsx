@@ -147,7 +147,7 @@ function Window(props: Omit<ReviewProps, "toolbar" | "period" | "status" | "more
           <div ref={setTrailing} />
         </div>
       </header>
-      <Review period={PERIOD} status="In review · 9 left" moreActions={MORE} toolbar={{ subtitle, trailing }} {...props} />
+      <Review period={PERIOD} status="In review · 9 to decide" moreActions={MORE} toolbar={{ subtitle, trailing }} {...props} />
     </>
   );
 }
@@ -270,7 +270,7 @@ describe("loading", () => {
   it("shows the month's status in the toolbar while loading", () => {
     vi.mocked(getReview).mockReturnValue(new Promise(() => undefined));
     render(<Window onError={vi.fn()} />);
-    expect(subtitle()).toBe("In review · 9 left");
+    expect(subtitle()).toBe("In review · 9 to decide");
     expect(screen.queryByRole("region")).toBeNull();
     expect(screen.queryByRole("group", { name: "Filter" })).toBeNull();
   });
@@ -278,7 +278,7 @@ describe("loading", () => {
   it("shows a load error and loads again on Try Again", async () => {
     vi.mocked(getReview).mockRejectedValueOnce({ kind: "not_found", message: "No reconciliation for March 2030." });
     await renderReview();
-    expect(screen.getByRole("alert").textContent).toBe("No reconciliation for March 2030.Try Again");
+    expect(screen.getByRole("alert").textContent).toBe("Concilia can't find that item. It may have been moved or deleted.Details: No reconciliation for March 2030.Try Again");
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.click(button("Try Again"));
     await settle();
@@ -384,8 +384,8 @@ describe("list", () => {
     await renderReview();
     search("umbrella");
     expect(options()).toEqual([]);
-    expect(screen.getByText("No Transactions")).toBeTruthy();
-    expect(within(inspector()).getByText("No Selection")).toBeTruthy();
+    expect(screen.getByText("No Results for “umbrella”")).toBeTruthy();
+    expect(within(inspector()).getByText("No transaction selected.")).toBeTruthy();
   });
 });
 
@@ -443,9 +443,9 @@ describe("inspector", () => {
     expect(within(panel).getByText("-€20.00")).toBeTruthy();
     expect(within(panel).getByText("2 March 2030")).toBeTruthy();
     expect(within(panel).getByText("2 receipts match amount")).toBeTruthy();
-    expect(within(panel).getByRole("region", { name: "Candidates" })).toBeTruthy();
+    expect(within(panel).getByRole("region", { name: "Suggested Receipts" })).toBeTruthy();
     expect(receiptTitles()).toEqual(["GLOBEX", "HOOLI"]);
-    expect(button("Accept", receiptItem("GLOBEX"))).toBeTruthy();
+    expect(button("Assign GLOBEX", receiptItem("GLOBEX"))).toBeTruthy();
     expect(button("None of These", panel)).toBeTruthy();
     expect(within(panel).getByRole("combobox", { name: "No Receipt Needed" })).toBeTruthy();
     expect(previewSource()).toBe("receipt://localhost/2030/03/receipts/globex.pdf#navpanes=0");
@@ -464,7 +464,7 @@ describe("inspector", () => {
     select("INITECH SERVICES");
     expect(within(inspector()).getByRole("region", { name: "Unmatched Receipts" })).toBeTruthy();
     expect(receiptTitles()).toEqual(["INITECH", "GLOBEX", "HOOLI"]);
-    expect(button("Assign", receiptItem("INITECH"))).toBeTruthy();
+    expect(button("Assign INITECH", receiptItem("INITECH"))).toBeTruthy();
     expect(within(receiptItem("GLOBEX")).getByText("Differs by €10.00")).toBeTruthy();
     expect(within(receiptItem("INITECH")).queryByText(/Differs by/)).toBeNull();
     expect(within(inspector()).queryByRole("button", { name: "None of These" })).toBeNull();
@@ -474,7 +474,7 @@ describe("inspector", () => {
     await renderReview();
     fireEvent.click(button("None of These", inspector()));
     select("HOOLI PAYROLL");
-    fireEvent.click(button("Dispute", inspector()));
+    fireEvent.click(button("Remove Match", inspector()));
     expect(receiptTitles()).toEqual([]);
     expect(within(inspector()).getByText("No receipts to assign.")).toBeTruthy();
     expect(within(inspector()).getByRole("combobox", { name: "No Receipt Needed" })).toBeTruthy();
@@ -486,7 +486,7 @@ describe("inspector", () => {
     select("ACME CORP");
     expect(within(inspector()).getByRole("region", { name: "Receipt" })).toBeTruthy();
     expect(receiptTitles()).toEqual(["ACME"]);
-    expect(button("Dispute", inspector())).toBeTruthy();
+    expect(button("Remove Match", inspector())).toBeTruthy();
     expect(within(inspector()).queryByRole("combobox", { name: "No Receipt Needed" })).toBeNull();
     select("HOOLI PAYROLL");
     expect(within(inspector()).getByText("No receipt needed: Salary")).toBeTruthy();
@@ -506,7 +506,7 @@ describe("inspector", () => {
     expect(within(inspector()).getByRole("heading", { name: "ACME TRAVEL" })).toBeTruthy();
     expect(within(inspector()).getByText("Reimbursement")).toBeTruthy();
     expect(receiptTitles()).toEqual(["ACME TRAVEL"]);
-    expect(within(inspector()).queryByRole("button", { name: "Dispute" })).toBeNull();
+    expect(within(inspector()).queryByRole("button", { name: "Remove Match" })).toBeNull();
   });
 
   it("hides and shows from the toolbar and remembers the choice", async () => {
@@ -525,7 +525,7 @@ describe("inspector", () => {
 describe("decisions", () => {
   it("accepts a candidate, freeing the other one", async () => {
     await renderReview();
-    fireEvent.click(button("Accept", receiptItem("GLOBEX")));
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOP-€20.00");
     expect(receiptTitles()).toEqual(["GLOBEX"]);
     expect(counts()).toEqual({ All: "4", "Needs Review": "0", Unmatched: "1", Matched: "3" });
@@ -564,7 +564,7 @@ describe("decisions", () => {
   it("assigns a pool receipt", async () => {
     await renderReview();
     select("INITECH SERVICES");
-    fireEvent.click(button("Assign", receiptItem("INITECH")));
+    fireEvent.click(button("Assign INITECH", receiptItem("INITECH")));
     expect(within(inspector()).getByText("Manual match")).toBeTruthy();
     await advance(500);
     expect(vi.mocked(saveDraft).mock.calls[0][2]).toEqual({
@@ -584,7 +584,7 @@ describe("decisions", () => {
   it("disputes a match, freeing its receipt", async () => {
     await renderReview();
     select("ACME CORP");
-    fireEvent.click(button("Dispute", inspector()));
+    fireEvent.click(button("Remove Match", inspector()));
     expect(options()[0]).toBe("* Unmatched1 MarACME CORP-€10.00");
     select("INITECH SERVICES");
     expect(receiptTitles()).toEqual(["INITECH", "ACME"]);
@@ -595,7 +595,7 @@ describe("decisions", () => {
     fireEvent.click(button("None of These", inspector()));
     fireEvent.click(filterButton("Unmatched"));
     expect(selected()).toBe("GLOBEX SHOP");
-    fireEvent.click(button("Assign", receiptItem("GLOBEX")));
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     expect(options()).toEqual(["* Unmatched3 MarINITECH SERVICES-€30.00"]);
   });
 });
@@ -604,7 +604,7 @@ describe("undo and redo", () => {
   it("undoes and redoes decisions, selecting the transaction that changed", async () => {
     const { commands } = await renderReview();
     expect(commands().can.undo).toBe(false);
-    fireEvent.click(button("Accept", receiptItem("GLOBEX")));
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     select("ACME CORP");
     act(() => commands().undo());
     expect(selected()).toBe("GLOBEX SHOP");
@@ -618,7 +618,7 @@ describe("undo and redo", () => {
 
   it("saves the draft an undo returns to", async () => {
     const { commands } = await renderReview();
-    fireEvent.click(button("Accept", receiptItem("GLOBEX")));
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     act(() => commands().undo());
     await advance(500);
     expect(vi.mocked(saveDraft).mock.calls[0][2]).toEqual({});
@@ -666,6 +666,15 @@ describe("commands", () => {
     expect(onInspectorChange).toHaveBeenLastCalledWith(true);
     act(() => commands().toggleInspector());
     expect(onInspectorChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("reports what Reject does for the selection", async () => {
+    const onRejectKindChange = vi.fn<(kind: "noneOfThese" | "removeMatch") => void>();
+    await renderReview({ onRejectKindChange });
+    select("GLOBEX SHOP");
+    expect(onRejectKindChange).toHaveBeenLastCalledWith("noneOfThese");
+    select("HOOLI PAYROLL");
+    expect(onRejectKindChange).toHaveBeenLastCalledWith("removeMatch");
   });
 
   it("runs decisions on the selection", async () => {
@@ -732,11 +741,11 @@ describe("receipt actions", () => {
     const pending = deferred<ReceiptMeta>();
     vi.mocked(rescanReceipt).mockReturnValue(pending.promise);
     await renderReview();
-    pick("Actions for GLOBEX", "Rescan");
+    pick("Actions for GLOBEX", "Read Again");
     expect(rescanReceipt).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/globex.pdf");
-    expect(within(receiptItem("GLOBEX")).getByRole("status", { name: "Rescanning…" })).toBeTruthy();
+    expect(within(receiptItem("GLOBEX")).getByRole("status", { name: "Reading…" })).toBeTruthy();
     const menu = within(receiptItem("GLOBEX")).getByRole("combobox") as HTMLSelectElement;
-    expect(Array.from(menu.options).find((o) => o.textContent === "Rescan")?.disabled).toBe(true);
+    expect(Array.from(menu.options).find((o) => o.textContent === "Read Again")?.disabled).toBe(true);
     await act(async () => pending.resolve({ ...stripped(GLOBEX), vendor: "GLOBEX LTD", amount_cents: 2100 }));
     expect(receiptTitles()).toEqual(["GLOBEX LTD", "HOOLI"]);
     expect(within(receiptItem("GLOBEX LTD")).getByText("€21.00")).toBeTruthy();
@@ -749,7 +758,7 @@ describe("receipt actions", () => {
   it("rescans a receipt held by a pending decision", async () => {
     vi.mocked(rescanReceipt).mockResolvedValue({ ...stripped(GLOBEX), vendor: "GLOBEX LTD" });
     const { commands } = await renderReview();
-    fireEvent.click(button("Accept", receiptItem("GLOBEX")));
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     act(() => commands().rescan());
     await settle();
     expect(receiptTitles()).toEqual(["GLOBEX LTD"]);
@@ -762,7 +771,7 @@ describe("receipt actions", () => {
     vi.mocked(rescanReimbursement).mockResolvedValue({ ...stripped(TRAVEL), amount_cents: 700 });
     await renderReview();
     select("ACME TRAVEL");
-    pick("Actions for ACME TRAVEL", "Rescan");
+    pick("Actions for ACME TRAVEL", "Read Again");
     expect(rescanReimbursement).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/acme-travel.pdf");
     expect(rescanReceipt).not.toHaveBeenCalled();
     await settle();
@@ -773,7 +782,7 @@ describe("receipt actions", () => {
     const error = { kind: "network", message: "offline" };
     vi.mocked(rescanReceipt).mockRejectedValue(error);
     const { onError } = await renderReview();
-    pick("Actions for GLOBEX", "Rescan");
+    pick("Actions for GLOBEX", "Read Again");
     await settle();
     expect(onError).toHaveBeenCalledWith(error);
     expect(receiptTitles()).toEqual(["GLOBEX", "HOOLI"]);
@@ -818,12 +827,12 @@ describe("toolbar", () => {
     const save = deferred<void>();
     vi.mocked(saveDraft).mockReturnValue(save.promise);
     const { onChanged } = await renderReview();
-    expect(subtitle()).toBe("In review · 2 left");
+    expect(subtitle()).toBe("In review · 2 to decide");
     key("Enter");
     await advance(500);
-    expect(subtitle()).toBe("In review · 1 left · Saving…");
+    expect(subtitle()).toBe("In review · 1 to decide · Saving…");
     await act(async () => save.resolve());
-    expect(subtitle()).toBe("In review · 1 left · Saved");
+    expect(subtitle()).toBe("In review · 1 to decide · Saved");
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
@@ -833,14 +842,14 @@ describe("toolbar", () => {
     key("Enter");
     await advance(500);
     const alert = within(toolbar()).getByRole("alert");
-    expect(alert.textContent).toBe(" ·  Not Saved: Changes not saved: Concilia couldn't read or write a file: disk full");
+    expect(alert.textContent).toBe(" ·  Couldn't save changes: Concilia couldn't read or write a file. Check that the folder is available, then try again. Details: disk full");
   });
 
   it("shows the run's figures until the first change", async () => {
     await renderReview({ runSummary: "4 transactions · 4 receipts · 50% matched" });
     expect(subtitle()).toBe("4 transactions · 4 receipts · 50% matched");
     key("Enter");
-    expect(subtitle()).toBe("In review · 1 left");
+    expect(subtitle()).toBe("In review · 1 to decide");
   });
 
   it("says In review when nothing is left", async () => {
@@ -880,7 +889,7 @@ describe("scan for new receipts", () => {
     expect(startScan).toHaveBeenCalledWith("2030", "03", expect.any(Function));
     expect(vi.mocked(saveDraft).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(startScan).mock.invocationCallOrder[0]);
 
-    const dialog = screen.getByRole("dialog", { name: "Scanning for new receipts" });
+    const dialog = screen.getByRole("dialog", { name: "Scan for New Receipts" });
     await run.push({ step: "receipts_found", count: 3 });
     await run.push({ step: "extracting", current: 1, total: 3 });
     expect(within(dialog).getByRole("progressbar", { name: "Extracting receipt data" })).toBeTruthy();
@@ -898,13 +907,13 @@ describe("scan for new receipts", () => {
     await settle();
     fireEvent.click(button("Cancel", screen.getByRole("dialog")));
     expect(run.cancel).toHaveBeenCalledTimes(1);
-    expect(button("Stopping…", screen.getByRole("dialog")).disabled).toBe(true);
+    expect(button("Cancelling…", screen.getByRole("dialog")).disabled).toBe(true);
   });
 
   it("reloads and reports dropped decisions in one dismissible warning", async () => {
     const run = scanRun();
     const { onChanged, commands } = await renderReview();
-    fireEvent.click(button("Accept", receiptItem("GLOBEX")));
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     act(() => commands().scan());
     await settle();
     vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_ACME, TX_INITECH] }));
@@ -922,9 +931,9 @@ describe("scan for new receipts", () => {
     expect(options()).toEqual(["Matched1 MarACME CORP-€10.00", "* Unmatched3 MarINITECH SERVICES-€30.00"]);
     // A reload starts a new history.
     expect(commands().can.undo).toBe(false);
-    const banner = screen.getByText("2 pending decisions were dropped because their receipts were removed: GLOBEX SHOP, HOOLI STORE").closest<HTMLElement>(".banner")!;
+    const banner = screen.getByText("2 decisions were discarded because their receipts are gone: GLOBEX SHOP, HOOLI STORE.").closest<HTMLElement>(".banner")!;
     fireEvent.click(button("Dismiss", banner));
-    expect(screen.queryByText(/pending decisions were dropped/)).toBeNull();
+    expect(screen.queryByText(/decisions were discarded/)).toBeNull();
   });
 
   it("names one dropped decision", async () => {
@@ -934,7 +943,7 @@ describe("scan for new receipts", () => {
     await settle();
     run.result.resolve({ summary: SUMMARY, dropped_decisions: [{ txId: "tx-2", description: "GLOBEX SHOP", removedReceiptFiles: [GLOBEX.file] }] });
     await settle();
-    expect(screen.getByText("1 pending decision was dropped because its receipt was removed: GLOBEX SHOP")).toBeTruthy();
+    expect(screen.getByText("1 decision was discarded because its receipt is gone: GLOBEX SHOP.")).toBeTruthy();
   });
 
   it("shows a failed scan until closed", async () => {
@@ -944,8 +953,8 @@ describe("scan for new receipts", () => {
     await settle();
     run.result.reject({ kind: "io", message: "folder missing" });
     await settle();
-    const dialog = screen.getByRole("dialog", { name: "Scanning for new receipts" });
-    expect(within(dialog).getByRole("alert").textContent).toBe("Concilia couldn't read or write a file: folder missing");
+    const dialog = screen.getByRole("dialog", { name: "Scan for New Receipts" });
+    expect(within(dialog).getByRole("alert").textContent).toContain("Details: folder missing");
     fireEvent.click(button("Close", dialog));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(getReview).toHaveBeenCalledTimes(1);
@@ -991,9 +1000,10 @@ describe("finalize", () => {
     fireEvent.click(button("Finalize…", toolbar()));
     const sheet = screen.getByRole("alertdialog", { name: "Finalize March 2030?" });
     expect(sheet.textContent).toContain(
-      "4 receipts will be moved: 1 to _matched, 2 to _review, 1 to _unmatched. Your draft will be deleted. You can't undo this.",
+      "4 receipts will be moved: 1 to _matched, 2 to _review and 1 to _unmatched. They stay in this month's receipts folder.",
     );
-    expect(sheet.textContent).toContain("2 transactions still need a decision.");
+    expect(sheet.textContent).toContain("You can't undo this.");
+    expect(sheet.textContent).toContain("2 transactions still need a decision. They will be sorted as they are now.");
     expect(within(sheet).queryByRole("checkbox")).toBeNull();
     expect(document.activeElement).toBe(button("Cancel", sheet));
     fireEvent.click(button("Cancel", sheet));
@@ -1006,7 +1016,7 @@ describe("finalize", () => {
     const { commands } = await renderReview();
     act(() => commands().finalize());
     const sheet = screen.getByRole("alertdialog");
-    expect(sheet.textContent).toContain("1 receipt will be moved: 1 to _matched, 0 to _review, 0 to _unmatched.");
+    expect(sheet.textContent).toContain("1 receipt will be moved: 1 to _matched, 0 to _review and 0 to _unmatched.");
     expect(sheet.textContent).not.toContain("still need");
   });
 

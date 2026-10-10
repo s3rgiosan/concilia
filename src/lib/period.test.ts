@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import i18n from "../i18n";
-import type { PeriodSummary } from "./tauri";
+import type { PeriodSummary, Summary } from "./tauri";
 import {
   defaultPeriod,
   emptySummary,
@@ -12,6 +12,7 @@ import {
   parsePeriodKey,
   periodKey,
   periodLabel,
+  runSummaryText,
   statusLine,
   yearOptions,
 } from "./period";
@@ -116,7 +117,7 @@ describe("statusLine", () => {
     expect(statusLine(summary("2030", "03", { status: "ready" }), i18n.t)).toEqual({ tone: "yellow", label: "Ready" });
     expect(statusLine(summary("2030", "03", { status: "ready", receipts: 1 }), i18n.t).label).toBe("Ready · 1 receipt");
     expect(statusLine(summary("2030", "03", { status: "ready", receipts: 38 }), i18n.t).label).toBe("Ready · 38 receipts");
-    expect(statusLine(summary("2030", "03", { status: "in_review", pending: 6 }), i18n.t)).toEqual({ tone: "orange", label: "In review · 6 left" });
+    expect(statusLine(summary("2030", "03", { status: "in_review", pending: 6 }), i18n.t)).toEqual({ tone: "orange", label: "In review · 6 to decide" });
     expect(statusLine(summary("2030", "03", { status: "in_review" }), i18n.t).label).toBe("In review");
     expect(statusLine(summary("2030", "03", { status: "finalized" }), i18n.t)).toEqual({ tone: "green", label: "Finalized" });
   });
@@ -128,5 +129,34 @@ describe("isReviewable", () => {
     expect(isReviewable(summary("2030", "03", { status: "finalized" }))).toBe(true);
     expect(isReviewable(summary("2030", "03", { status: "ready" }))).toBe(false);
     expect(isReviewable(summary("2030", "03"))).toBe(false);
+  });
+});
+
+describe("runSummaryText", () => {
+  const run: Summary = {
+    totalTransactions: 40,
+    matched: 30,
+    review: 6,
+    unmatched: 4,
+    bankFees: 0,
+    totalReceipts: 1,
+    matchedReceipts: 1,
+    reviewReceipts: 0,
+    unmatchedReceipts: 0,
+    matchRate: 75,
+  };
+
+  it("counts transactions and receipts and gives the match rate", () => {
+    expect(runSummaryText(run, "en", i18n.t)).toBe("40 transactions · 1 receipt · 75% matched");
+    expect(runSummaryText({ ...run, totalTransactions: 1, totalReceipts: 0 }, "en", i18n.t)).toBe("1 transaction · 0 receipts · 75% matched");
+  });
+
+  it("writes the percentage in the language of the text", async () => {
+    await i18n.changeLanguage("pt");
+    try {
+      expect(runSummaryText(run, "pt", i18n.t)).toBe("40 transações · 1 recibo · 75\u00a0% associadas");
+    } finally {
+      await i18n.changeLanguage("en");
+    }
   });
 });

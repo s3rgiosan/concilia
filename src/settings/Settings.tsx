@@ -1,10 +1,10 @@
 import "./Settings.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ErrorText } from "../components/ErrorText";
 import { Icon, type IconName } from "../components/Icon";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
-import { friendlyError } from "../lib/errors";
 import { isPreview } from "../lib/preview";
 import { saveSettings, setWindowTitle, type Settings as SettingsData } from "../lib/tauri";
 import { FolderTab } from "./FolderTab";
@@ -32,7 +32,8 @@ export function Settings() {
   const { state, error: loadError, replace, reload } = useAppState();
   const [stored, setStored] = useSafeStorage("settings.pane", "folder");
   const pane: Pane = isPane(stored) ? stored : "folder";
-  const [error, setError] = useState<string | null>(null);
+  /** The latest failure, boxed so any value can be held. */
+  const [error, setError] = useState<{ cause: unknown } | null>(null);
 
   const paneTitle = t(`settings.tabs.${pane}`);
   useEffect(() => {
@@ -67,7 +68,7 @@ export function Settings() {
       const run = () =>
         saveSettings(next)
           .then(replace, (e) => {
-            setError(friendlyError(e, t));
+            setError({ cause: e });
             latest.current = null;
             reload();
           })
@@ -76,10 +77,10 @@ export function Settings() {
           });
       queue.current = pending.current === 1 ? run() : queue.current.then(run);
     },
-    [state, replace, reload, t],
+    [state, replace, reload],
   );
 
-  const report = useCallback((e: unknown) => setError(friendlyError(e, t)), [t]);
+  const report = useCallback((e: unknown) => setError({ cause: e }), []);
 
   if (loadError) {
     return (
@@ -87,7 +88,9 @@ export function Settings() {
         <div className="pane">
           <div className="banner banner--error" role="alert">
             <Icon name="warning" size={14} />
-            <span className="grow">{friendlyError(loadError, t)}</span>
+            <span className="grow">
+              <ErrorText error={loadError} />
+            </span>
             <button type="button" className="banner__action" onClick={reload}>
               {t("common.tryAgain")}
             </button>
@@ -135,7 +138,9 @@ export function Settings() {
         {error ? (
           <div className="banner banner--error" role="alert">
             <Icon name="warning" size={14} />
-            <span>{error}</span>
+            <span>
+              <ErrorText error={error.cause} />
+            </span>
           </div>
         ) : null}
         {pane === "general" ? <GeneralTab state={state} save={save} onError={report} /> : null}
