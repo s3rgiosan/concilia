@@ -172,7 +172,7 @@
     "search": "Pesquisar",
     "scan": "Procurar novos recibos",
     "exportReport": "Exportar relatório…",
-    "finalize": "Finalizar…",
+    "finalize": "Finalizar",
     "scanDroppedBanner_one": "Foi descartada {{count}} decisão porque o recibo já não existe: {{names}}.",
     "scanDroppedBanner_other": "Foram descartadas {{count}} decisões porque os recibos já não existem: {{names}}.",
     "addStatements": {

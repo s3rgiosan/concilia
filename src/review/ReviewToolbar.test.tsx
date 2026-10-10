@@ -52,31 +52,31 @@ describe("ReviewToolbar", () => {
     expect(props.onSearch).toHaveBeenCalledWith("acme");
     fireEvent.click(screen.getByRole("button", { name: "Scan for New Receipts" }));
     fireEvent.click(screen.getByRole("button", { name: "Export Report…" }));
-    fireEvent.click(screen.getByRole("button", { name: "Finalize…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finalize" }));
     for (const handler of [props.onScan, props.onExport, props.onFinalize]) {
       expect(handler).toHaveBeenCalledTimes(1);
     }
     const order = Array.from(document.querySelectorAll("[role=radiogroup], button, input")).map(
       (el) => el.getAttribute("aria-label") ?? el.textContent,
     );
-    expect(order.slice(4)).toEqual(["Scan for New Receipts", "Export Report…", "More Actions", "Finalize…", "Search"]);
+    expect(order.slice(4)).toEqual(["Scan for New Receipts", "Export Report…", "More Actions", "Finalize", "Search"]);
     expect(screen.queryByRole("button", { name: /Inspector|Details/ })).toBeNull();
     expect(menuItems()).toEqual(["Add Statements…", "Open Report"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Add Statements…" }));
     expect(props.onAddStatements).toHaveBeenCalledTimes(1);
   });
 
-  it("makes Finalize… the default button only once nothing is left to decide", () => {
+  it("makes Finalize the default button only once nothing is left to decide", () => {
     renderToolbar();
-    expect(screen.getByRole("button", { name: "Finalize…" }).classList.contains("default")).toBe(false);
+    expect(screen.getByRole("button", { name: "Finalize" }).classList.contains("default")).toBe(false);
     cleanup();
     renderToolbar({ counts: { pending: 0, matched: 4, all: 4 } });
-    expect(screen.getByRole("button", { name: "Finalize…" }).classList.contains("default")).toBe(true);
+    expect(screen.getByRole("button", { name: "Finalize" }).classList.contains("default")).toBe(true);
   });
 
   it("offers Open Report as the primary button of a finalized month", () => {
     const props = renderToolbar({ finalized: true });
-    expect(screen.queryByRole("button", { name: "Finalize…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Finalize" })).toBeNull();
     const open = screen.getByRole("button", { name: "Open Report" });
     expect(open.classList.contains("default")).toBe(true);
     fireEvent.click(open);
@@ -138,10 +138,10 @@ describe("ReviewToolbar", () => {
     renderToolbar({ busy: true });
     expect((screen.getByRole("button", { name: "Scan for New Receipts" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Export Report…" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Finalize…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Finalize" }) as HTMLButtonElement).disabled).toBe(true);
     cleanup();
     renderToolbar({ finalized: true, level: 1 });
-    expect(screen.queryByRole("button", { name: "Finalize…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Finalize" })).toBeNull();
     expect(menuItems()).toEqual(["-Scan for New Receipts", "Export Report…", "Open Report"]);
   });
 });
