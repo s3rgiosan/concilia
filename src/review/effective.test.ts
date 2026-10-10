@@ -224,11 +224,11 @@ describe("filterCounts", () => {
       makeTransaction("tx-3", { status: "REVIEW" }),
       makeTransaction("tx-4", { status: "UNMATCHED" }),
     ];
-    expect(filterCounts(merged)).toEqual({ all: 4, review: 2, unmatched: 1, matched: 1 });
+    expect(filterCounts(merged)).toEqual({ pending: 3, matched: 1, all: 4 });
   });
 
   it("counts nothing for no transactions", () => {
-    expect(filterCounts([])).toEqual({ all: 0, review: 0, unmatched: 0, matched: 0 });
+    expect(filterCounts([])).toEqual({ pending: 0, matched: 0, all: 0 });
   });
 });
 
@@ -245,10 +245,9 @@ describe("visibleTransactions", () => {
     expect(ids(visibleTransactions(merged, "all", ""))).toEqual(["tx-4", "tx-1", "tx-2", "tx-3"]);
   });
 
-  it("filters by status", () => {
+  it("filters the transactions still to decide, REVIEW and UNMATCHED, and the matched ones", () => {
+    expect(ids(visibleTransactions(merged, "pending", ""))).toEqual(["tx-1", "tx-2"]);
     expect(ids(visibleTransactions(merged, "matched", ""))).toEqual(["tx-4", "tx-3"]);
-    expect(ids(visibleTransactions(merged, "review", ""))).toEqual(["tx-2"]);
-    expect(ids(visibleTransactions(merged, "unmatched", ""))).toEqual(["tx-1"]);
   });
 
   it("searches descriptions, ignoring case and surrounding spaces", () => {
@@ -258,7 +257,7 @@ describe("visibleTransactions", () => {
 
   it("combines the filter and the search", () => {
     expect(ids(visibleTransactions(merged, "matched", "initech"))).toEqual(["tx-4"]);
-    expect(visibleTransactions(merged, "review", "initech")).toEqual([]);
+    expect(visibleTransactions(merged, "pending", "initech")).toEqual([]);
   });
 
   it("leaves the list untouched", () => {
@@ -363,7 +362,7 @@ describe("visibleReimbursements", () => {
   });
 
   it("hides them under a status filter", () => {
-    expect(visibleReimbursements([taxi, train], "review", "")).toEqual([]);
+    expect(visibleReimbursements([taxi, train], "pending", "")).toEqual([]);
     expect(visibleReimbursements([taxi, train], "matched", "")).toEqual([]);
   });
 

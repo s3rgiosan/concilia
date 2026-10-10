@@ -13,6 +13,19 @@ export function noReceiptLabel(category: NoReceiptCategory, t: TFunction): strin
   return t(NO_RECEIPT_KEYS[category]);
 }
 
+const NO_RECEIPT_TITLE_KEYS: Record<NoReceiptCategory, string> = {
+  bank_fee: "menu.no_receipt_bank_fee",
+  salary: "menu.no_receipt_salary",
+  transfer: "menu.no_receipt_transfer",
+  refund: "menu.no_receipt_refund",
+  no_receipt: "menu.no_receipt_no_receipt",
+};
+
+/** A category as a button or menu item names it, in Title Case in English. */
+export function noReceiptTitle(category: NoReceiptCategory, t: TFunction): string {
+  return t(NO_RECEIPT_TITLE_KEYS[category]);
+}
+
 const COUNTED: [RegExp, string][] = [
   [/^(\d+) receipts match name\+amount \(unknown currency\)$/, "review.matchReason.multipleNameAmountUnknownCurrency"],
   [/^(\d+) receipts match name\+amount$/, "review.matchReason.multipleNameAmount"],

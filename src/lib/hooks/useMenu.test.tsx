@@ -27,7 +27,6 @@ function availability(value: boolean): ReviewAvailability {
 const STATEMENTS_SCREEN: MenuModel = {
   configured: true,
   sidebarShown: true,
-  inspectorShown: true,
   rejectKind: "removeMatch",
   acceptsStatements: true,
   canReconcile: true,
@@ -72,7 +71,6 @@ function makeCommands(can: ReviewAvailability = availability(true)): ReviewComma
     redo: vi.fn(),
     setFilter: vi.fn(),
     focusSearch: vi.fn(),
-    toggleInspector: vi.fn(),
     scan: vi.fn(),
     exportReport: vi.fn(),
     finalize: vi.fn(),
@@ -147,7 +145,7 @@ describe("labels", () => {
       rescan: "Read Receipt Again",
       find: "Find",
       toggle_sidebar: "Hide Sidebar",
-      toggle_inspector: "Hide Inspector",
+      filter_pending: "To Decide",
     });
   });
 
@@ -191,19 +189,23 @@ describe("labels", () => {
     expect(labels().menu_file).toBe("Ficheiro");
   });
 
-  it("names the sidebar and inspector toggles by their state", async () => {
-    const { rerender } = setup({ ...STATEMENTS_SCREEN, sidebarShown: false, inspectorShown: false });
+  it("names the sidebar toggle by its state", async () => {
+    const { rerender } = setup({ ...STATEMENTS_SCREEN, sidebarShown: false });
     await flush();
-    expect(labels()).toMatchObject({ toggle_sidebar: "Show Sidebar", toggle_inspector: "Show Inspector" });
+    expect(labels()).toMatchObject({ toggle_sidebar: "Show Sidebar" });
+    expect(labels()).not.toHaveProperty("toggle_inspector");
     rerender({ m: STATEMENTS_SCREEN });
     await flush();
-    expect(labels()).toMatchObject({ toggle_sidebar: "Hide Sidebar", toggle_inspector: "Hide Inspector" });
+    expect(labels()).toMatchObject({ toggle_sidebar: "Hide Sidebar" });
   });
 
   it("names the reject item by what it does to the selected transaction", async () => {
     const { rerender } = setup({ ...REVIEW_SCREEN, rejectKind: "noneOfThese" });
     await flush();
     expect(labels().reject).toBe("None of These");
+    rerender({ m: { ...REVIEW_SCREEN, rejectKind: "needsReceipt" } });
+    await flush();
+    expect(labels().reject).toBe("Needs a Receipt");
     rerender({ m: REVIEW_SCREEN });
     await flush();
     expect(labels().reject).toBe("Remove Match");
@@ -257,7 +259,7 @@ describe("enabled items", () => {
       finalize: false,
       undo: false,
       find: false,
-      toggle_inspector: false,
+      filter_pending: false,
       filter_all: false,
       no_receipt_salary: false,
     });
@@ -286,7 +288,8 @@ describe("enabled items", () => {
       open_report: true,
       reveal_period: true,
       accept: true,
-      filter_review: true,
+      filter_pending: true,
+      filter_matched: true,
       find: true,
       scan: true,
       reject: false,
@@ -374,14 +377,12 @@ describe("routing", () => {
     ["undo", "undo", []],
     ["redo", "redo", []],
     ["find", "focusSearch", []],
-    ["toggle_inspector", "toggleInspector", []],
     ["scan", "scan", []],
     ["export_report", "exportReport", []],
     ["finalize", "finalize", []],
-    ["filter_all", "setFilter", ["all"]],
-    ["filter_review", "setFilter", ["review"]],
-    ["filter_unmatched", "setFilter", ["unmatched"]],
+    ["filter_pending", "setFilter", ["pending"]],
     ["filter_matched", "setFilter", ["matched"]],
+    ["filter_all", "setFilter", ["all"]],
     ["no_receipt_bank_fee", "noReceipt", ["bank_fee"]],
     ["no_receipt_salary", "noReceipt", ["salary"]],
     ["no_receipt_transfer", "noReceipt", ["transfer"]],

@@ -82,6 +82,7 @@ export function TransactionList({
   rows,
   viewKey,
   selectedId,
+  edited,
   reimbursementTotal,
   listRef,
   onSelect,
@@ -94,6 +95,8 @@ export function TransactionList({
   /** The filter and search the rows come from; rows only collapse out while it stays the same. */
   viewKey: string;
   selectedId: string | null;
+  /** IDs of the transactions the user decided. */
+  edited: Set<string>;
   /** The sum of every reimbursement, in cents. */
   reimbursementTotal: number;
   listRef: Ref<HTMLDivElement>;
@@ -121,6 +124,7 @@ export function TransactionList({
       id={optionId(listId, index)}
       row={row}
       selected={index === selectedIndex}
+      edited={edited.has(row.id)}
       onSelect={() => onSelect(row)}
       onOpen={() => onOpen(row)}
       onContextMenu={(e) => onContextMenu(row, e)}

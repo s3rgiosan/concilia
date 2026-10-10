@@ -68,10 +68,11 @@ function FilterControl({ filter, counts, onFilter, showCounts }: { filter: Filte
 }
 
 /**
- * The review's controls in the window toolbar: the status filter, Scan for New Receipts, Export
- * Report… and the month's other actions in one group, Finalize…, search and the inspector toggle.
- * As the window narrows (`level`), the counts go, Scan and Export move into the `•••` menu, and
- * then the filter becomes a pop-up button.
+ * The review's controls in the window toolbar: the status filter, then Scan for New Receipts,
+ * Export Report… and the month's other actions in one group, the primary button and search. The
+ * primary button is Finalize…, the default button once nothing is left to decide, or Open Report
+ * for a finalized month. As the window narrows (`level`), the counts go, Scan and Export move
+ * into the `•••` menu, and then the filter becomes a pop-up button.
  */
 export function ReviewToolbar({
   filter,
@@ -85,11 +86,10 @@ export function ReviewToolbar({
   busy,
   finalized,
   moreActions,
-  inspectorShown,
   onScan,
   onExport,
   onFinalize,
-  onToggleInspector,
+  onOpenReport,
   level,
 }: {
   filter: Filter;
@@ -104,17 +104,15 @@ export function ReviewToolbar({
   busy: boolean;
   finalized: boolean;
   moreActions: PopUpAction[];
-  inspectorShown: boolean;
   onScan: () => void;
   onExport: () => void;
   onFinalize: () => void;
-  onToggleInspector: () => void;
+  onOpenReport: () => void;
   level: ToolbarLevel;
 }) {
   const { t } = useTranslation();
   const scanLabel = t("review.scan");
   const exportLabel = t("review.exportReport");
-  const inspectorLabel = inspectorShown ? t("review.hideInspector") : t("review.showInspector");
   const clearLabel = t("review.clearSearch");
   const scanDisabled = busy || finalized;
   const menu: MenuEntry[] =
@@ -140,15 +138,19 @@ export function ReviewToolbar({
             <button type="button" className="icon toolbar-group__item" aria-label={scanLabel} title={scanLabel} onClick={onScan} disabled={scanDisabled}>
               <Icon name="scan" size={16} />
             </button>
-            <button type="button" className="toolbar-group__item toolbar-group__item--text" onClick={onExport} disabled={busy}>
-              {exportLabel}
+            <button type="button" className="icon toolbar-group__item" aria-label={exportLabel} title={exportLabel} onClick={onExport} disabled={busy}>
+              <Icon name="share" size={16} />
             </button>
           </>
         ) : null}
         <ActionPopUpButton label={t("toolbar.moreActions")} actions={menu} className="toolbar-group__item" borderless />
       </div>
-      {finalized ? null : (
-        <button type="button" className="default" onClick={onFinalize} disabled={busy}>
+      {finalized ? (
+        <button type="button" className="default" onClick={onOpenReport} disabled={busy}>
+          {t("month.openReport")}
+        </button>
+      ) : (
+        <button type="button" className={counts.pending === 0 ? "default" : undefined} onClick={onFinalize} disabled={busy}>
           {t("review.finalize")}
         </button>
       )}
@@ -169,9 +171,6 @@ export function ReviewToolbar({
           </button>
         ) : null}
       </div>
-      <button type="button" className="icon titlebar__button" aria-label={inspectorLabel} title={inspectorLabel} onClick={onToggleInspector}>
-        <Icon name="inspector" size={16} />
-      </button>
     </>
   );
 }

@@ -62,7 +62,7 @@ export function findPending(rows: ListRow[], from: number, direction: 1 | -1): n
 }
 
 /**
- * The receipts the inspector offers for a row: a REVIEW transaction's open candidates, the pool
+ * The receipts the details column offers for a row: a REVIEW transaction's open candidates, the pool
  * receipts that fit an UNMATCHED one, a MATCHED one's receipts, or the reimbursement itself.
  */
 export function rowReceipts(row: ListRow | null, pool: ReceiptMeta[], claimed: Set<string>): ReceiptMeta[] {

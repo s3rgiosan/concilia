@@ -42,6 +42,24 @@ describe("ReceiptRow", () => {
     expect(container.querySelector(".receipt-row__meta")?.textContent).toBe("Date unknownunsure reading");
   });
 
+  it("says when Gemini couldn't read it and reads it again from the row", () => {
+    const unread = makeReceipt("scan.pdf", { vendor: null, amount_cents: null, confidence: null });
+    const { onRescan } = renderRow({ receipt: unread });
+    expect(screen.getByText("Couldn't read this receipt")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Read scan.pdf Again" }));
+    expect(onRescan).toHaveBeenCalledTimes(1);
+    cleanup();
+    renderRow({ receipt: unread, rescanning: true });
+    expect((screen.getByRole("button", { name: "Read scan.pdf Again" }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    renderRow({ receipt: unread, readOnly: true });
+    expect(screen.getByText("Couldn't read this receipt")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Read scan.pdf Again" })).toBeNull();
+    cleanup();
+    renderRow();
+    expect(screen.queryByText("Couldn't read this receipt")).toBeNull();
+  });
+
   it("says how much the amount differs", () => {
     renderRow({ mismatch: { kind: "amount", cents: 1500 } });
     expect(screen.getByText("Differs by €15.00")).toBeTruthy();

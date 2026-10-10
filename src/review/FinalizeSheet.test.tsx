@@ -13,21 +13,33 @@ const COUNTS: FinalizeCounts = { matched: 31, review: 2, unmatched: 5, total: 38
 function renderSheet({ counts = COUNTS, pending = 0, busy = false } = {}) {
   const onCancel = vi.fn();
   const onConfirm = vi.fn();
-  render(<FinalizeSheet period="March 2030" counts={counts} pending={pending} busy={busy} onCancel={onCancel} onConfirm={onConfirm} />);
-  return { onCancel, onConfirm };
+  const onReviewRemaining = vi.fn();
+  render(
+    <FinalizeSheet
+      period="March 2030"
+      counts={counts}
+      pending={pending}
+      busy={busy}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+      onReviewRemaining={onReviewRemaining}
+    />,
+  );
+  return { onCancel, onConfirm, onReviewRemaining };
 }
 
 const finalizeButton = () => screen.getByRole("button", { name: "Finalize" }) as HTMLButtonElement;
 
 describe("FinalizeSheet", () => {
-  it("is a destructive alert naming the month and where the receipts go", () => {
+  it("is a destructive alert naming the month, how the receipts are sorted and the report", () => {
     renderSheet();
     const sheet = screen.getByRole("alertdialog", { name: "Finalize March 2030?" });
     const description = document.getElementById(sheet.getAttribute("aria-describedby")!);
     const lines = Array.from(description?.querySelectorAll(".sheet__line") ?? []).map((line) => line.textContent);
     expect(lines).toEqual([
-      "38 receipts will be moved: 31 to _matched, 2 to _review and 5 to _unmatched. They stay in this month's receipts folder.",
-      "Your decisions are saved and the files are moved. You can't undo this.",
+      "38 receipts will be sorted: 31 matched, 2 still to review, and 5 unmatched.",
+      "Concilia sorts the receipts into folders inside this month's receipts folder and saves the Excel report.",
+      "To change decisions later, use Reconcile Again.",
     ]);
     expect(finalizeButton().classList.contains("destructive")).toBe(true);
     expect(finalizeButton().disabled).toBe(false);
@@ -41,12 +53,15 @@ describe("FinalizeSheet", () => {
     expect(document.activeElement).toBe(cancel);
   });
 
-  it("counts one receipt and none", () => {
+  it("counts one receipt and none, leaving out empty groups", () => {
     renderSheet({ counts: { matched: 1, review: 0, unmatched: 0, total: 1 } });
-    expect(screen.getByText(/^1 receipt will be moved: 1 to _matched, 0 to _review and 0 to _unmatched\./)).toBeTruthy();
+    expect(screen.getByText("1 receipt will be sorted: 1 matched.")).toBeTruthy();
+    cleanup();
+    renderSheet({ counts: { matched: 3, review: 0, unmatched: 2, total: 5 } });
+    expect(screen.getByText("5 receipts will be sorted: 3 matched and 2 unmatched.")).toBeTruthy();
     cleanup();
     renderSheet({ counts: { matched: 0, review: 0, unmatched: 0, total: 0 } });
-    expect(screen.getByText("No receipts will be moved.")).toBeTruthy();
+    expect(screen.getByText("No receipts will be sorted.")).toBeTruthy();
   });
 
   it("warns about transactions still needing a decision", () => {
@@ -58,6 +73,16 @@ describe("FinalizeSheet", () => {
     cleanup();
     renderSheet();
     expect(screen.queryByText(/still need/)).toBeNull();
+  });
+
+  it("offers Review Remaining only while transactions need a decision", () => {
+    const { onReviewRemaining, onConfirm } = renderSheet({ pending: 2 });
+    fireEvent.click(screen.getByRole("button", { name: "Review Remaining" }));
+    expect(onReviewRemaining).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+    cleanup();
+    renderSheet();
+    expect(screen.queryByRole("button", { name: "Review Remaining" })).toBeNull();
   });
 
   it("confirms and cancels", () => {

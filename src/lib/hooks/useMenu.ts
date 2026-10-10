@@ -11,7 +11,6 @@ export interface MenuModel {
   /** False before setup: only Settings, Check for Updates and Help work. */
   configured: boolean;
   sidebarShown: boolean;
-  inspectorShown: boolean;
   /** What Reject does for the selected transaction, which names its menu item. */
   rejectKind: RejectKind;
   /** The month is shown as statements to add and reconcile, and no run is going. */
@@ -75,10 +74,9 @@ const LABEL_KEYS = [
   "undo",
   "redo",
   "find",
-  "filter_all",
-  "filter_review",
-  "filter_unmatched",
+  "filter_pending",
   "filter_matched",
+  "filter_all",
   "reconcile",
   "scan",
   "rerun",
@@ -111,7 +109,6 @@ const NO_REVIEW: ReviewAvailability = {
   redo: false,
   setFilter: false,
   focusSearch: false,
-  toggleInspector: false,
   scan: false,
   exportReport: false,
   finalize: false,
@@ -145,15 +142,28 @@ export function menuEnabled(model: MenuModel): Record<string, boolean> {
   };
 }
 
+/** The menu label key of Reject for what it does to the selected transaction. */
+function rejectLabel(kind: RejectKind): string {
+  switch (kind) {
+    case "noneOfThese":
+      return "menu.reject_review";
+    case "needsReceipt":
+      return "menu.reject_no_receipt";
+    case "removeMatch":
+    default:
+      return "menu.reject";
+  }
+}
+
 /**
  * Keeps the native menu bar in step with the main window: sends the localized labels when the
- * language or the sidebar and inspector state change, sends which items are enabled, and runs
+ * language, the sidebar or the selected transaction change, sends which items are enabled, and runs
  * the items the user chooses. Does nothing in the browser preview.
  */
 export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: RefObject<ReviewCommands | null>) {
   const { t, i18n } = useTranslation();
   const language = i18n.language;
-  const { sidebarShown, inspectorShown, rejectKind } = model;
+  const { sidebarShown, rejectKind } = model;
 
   const labels = useMemo(() => {
     const result: Record<string, string> = {};
@@ -161,11 +171,10 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
       result[key] = t(`menu.${key}`);
     }
     result.toggle_sidebar = t(sidebarShown ? "menu.hide_sidebar" : "menu.show_sidebar");
-    result.toggle_inspector = t(inspectorShown ? "menu.hide_inspector" : "menu.show_inspector");
-    result.reject = t(rejectKind === "noneOfThese" ? "menu.reject_review" : "menu.reject");
+    result.reject = t(rejectLabel(rejectKind));
     return result;
     // The language is a dependency because `t` keeps its identity while the language changes.
-  }, [t, language, sidebarShown, inspectorShown, rejectKind]);
+  }, [t, language, sidebarShown, rejectKind]);
 
   const enabled = menuEnabled(model);
   const enabledKey = JSON.stringify(enabled);

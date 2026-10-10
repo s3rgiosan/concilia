@@ -145,10 +145,17 @@ const LISTED: PeriodSummary[] = [
 let dropFiles: (paths: string[]) => void;
 let uuid: number;
 
+/** Sets the window width and tells the window it resized. */
+function resizeWindow(width: number) {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  window.dispatchEvent(new Event("resize"));
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2030, 3, 15));
   localStorage.clear();
+  resizeWindow(1200);
   uuid = 0;
   vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
     uuid += 1;
@@ -474,6 +481,17 @@ describe("sidebar", () => {
     expect(screen.getByRole("alertdialog", { name: "Reconcile February 2030 again?" })).toBeTruthy();
   });
 
+  it("offers Open Report for a month with a report, and not for one without", async () => {
+    vi.mocked(openReport).mockResolvedValue(undefined);
+    await renderMain();
+    const list = within(screen.getByRole("listbox", { name: "Months" }));
+    fireEvent.contextMenu(list.getByRole("option", { name: /January/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open Report" }));
+    expect(openReport).toHaveBeenCalledWith("2030", "01");
+    fireEvent.contextMenu(list.getByRole("option", { name: /November/ }));
+    expect(screen.queryByRole("menuitem", { name: "Open Report" })).toBeNull();
+  });
+
   it("hides and shows the sidebar, and remembers it", async () => {
     await renderMain();
     expect(button("Hide Sidebar").getAttribute("aria-expanded")).toBeNull();
@@ -487,6 +505,41 @@ describe("sidebar", () => {
     expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
     fireEvent.click(button("Show Sidebar"));
     expect(screen.getByRole("navigation", { name: "Months" })).toBeTruthy();
+    expect(toolbar().querySelector(".titlebar__leading--sidebar")).toBeTruthy();
+  });
+
+  it("lays the sidebar over the content in a narrow window", async () => {
+    resizeWindow(1000);
+    await renderMain();
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+    expect(toolbar().querySelector(".titlebar__leading--sidebar")).toBeNull();
+    fireEvent.click(button("Show Sidebar"));
+    const sidebar = screen.getByRole("navigation", { name: "Months" });
+    expect(sidebar.classList.contains("sidebar--overlay")).toBe(true);
+    expect(toolbar().querySelector(".titlebar__leading--sidebar")).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize Sidebar" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Months" }));
+    expect(localStorage.getItem("main.sidebar")).toBeNull();
+
+    selectMonth(/January/);
+    expect(title()).toBe("January 2030");
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+
+    fireEvent.click(button("Show Sidebar"));
+    fireEvent.keyDown(screen.getByRole("listbox", { name: "Months" }), { key: "Escape" });
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+
+    fireEvent.click(button("Show Sidebar"));
+    fireEvent.pointerDown(document.querySelector(".detail")!);
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+  });
+
+  it("puts the sidebar back beside the content when the window widens", async () => {
+    resizeWindow(1000);
+    await renderMain();
+    act(() => resizeWindow(1200));
+    const sidebar = screen.getByRole("navigation", { name: "Months" });
+    expect(sidebar.classList.contains("sidebar--overlay")).toBe(false);
     expect(toolbar().querySelector(".titlebar__leading--sidebar")).toBeTruthy();
   });
 

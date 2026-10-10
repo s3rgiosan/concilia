@@ -1,19 +1,32 @@
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Icon } from "../components/Icon";
 import { shortDate } from "../lib/dates";
 import { formatMoney, formatSignedMoney } from "../lib/money";
 import type { Status } from "../lib/tauri";
+import { isNoReceipt } from "./effective";
+import { noReceiptTitle } from "./notes";
 import { receiptTitle } from "./receipts";
 import type { ListRow } from "./rows";
 
 export const STATUS_DOT: Record<Status, string> = { MATCHED: "dot--green", REVIEW: "dot--orange", UNMATCHED: "dot--red" };
 
-/** A status as a dot and its label: a transaction's status, or a reimbursement's kind when `status` is absent. */
-export function StatusLabel({ status }: { status?: Status }) {
+/**
+ * A status as a dot and its label: a transaction's status, No Receipt with its category for a
+ * transaction marked as needing none (`notes`), or a reimbursement's kind when `status` is absent.
+ */
+export function StatusLabel({ status, notes }: { status?: Status; notes?: string }) {
   const { t } = useTranslation();
-  const label = status ? t(`review.status.${status.toLowerCase()}`) : t("review.reimbursements.label");
+  let label: string;
+  if (!status) {
+    label = t("review.reimbursements.label");
+  } else if (status === "MATCHED" && notes !== undefined && isNoReceipt(notes)) {
+    label = t("review.status.noReceipt", { category: noReceiptTitle(notes, t) });
+  } else {
+    label = t(`review.status.${status.toLowerCase()}`);
+  }
   return (
-    <span className="status-label">
+    <span className="status-label" title={label}>
       <span className={`dot ${status ? STATUS_DOT[status] : "dot--gray"}`} aria-hidden="true" />
       <span className="status-label__text">{label}</span>
     </span>
@@ -21,14 +34,16 @@ export function StatusLabel({ status }: { status?: Status }) {
 }
 
 /**
- * One option of the review list: a transaction's status, date, description and signed amount, or
- * a reimbursement's kind, date, name and amount. A press selects it. With `onLeft` it is a row
- * that just left the list: hidden from assistive technology, collapsing until `onLeft` runs.
+ * One option of the review list: a transaction's status, date, description, a pencil when the
+ * user decided it (`edited`) and its signed amount, or a reimbursement's kind, date, name and
+ * amount. A press selects it. With `onLeft` it is a row that just left the list: hidden from
+ * assistive technology, collapsing until `onLeft` runs.
  */
 export function TransactionRow({
   id,
   row,
   selected,
+  edited = false,
   onSelect,
   onOpen,
   onContextMenu,
@@ -37,13 +52,14 @@ export function TransactionRow({
   id: string;
   row: ListRow;
   selected: boolean;
+  edited?: boolean;
   onSelect: () => void;
   /** Runs on a double click. */
   onOpen: () => void;
   onContextMenu: (e: MouseEvent<HTMLDivElement>) => void;
   onLeft?: () => void;
 }) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const language = i18n.language;
   let cells;
   if (row.kind === "transaction") {
@@ -51,10 +67,18 @@ export function TransactionRow({
     cells = (
       <>
         <span className="list-row__status">
-          <StatusLabel status={tx.status} />
+          <StatusLabel status={tx.status} notes={tx.notes} />
         </span>
         <span className="list-row__date numeric">{shortDate(tx.date, language)}</span>
         <span className="list-row__description">{tx.description}</span>
+        <span className="list-row__edited">
+          {edited ? (
+            <>
+              <Icon name="pencil" size={11} />
+              <span className="visually-hidden">{t("review.edited")}</span>
+            </>
+          ) : null}
+        </span>
         <span className="list-row__amount numeric">{formatSignedMoney(tx.amount_cents, "EUR", language)}</span>
       </>
     );
@@ -67,6 +91,7 @@ export function TransactionRow({
         </span>
         <span className="list-row__date numeric">{receipt.date ? shortDate(receipt.date, language) : ""}</span>
         <span className="list-row__description">{receiptTitle(receipt)}</span>
+        <span className="list-row__edited" />
         <span className="list-row__amount numeric">
           {receipt.amount_cents === null ? "" : formatMoney(receipt.amount_cents, receipt.currency, language)}
         </span>

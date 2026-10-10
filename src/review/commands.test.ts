@@ -18,9 +18,8 @@ describe("menuCommand", () => {
     expect(menuCommand("next_pending")).toBe("nextPending");
     expect(menuCommand("previous_pending")).toBe("previousPending");
     expect(menuCommand("find")).toBe("focusSearch");
-    expect(menuCommand("toggle_inspector")).toBe("toggleInspector");
     expect(menuCommand("export_report")).toBe("exportReport");
-    expect(menuCommand("filter_unmatched")).toBe("setFilter");
+    expect(menuCommand("filter_pending")).toBe("setFilter");
     expect(menuCommand("no_receipt_bank_fee")).toBe("noReceipt");
     expect(menuCommand("no_receipt")).toBe("noReceipt");
   });
@@ -28,6 +27,8 @@ describe("menuCommand", () => {
   it("leaves other items to the window", () => {
     expect(menuCommand("reconcile")).toBeNull();
     expect(menuCommand("toggle_sidebar")).toBeNull();
+    expect(menuCommand("toggle_inspector")).toBeNull();
+    expect(menuCommand("filter_review")).toBeNull();
     expect(menuCommand("open_report")).toBeNull();
   });
 });
@@ -35,8 +36,8 @@ describe("menuCommand", () => {
 describe("runMenuCommand", () => {
   it("runs the command with its argument", () => {
     const c = commands();
-    expect(runMenuCommand(c, "filter_review")).toBe(true);
-    expect(c.setFilter).toHaveBeenCalledWith("review");
+    expect(runMenuCommand(c, "filter_pending")).toBe(true);
+    expect(c.setFilter).toHaveBeenCalledWith("pending");
     runMenuCommand(c, "no_receipt_no_receipt");
     expect(c.noReceipt).toHaveBeenCalledWith("no_receipt");
     runMenuCommand(c, "undo");
@@ -67,9 +68,10 @@ describe("menuState", () => {
     expect(state.reject).toBe(false);
     expect(state.filter_all).toBe(true);
     expect(state.filter_matched).toBe(true);
+    expect(state.filter_pending).toBe(true);
     expect(state.no_receipt).toBe(true);
     expect(state.no_receipt_salary).toBe(true);
     expect(state.undo).toBe(false);
-    expect(Object.keys(state)).toHaveLength(24);
+    expect(Object.keys(state)).toHaveLength(22);
   });
 });

@@ -11,10 +11,11 @@ function row(id: string, description: string): ListRow {
 
 const ROWS = [row("a", "ACME CORP"), row("b", "EXAMPLE SHOP"), row("c", "SAMPLE CAFE")];
 
-function renderList(rows: ListRow[], viewKey = "review|") {
+function renderList(rows: ListRow[], viewKey = "pending|") {
   const props = {
     listId: "list",
     selectedId: null,
+    edited: new Set(["b"]),
     reimbursementTotal: 0,
     listRef: { current: null },
     onSelect: vi.fn(),

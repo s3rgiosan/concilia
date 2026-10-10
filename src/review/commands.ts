@@ -15,14 +15,16 @@ export const REVIEW_COMMANDS = [
   "redo",
   "setFilter",
   "focusSearch",
-  "toggleInspector",
   "scan",
   "exportReport",
   "finalize",
 ] as const;
 
-/** What Reject does for the selected transaction: None of These for REVIEW, Remove Match for MATCHED. */
-export type RejectKind = "noneOfThese" | "removeMatch";
+/**
+ * What Reject does for the selected transaction: None of These for REVIEW, Remove Match for a
+ * MATCHED one with a receipt, and Needs a Receipt for one marked as needing none.
+ */
+export type RejectKind = "noneOfThese" | "removeMatch" | "needsReceipt";
 
 export type ReviewCommand = (typeof REVIEW_COMMANDS)[number];
 
@@ -36,7 +38,7 @@ export type ReviewAvailability = Record<ReviewCommand, boolean>;
 export interface ReviewCommands {
   /** Accepts the focused candidate of a REVIEW transaction, or assigns it to an UNMATCHED one. */
   accept: () => void;
-  /** Sends the selected transaction back to UNMATCHED: None of These for REVIEW, Remove Match for MATCHED. */
+  /** Sends the selected transaction back to UNMATCHED, as `RejectKind` names it. */
   reject: () => void;
   noReceipt: (category: NoReceiptCategory) => void;
   /** Reads the focused receipt again. */
@@ -50,7 +52,6 @@ export interface ReviewCommands {
   redo: () => void;
   setFilter: (filter: Filter) => void;
   focusSearch: () => void;
-  toggleInspector: () => void;
   /** Scans for new receipts. */
   scan: () => void;
   exportReport: () => void;
@@ -91,8 +92,6 @@ export function menuCommand(id: string): ReviewCommand | null {
       return "previousPending";
     case "find":
       return "focusSearch";
-    case "toggle_inspector":
-      return "toggleInspector";
     case "export_report":
       return "exportReport";
     default:
@@ -141,7 +140,6 @@ export function menuState(can: ReviewAvailability): Record<string, boolean> {
     "redo",
     ...Object.keys(FILTER_MENU),
     "find",
-    "toggle_inspector",
     "scan",
     "export_report",
     "finalize",

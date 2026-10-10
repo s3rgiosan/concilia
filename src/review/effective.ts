@@ -134,7 +134,8 @@ export function mismatch(receipt: ReceiptMeta, txAbsCents: number): Mismatch | n
   return { kind: "amount", cents: Math.abs(receipt.amount_cents - txAbsCents) };
 }
 
-export const FILTERS = ["all", "review", "unmatched", "matched"] as const;
+/** The list filters: transactions still to decide, matched ones, and every transaction. */
+export const FILTERS = ["pending", "matched", "all"] as const;
 export type Filter = (typeof FILTERS)[number];
 
 /** Whether a transaction still waits for a decision: REVIEW or UNMATCHED. */
@@ -147,18 +148,28 @@ export function pendingCount(merged: Transaction[]): number {
 }
 
 export function filterCounts(merged: Transaction[]): Record<Filter, number> {
-  const counts: Record<Filter, number> = { all: merged.length, review: 0, unmatched: 0, matched: 0 };
-  for (const tx of merged) {
-    counts[tx.status.toLowerCase() as Lowercase<Status>] += 1;
+  const pending = pendingCount(merged);
+  return { pending, matched: merged.length - pending, all: merged.length };
+}
+
+/** Whether a transaction shows under a filter. */
+function inFilter(tx: Transaction, filter: Filter): boolean {
+  switch (filter) {
+    case "pending":
+      return needsDecision(tx);
+    case "matched":
+      return !needsDecision(tx);
+    case "all":
+    default:
+      return true;
   }
-  return counts;
 }
 
 /** Transactions shown for a filter and search text, by date, then ID. */
 export function visibleTransactions(merged: Transaction[], filter: Filter, search: string): Transaction[] {
   const needle = search.trim().toLowerCase();
   return merged
-    .filter((tx) => filter === "all" || tx.status.toLowerCase() === filter)
+    .filter((tx) => inFilter(tx, filter))
     .filter((tx) => !needle || tx.description.toLowerCase().includes(needle))
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 }

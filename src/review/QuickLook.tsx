@@ -28,15 +28,15 @@ function originTransform(source: DOMRect): string {
   return `translate(${Math.round(dx)}px, ${Math.round(dy)}px) scale(${scale.toFixed(3)})`;
 }
 
-/** Where Quick Look grows from: the inspector's preview, else the selected row. */
+/** Where Quick Look grows from: the details column's preview, else the selected row. */
 function quickLookOrigin(): string | null {
-  const source = document.querySelector(".inspector__preview") ?? document.querySelector(".list-row--selected");
+  const source = document.querySelector(".details__preview") ?? document.querySelector(".list-row--selected");
   return source ? originTransform(source.getBoundingClientRect()) : null;
 }
 
 /**
  * The selected row's receipt enlarged over the window, like Quick Look. It grows from the
- * inspector's preview (or the selected row) and shrinks back into it. ↑/↓ move the selection
+ * details column's preview (or the selected row) and shrinks back into it. ↑/↓ move the selection
  * in the list behind it, so the preview follows; Esc or Space closes it, and focus returns to
  * where it was. Tab stays inside it. `name` titles it when the row has no receipt to show.
  */

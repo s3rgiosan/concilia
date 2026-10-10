@@ -1,4 +1,4 @@
-/* Layout: the list fills the detail area, the inspector sits on its right. */
+/* Layout: the list fills the detail area, the details column sits on its right. */
 
 .review {
   display: flex;
@@ -31,16 +31,40 @@
   container: review-list / inline-size;
 }
 
+/* An empty list's message, centred over it, with a button that leads on when there is one. */
 .review__empty {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   margin: 0;
+  padding: 0 24px;
   color: var(--label-tertiary);
   font-size: 15px;
+  text-align: center;
   pointer-events: none;
+}
+
+.review__empty-title {
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.review__empty-message {
+  max-width: 360px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.review__empty button {
+  margin-top: 6px;
+  pointer-events: auto;
 }
 
 /* Toolbar controls ---------------------------------------------------------- */
@@ -86,7 +110,7 @@
 
 .list-row {
   display: grid;
-  grid-template-columns: 112px 48px minmax(0, 1fr) auto;
+  grid-template-columns: 150px 48px minmax(0, 1fr) 12px 100px;
   gap: 10px;
   align-items: center;
   height: 28px;
@@ -127,7 +151,7 @@
 /* In a narrow list the status shows as its dot; the label stays for assistive technology. */
 @container review-list (max-width: 600px) {
   .list-row {
-    grid-template-columns: 8px 48px minmax(0, 1fr) auto;
+    grid-template-columns: 8px 48px minmax(0, 1fr) 12px 100px;
   }
 
   .list-row__status .status-label__text {
@@ -146,6 +170,16 @@
   white-space: nowrap;
 }
 
+/* The pencil of a transaction the user decided. */
+.list-row__edited {
+  display: inline-flex;
+  color: var(--label-tertiary);
+}
+
+.review-list:focus .list-row--selected .list-row__edited {
+  color: rgb(255 255 255 / 85%);
+}
+
 .list-row__amount {
   text-align: right;
   white-space: nowrap;
@@ -156,7 +190,7 @@
   color: rgb(255 255 255 / 85%);
 }
 
-.inspector__note--finalized {
+.details__note--finalized {
   margin-top: 10px;
 }
 
@@ -197,70 +231,47 @@
   font-weight: 600;
 }
 
-/* Inspector ----------------------------------------------------------------- */
+/* Details ------------------------------------------------------------------- */
 
-/*
- * The inspector's width is the --inspector-width custom property. Showing and hiding it animates
- * that width; its content keeps the full width and slides out past the trailing edge, so the
- * receipt preview never reflows mid-animation.
- */
-.inspector {
+/* The details column's width is the --details-width custom property. */
+.details {
   display: flex;
   flex: none;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   box-sizing: border-box;
-  width: var(--inspector-width, 300px);
+  width: var(--details-width, 300px);
   min-height: 0;
   overflow: hidden;
   border-left: 0.5px solid var(--separator);
-  transition: width var(--pane-duration) var(--ease-settle);
 }
 
-.inspector > * {
-  box-sizing: border-box;
-  width: var(--inspector-width, 300px);
-}
-
-@starting-style {
-  .presence[data-presence="enter"] .inspector {
-    width: 0;
-  }
-}
-
-.presence[data-presence="exit"] .inspector {
-  width: 0;
-}
-
-:root.is-resizing .inspector {
-  transition: none;
-}
-
-.inspector--empty {
+.details--empty {
   justify-content: center;
+  padding: 0 16px;
   color: var(--label-tertiary);
   font-size: 15px;
   text-align: center;
 }
 
-.inspector__details {
+.details__info {
   flex: 0 1 auto;
   max-height: 60%;
   padding: 16px 14px;
   overflow-y: auto;
 }
 
-.inspector__details:only-child {
+.details__info:only-child {
   max-height: none;
 }
 
-.inspector__header {
+.details__header {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.inspector__title {
+.details__title {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
@@ -268,14 +279,14 @@
   user-select: text;
 }
 
-.inspector__amount {
+.details__amount {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
   line-height: 1.2;
 }
 
-.inspector__meta {
+.details__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -285,44 +296,67 @@
   font-size: 12px;
 }
 
-.inspector__meta > * + *::before {
+.details__meta > * + *::before {
   content: "·";
   content: "·" / "";
   margin-right: 8px;
 }
 
-.inspector__reason {
+.details__reason {
   margin: 0;
   color: var(--label-secondary);
   font-size: 12px;
 }
 
-.inspector__section {
+.details__section {
   margin-top: 18px;
 }
 
-.inspector__heading {
+.details__heading {
   margin: 0 0 6px 2px;
   color: var(--label-secondary);
   font-size: 11px;
   font-weight: 600;
 }
 
-.inspector__note {
+.details__note {
   margin: 0 2px;
   color: var(--label-secondary);
   font-size: 12px;
   line-height: 1.4;
 }
 
-.inspector__actions {
+.details__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
 }
 
-.inspector__preview {
+/* No Receipt Needed for a credit: a caption over its category buttons, on a line of its own. */
+.details__choices {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.details__choices-label {
+  margin-left: 2px;
+  color: var(--label-secondary);
+  font-size: 11px;
+}
+
+.details__choices .details__actions {
+  margin-top: 0;
+}
+
+.details__edited {
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.details__preview {
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
@@ -330,14 +364,14 @@
   border-top: 0.5px solid var(--separator);
 }
 
-.inspector__preview-bar {
+.details__preview-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 8px 4px 16px;
 }
 
-.inspector__preview-name {
+.details__preview-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -347,7 +381,7 @@
   white-space: nowrap;
 }
 
-/* Receipts in the inspector -------------------------------------------------- */
+/* Receipts in the details column -------------------------------------------------- */
 
 .receipt-list {
   margin: 0;
@@ -360,6 +394,7 @@
 
 .receipt-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 3px 8px 3px 3px;
@@ -468,6 +503,22 @@
   gap: 4px;
 }
 
+/* Under a receipt Gemini couldn't read: what went wrong and the button that reads it again. */
+.receipt-row__problem {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 4px 22px;
+  font-size: 11px;
+}
+
+.receipt-row__problem button:not([class]) {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
 .receipt-row__spinner {
   margin: 0 4px;
 }
@@ -544,7 +595,7 @@
 
 /*
  * Quick Look grows out of the receipt it shows and shrinks back into it: --quicklook-origin is
- * the transform that lays the panel over the inspector's preview (or the selected row).
+ * the transform that lays the panel over the details column's preview (or the selected row).
  */
 @starting-style {
   .presence[data-presence="enter"] .quicklook-backdrop {
@@ -605,10 +656,6 @@
       transform: none;
     }
   }
-
-  .inspector {
-    transition: none;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -637,12 +684,12 @@
   }
 }
 
-/* Narrower padding so the decisions fit on one line in the inspector's default width. */
-.inspector__actions button:not([class]) {
+/* Narrower padding so the decisions fit on one line in the details column's default width. */
+.details__actions button:not([class]) {
   padding: 0 10px;
 }
 
-.inspector__actions button.pull-down {
+.details__actions button.pull-down {
   gap: 6px;
   padding: 0 7px 0 10px;
 }

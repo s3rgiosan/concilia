@@ -45,6 +45,13 @@ const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.R
 /** The sidebar's width range and default, in pixels. */
 export const SIDEBAR_WIDTH = { min: 180, max: 280, initial: 220 };
 
+/** Below this window width the sidebar hides, and showing it lays it over the content. */
+export const COMPACT_WIDTH = 1100;
+
+function isCompact(): boolean {
+  return window.innerWidth < COMPACT_WIDTH;
+}
+
 type SheetKind = "new-month" | "rerun";
 
 /** The listing with `period` marked as in review after a run produced `summary`. */
@@ -97,7 +104,6 @@ export function Main() {
   /** The open review's commands, for the app menu. */
   const reviewCommands = useRef<ReviewCommands>(null);
   const [reviewCan, setReviewCan] = useState<ReviewAvailability | null>(null);
-  const [inspectorShown, setInspectorShown] = useState(true);
   const [rejectKind, setRejectKind] = useState<RejectKind>("removeMatch");
   /** The statements area's file picker, for the app menu. */
   const statementsPicker = useRef<{ browse: () => void }>(null);
@@ -106,7 +112,22 @@ export function Main() {
 
   const configured = state?.configured === true;
   const root = state?.settings.receipts_root ?? null;
-  const sidebarShown = sidebarSetting !== "hidden";
+  const [compact, setCompact] = useState(isCompact);
+  /** Whether the sidebar shows over the content in a narrow window. */
+  const [overlay, setOverlay] = useState(false);
+  const [wasCompact, setWasCompact] = useState(compact);
+  if (wasCompact !== compact) {
+    setWasCompact(compact);
+    setOverlay(false);
+  }
+  const sidebarShown = compact ? overlay : sidebarSetting !== "hidden";
+  const toggleSidebar = () => {
+    if (compact) {
+      setOverlay((shown) => !shown);
+    } else {
+      setSidebarSetting(sidebarShown ? "hidden" : "shown");
+    }
+  };
   const mainRef = useRef<HTMLDivElement>(null);
   /** Whether the detail area is scrolled, so the toolbar shows its edge over the content. */
   const [scrolled, setScrolled] = useState(false);
@@ -114,6 +135,12 @@ export function Main() {
   useEffect(() => {
     setScrolled(false);
   }, [key]);
+
+  useEffect(() => {
+    const onResize = () => setCompact(isCompact());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   /** Tracks the scroll position of the detail area's own scroller: the detail pane or the review list. */
   function onDetailScroll(e: UIEvent<HTMLDivElement>) {
@@ -169,6 +196,7 @@ export function Main() {
       setStoredKey(periodKey(period));
       setMessage(null);
       setLastRun(null);
+      setOverlay(false);
     },
     [setStoredKey],
   );
@@ -231,7 +259,6 @@ export function Main() {
     {
       configured,
       sidebarShown,
-      inspectorShown,
       rejectKind,
       acceptsStatements: onStatementsScreen && !running,
       canReconcile: monthStatements.length > 0 || summary.transactions > 0,
@@ -248,16 +275,20 @@ export function Main() {
         openReport(selected.year, selected.month).catch(setMessage);
       },
       revealPeriod: reveal,
-      toggleSidebar: () => setSidebarSetting(sidebarShown ? "hidden" : "shown"),
+      toggleSidebar,
     },
     reviewCommands,
   );
 
   /** A month's context menu in the sidebar. */
   function monthMenu(month: PeriodSummary): MenuEntry[] {
-    const entries: MenuEntry[] = [{ label: t("month.showInFinder"), onSelect: () => revealMonth(month) }];
+    const entries: MenuEntry[] = [];
     if (isReviewable(month)) {
-      entries.push({ label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
+      entries.push({ label: t("month.openReport"), onSelect: () => openReport(month.year, month.month).catch(setMessage) });
+    }
+    entries.push({ label: t("month.showInFinder"), onSelect: () => revealMonth(month) });
+    if (isReviewable(month)) {
+      entries.push("separator", { label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
     }
     return entries;
   }
@@ -344,7 +375,6 @@ export function Main() {
             onError={setMessage}
             onAvailabilityChange={setReviewCan}
             onRejectKindChange={setRejectKind}
-            onInspectorChange={setInspectorShown}
           />
         </Suspense>
       );
@@ -385,9 +415,10 @@ export function Main() {
     <button
       type="button"
       className="icon titlebar__button"
+      data-sidebar-toggle
       aria-label={sidebarShown ? t("toolbar.hideSidebar") : t("toolbar.showSidebar")}
       title={sidebarShown ? t("toolbar.hideSidebar") : t("toolbar.showSidebar")}
-      onClick={() => setSidebarSetting(sidebarShown ? "hidden" : "shown")}
+      onClick={toggleSidebar}
     >
       <Icon name="sidebar" size={16} />
     </button>
@@ -397,7 +428,7 @@ export function Main() {
     <div className="main" ref={mainRef} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
       <Toolbar
         leading={toggle}
-        leadingWidth={configured ? (showSidebar ? "var(--sidebar-width)" : 0) : undefined}
+        leadingWidth={configured ? (showSidebar && !compact ? "var(--sidebar-width)" : 0) : undefined}
         title={configured ? label : undefined}
         subtitle={subtitle}
         trailing={trailing}
@@ -409,6 +440,8 @@ export function Main() {
           {showSidebar ? (
             <>
               <Sidebar
+                overlay={compact}
+                onDismiss={() => setOverlay(false)}
                 periods={periods}
                 selected={key}
                 onSelect={select}
@@ -419,17 +452,19 @@ export function Main() {
                 onNewMonth={() => setSheet("new-month")}
                 menu={monthMenu}
               />
-              <ResizeHandle
-                label={t("sidebar.resize")}
-                width={sidebarWidth}
-                min={SIDEBAR_WIDTH.min}
-                max={SIDEBAR_WIDTH.max}
-                grows="right"
-                scope={mainRef}
-                variable="--sidebar-width"
-                onResize={setSidebarWidth}
-                onCollapse={() => setSidebarSetting("hidden")}
-              />
+              {compact ? null : (
+                <ResizeHandle
+                  label={t("sidebar.resize")}
+                  width={sidebarWidth}
+                  min={SIDEBAR_WIDTH.min}
+                  max={SIDEBAR_WIDTH.max}
+                  grows="right"
+                  scope={mainRef}
+                  variable="--sidebar-width"
+                  onResize={setSidebarWidth}
+                  onCollapse={() => setSidebarSetting("hidden")}
+                />
+              )}
             </>
           ) : null}
         </Presence>

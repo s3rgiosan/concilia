@@ -8,12 +8,16 @@ import {
   finalize,
   getDraft,
   getReview,
+  getRules,
   openReceipt,
+  openReport as openReportFile,
   periodStatus,
   receiptUrl,
   rescanReceipt,
   rescanReimbursement,
+  revealPeriod,
   saveDraft,
+  saveRules,
   startScan,
   type Draft,
   type ReceiptMeta,
@@ -22,7 +26,7 @@ import {
   type ScanResult,
 } from "../lib/tauri";
 import { deferred, makePeriodStatus, makeReceipt, makeReviewData, makeTransaction } from "../test/fixtures";
-import type { ReviewAvailability, ReviewCommands } from "./commands";
+import type { RejectKind, ReviewAvailability, ReviewCommands } from "./commands";
 import { Review, type ReviewProps } from "./Review";
 
 vi.mock("../lib/tauri", async (importOriginal) => ({
@@ -31,13 +35,17 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   finalize: vi.fn(),
   getDraft: vi.fn(),
   getReview: vi.fn(),
+  getRules: vi.fn(),
   openReceipt: vi.fn(),
+  openReport: vi.fn(),
   periodStatus: vi.fn(),
   receiptUrl: vi.fn(),
   rescanReceipt: vi.fn(),
   rescanReimbursement: vi.fn(),
   requestAttention: vi.fn(() => Promise.resolve()),
+  revealPeriod: vi.fn(),
   saveDraft: vi.fn(),
+  saveRules: vi.fn(),
   setDockProgress: vi.fn(() => Promise.resolve()),
   startScan: vi.fn(),
 }));
@@ -152,13 +160,21 @@ function Window(props: Omit<ReviewProps, "toolbar" | "period" | "status" | "more
   );
 }
 
-async function renderReview(props: Partial<ReviewProps> = {}) {
+/**
+ * Renders the review and waits for it to load. Unless `opening` is set, it then shows every
+ * transaction, so a test starts from the full list rather than the ones still to decide.
+ */
+async function renderReview(props: Partial<ReviewProps> = {}, { opening = false } = {}) {
   const onChanged = vi.fn();
   const onError = vi.fn();
   const onAvailabilityChange = vi.fn<(can: ReviewAvailability) => void>();
   const ref = createRef<ReviewCommands>();
   const result = render(<Window onChanged={onChanged} onError={onError} onAvailabilityChange={onAvailabilityChange} ref={ref} {...props} />);
   await settle();
+  const all = screen.queryByRole("radio", { name: /^All/ });
+  if (!opening && all) {
+    fireEvent.click(all);
+  }
   return { ...result, onChanged, onError, onAvailabilityChange, commands: () => ref.current! };
 }
 
@@ -215,17 +231,17 @@ function search(value: string) {
   fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), { target: { value } });
 }
 
-function inspector(): HTMLElement {
-  return screen.getByRole("complementary", { name: "Inspector" });
+function details(): HTMLElement {
+  return screen.getByRole("complementary", { name: "Details" });
 }
 
-/** Titles of the receipts the inspector lists. */
+/** Titles of the receipts the details column lists. */
 function receiptTitles(): string[] {
-  return Array.from(inspector().querySelectorAll(".receipt-row__title")).map((el) => el.textContent ?? "");
+  return Array.from(details().querySelectorAll(".receipt-row__title")).map((el) => el.textContent ?? "");
 }
 
 function receiptItem(title: string): HTMLElement {
-  return within(inspector()).getByText(title, { selector: ".receipt-row__title" }).closest<HTMLElement>("li")!;
+  return within(details()).getByText(title, { selector: ".receipt-row__title" }).closest<HTMLElement>("li")!;
 }
 
 /** Opens the menu of the button labelled `label` and picks `item`, inside a submenu when `submenu` names one. */
@@ -237,13 +253,13 @@ function pick(label: string, item: string, scope: HTMLElement = document.body, s
   fireEvent.click(screen.getByRole("menuitem", { name: item }));
 }
 
-/** Makes a decision on the selected row: the inspector's first decision button. */
+/** Makes a decision on the selected row: the details column's first decision button. */
 function decideFirst() {
-  fireEvent.click(inspector().querySelector<HTMLButtonElement>("button[data-inspector-action]")!);
+  fireEvent.click(details().querySelector<HTMLButtonElement>("button[data-details-action]")!);
 }
 
 function previewSource(): string | null {
-  const preview = within(inspector()).getByRole("region", { name: /^Preview of / });
+  const preview = within(details()).getByRole("region", { name: /^Preview of / });
   return preview.querySelector("iframe, img")?.getAttribute("src") ?? null;
 }
 
@@ -294,7 +310,7 @@ describe("loading", () => {
     await settle();
     expect(getReview).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(options()).toHaveLength(5);
+    expect(options()).toHaveLength(2);
   });
 
   it("applies the stored draft", async () => {
@@ -303,9 +319,9 @@ describe("loading", () => {
     };
     vi.mocked(getDraft).mockResolvedValue(draft);
     await renderReview();
-    expect(counts()).toEqual({ All: "4", "Needs Review": "1", Unmatched: "0", Matched: "3" });
+    expect(counts()).toEqual({ "To Decide": "1", Matched: "3", All: "4" });
     select("INITECH SERVICES");
-    expect(within(inspector()).getByText("Manual match")).toBeTruthy();
+    expect(within(details()).getByText("Manual decision")).toBeTruthy();
     expect(receiptTitles()).toEqual(["INITECH"]);
     // The receipt gets its preview path back from the review data.
     expect(previewSource()).toBe("receipt://localhost/2030/03/receipts/initech.pdf#navpanes=0");
@@ -319,7 +335,7 @@ describe("list", () => {
       "Matched1 MarACME CORP-€10.00",
       "* Needs Review2 MarGLOBEX SHOP-€20.00",
       "Unmatched3 MarINITECH SERVICES-€30.00",
-      "Matched4 MarHOOLI PAYROLL+€5,000.00",
+      "No Receipt · Salary4 MarHOOLI PAYROLL+€5,000.00",
       "Reimbursement7 MarACME TRAVEL€5.00",
     ]);
     expect(within(list()).getByRole("group", { name: "Reimbursements · €5.00 total" })).toBeTruthy();
@@ -395,24 +411,68 @@ describe("list", () => {
     search("umbrella");
     expect(options()).toEqual([]);
     expect(screen.getByText("No Results for “umbrella”")).toBeTruthy();
-    expect(within(inspector()).getByText("No transaction selected.")).toBeTruthy();
+    expect(within(details()).getByText("No Selection")).toBeTruthy();
+  });
+});
+
+describe("empty list", () => {
+  it("says when every transaction has a decision and offers Finalize…", async () => {
+    await renderReview({}, { opening: true });
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
+    fireEvent.click(button("Assign INITECH", receiptItem("INITECH")));
+    expect(options()).toEqual([]);
+    expect(screen.getByText("Every Transaction Has a Decision")).toBeTruthy();
+    expect(screen.getByText("Finalize the month to sort its receipts and save the report.")).toBeTruthy();
+    expect(within(details()).getByText("No Selection")).toBeTruthy();
+    const finalizeHere = within(list().parentElement!).getByRole("button", { name: "Finalize…" });
+    expect(finalizeHere.classList.contains("default")).toBe(true);
+    fireEvent.click(finalizeHere);
+    expect(screen.getByRole("alertdialog", { name: "Finalize March 2030?" })).toBeTruthy();
+  });
+
+  it("points to the transactions still to decide from another filter", async () => {
+    vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_GLOBEX, TX_INITECH] }));
+    await renderReview();
+    fireEvent.click(filterButton("Matched"));
+    expect(screen.getByText("No Matched Transactions")).toBeTruthy();
+    expect(screen.getByText("2 transactions still need a decision.")).toBeTruthy();
+    fireEvent.click(button("Show Them"));
+    expect(filterButton("To Decide").getAttribute("aria-checked")).toBe("true");
+    expect(options()).toHaveLength(2);
   });
 });
 
 describe("filters and search", () => {
-  it("counts transactions by status", async () => {
+  it("counts the transactions to decide, the matched ones and all of them", async () => {
     await renderReview();
-    expect(counts()).toEqual({ All: "4", "Needs Review": "1", Unmatched: "1", Matched: "2" });
+    expect(counts()).toEqual({ "To Decide": "2", Matched: "2", All: "4" });
     expect(filterButton("All").getAttribute("aria-checked")).toBe("true");
   });
 
-  it("shows one status without the reimbursements", async () => {
+  it("opens on the transactions still to decide", async () => {
+    await renderReview({}, { opening: true });
+    expect(filterButton("To Decide").getAttribute("aria-checked")).toBe("true");
+    expect(options()).toEqual(["* Needs Review2 MarGLOBEX SHOP-€20.00", "Unmatched3 MarINITECH SERVICES-€30.00"]);
+  });
+
+  it("opens on every transaction when nothing is left to decide or the month is finalized", async () => {
+    vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_ACME, TX_SALARY] }));
+    await renderReview({}, { opening: true });
+    expect(filterButton("All").getAttribute("aria-checked")).toBe("true");
+    cleanup();
+    vi.mocked(getReview).mockResolvedValue(DATA);
+    vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus({ applied: true }));
+    await renderReview({}, { opening: true });
+    expect(filterButton("All").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("shows one filter without the reimbursements", async () => {
     await renderReview();
     fireEvent.click(filterButton("Matched"));
-    expect(options()).toEqual(["* Matched1 MarACME CORP-€10.00", "Matched4 MarHOOLI PAYROLL+€5,000.00"]);
+    expect(options()).toEqual(["* Matched1 MarACME CORP-€10.00", "No Receipt · Salary4 MarHOOLI PAYROLL+€5,000.00"]);
     expect(filterButton("Matched").getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(filterButton("Unmatched"));
-    expect(options()).toEqual(["* Unmatched3 MarINITECH SERVICES-€30.00"]);
+    fireEvent.click(filterButton("To Decide"));
+    expect(options()).toEqual(["* Needs Review2 MarGLOBEX SHOP-€20.00", "Unmatched3 MarINITECH SERVICES-€30.00"]);
   });
 
   it("keeps the selection while it stays listed", async () => {
@@ -420,8 +480,8 @@ describe("filters and search", () => {
     select("HOOLI PAYROLL");
     fireEvent.click(filterButton("Matched"));
     expect(selected()).toBe("HOOLI PAYROLL");
-    fireEvent.click(filterButton("Unmatched"));
-    expect(selected()).toBe("INITECH SERVICES");
+    fireEvent.click(filterButton("To Decide"));
+    expect(selected()).toBe("GLOBEX SHOP");
   });
 
   it("searches descriptions and reimbursements", async () => {
@@ -445,10 +505,10 @@ describe("filters and search", () => {
   });
 });
 
-describe("inspector", () => {
+describe("details", () => {
   it("shows a REVIEW transaction with its candidates and the first one previewed", async () => {
     await renderReview();
-    const panel = inspector();
+    const panel = details();
     expect(within(panel).getByRole("heading", { name: "GLOBEX SHOP" })).toBeTruthy();
     expect(within(panel).getByText("-€20.00")).toBeTruthy();
     expect(within(panel).getByText("2 March 2030")).toBeTruthy();
@@ -465,70 +525,101 @@ describe("inspector", () => {
     await renderReview();
     fireEvent.click(within(receiptItem("HOOLI")).getByRole("button", { pressed: false }));
     expect(within(receiptItem("HOOLI")).getByRole("button", { pressed: true })).toBeTruthy();
-    expect(within(inspector()).getByRole("img", { name: "hooli.jpg" }).getAttribute("src")).toBe("receipt://localhost/2030/03/receipts/hooli.jpg");
+    expect(within(details()).getByRole("img", { name: "hooli.jpg" }).getAttribute("src")).toBe("receipt://localhost/2030/03/receipts/hooli.jpg");
   });
 
   it("offers an UNMATCHED transaction the pool receipts closest in amount", async () => {
     await renderReview();
-    fireEvent.click(button("None of These", inspector()));
+    fireEvent.click(button("None of These", details()));
     select("INITECH SERVICES");
-    expect(within(inspector()).getByRole("region", { name: "Unmatched Receipts" })).toBeTruthy();
+    expect(within(details()).getByRole("region", { name: "Unmatched Receipts" })).toBeTruthy();
     expect(receiptTitles()).toEqual(["INITECH", "GLOBEX", "HOOLI"]);
     expect(button("Assign INITECH", receiptItem("INITECH"))).toBeTruthy();
     expect(within(receiptItem("GLOBEX")).getByText("Differs by €10.00")).toBeTruthy();
     expect(within(receiptItem("INITECH")).queryByText(/Differs by/)).toBeNull();
-    expect(within(inspector()).queryByRole("button", { name: "None of These" })).toBeNull();
+    expect(within(details()).queryByRole("button", { name: "None of These" })).toBeNull();
   });
 
-  it("offers income no receipts", async () => {
+  it("offers income no receipts, and its likely categories as buttons", async () => {
     await renderReview();
-    fireEvent.click(button("None of These", inspector()));
+    fireEvent.click(button("None of These", details()));
     select("HOOLI PAYROLL");
-    fireEvent.click(button("Remove Match", inspector()));
+    fireEvent.click(button("Needs a Receipt", details()));
     expect(receiptTitles()).toEqual([]);
-    expect(within(inspector()).getByText("No receipts to assign.")).toBeTruthy();
-    expect(within(inspector()).getByRole("button", { name: "No Receipt Needed" })).toBeTruthy();
-    expect(within(inspector()).queryByRole("region", { name: /^Preview of/ })).toBeNull();
+    expect(within(details()).getByText("No receipts to assign.")).toBeTruthy();
+    const choices = within(details()).getByRole("group", { name: "No Receipt Needed" });
+    expect(within(choices).getAllByRole("button").map((b) => b.textContent || b.getAttribute("aria-label"))).toEqual([
+      "Transfer",
+      "Salary",
+      "Refund",
+      "Other Categories",
+    ]);
+    expect(within(details()).queryByRole("region", { name: /^Preview of/ })).toBeNull();
+    pick("Other Categories", "Bank Fee", choices);
+    expect(options()[3]).toBe("* No Receipt · Bank Fee4 MarHOOLI PAYROLLEdited+€5,000.00");
+    fireEvent.click(button("Needs a Receipt", details()));
+    fireEvent.click(button("Transfer", details()));
+    expect(within(details()).getByText("No receipt needed: Transfer")).toBeTruthy();
   });
 
   it("shows a MATCHED transaction's receipt and one marked as needing none", async () => {
     await renderReview();
     select("ACME CORP");
-    expect(within(inspector()).getByRole("region", { name: "Receipt" })).toBeTruthy();
+    expect(within(details()).getByRole("region", { name: "Receipt" })).toBeTruthy();
     expect(receiptTitles()).toEqual(["ACME"]);
-    expect(button("Remove Match", inspector())).toBeTruthy();
-    expect(within(inspector()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
+    expect(button("Remove Match", details())).toBeTruthy();
+    expect(within(details()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
     select("HOOLI PAYROLL");
-    expect(within(inspector()).getByText("No receipt needed: Salary")).toBeTruthy();
+    expect(within(details()).getByText("No receipt needed: Salary")).toBeTruthy();
+    expect(button("Needs a Receipt", details())).toBeTruthy();
+    expect(within(details()).queryByRole("button", { name: "Remove Match" })).toBeNull();
   });
 
   it("says when every candidate went to another transaction", async () => {
     const other = makeTransaction("tx-5", { date: "2030-03-05", description: "GLOBEX STORE", status: "MATCHED", receipt_meta: [GLOBEX, HOOLI] });
     vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_GLOBEX, other] }));
     await renderReview();
-    expect(within(inspector()).getByText("Every candidate was assigned to another transaction.")).toBeTruthy();
-    expect(button("None of These", inspector())).toBeTruthy();
+    expect(within(details()).getByText("Every candidate was assigned to another transaction.")).toBeTruthy();
+    expect(button("None of These", details())).toBeTruthy();
   });
 
   it("shows a reimbursement", async () => {
     await renderReview();
     select("ACME TRAVEL");
-    expect(within(inspector()).getByRole("heading", { name: "ACME TRAVEL" })).toBeTruthy();
-    expect(within(inspector()).getByText("Reimbursement")).toBeTruthy();
+    expect(within(details()).getByRole("heading", { name: "ACME TRAVEL" })).toBeTruthy();
+    expect(within(details()).getByText("Reimbursement")).toBeTruthy();
     expect(receiptTitles()).toEqual(["ACME TRAVEL"]);
-    expect(within(inspector()).queryByRole("button", { name: "Remove Match" })).toBeNull();
+    expect(within(details()).queryByRole("button", { name: "Remove Match" })).toBeNull();
   });
 
-  it("hides and shows from the toolbar and remembers the choice", async () => {
+  it("stays in place, with no button to hide it", async () => {
     await renderReview();
-    fireEvent.click(button("Hide Inspector", toolbar()));
-    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
-    expect(localStorage.getItem("review.inspector")).toBe("hidden");
-    cleanup();
+    expect(details()).toBeTruthy();
+    expect(within(toolbar()).queryByRole("button", { name: /Inspector|Details/ })).toBeNull();
+  });
+
+  it("marks a decision as manual in the list and the header", async () => {
     await renderReview();
-    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
-    fireEvent.click(button("Show Inspector", toolbar()));
-    expect(inspector()).toBeTruthy();
+    expect(within(details()).getByText("2 receipts match amount")).toBeTruthy();
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
+    select("GLOBEX SHOP");
+    expect(within(details()).getByText("Manual decision")).toBeTruthy();
+    const row = within(list()).getByText("GLOBEX SHOP").closest<HTMLElement>("[role=option]")!;
+    expect(row.querySelector(".list-row__edited .symbol--pencil")).toBeTruthy();
+    expect(within(list()).getByText("ACME CORP").closest<HTMLElement>("[role=option]")!.querySelector(".symbol--pencil")).toBeNull();
+  });
+
+  it("says when a receipt couldn't be read and reads it again from the row", async () => {
+    const blank = makeReceipt("scan-01.pdf", { vendor: null, amount_cents: null, confidence: null, provider_used: "error" });
+    vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_INITECH], unmatched_receipts: [blank] }));
+    vi.mocked(rescanReceipt).mockResolvedValue({ ...stripped(blank), vendor: "SAMPLE CAFE", amount_cents: 3000, confidence: "high" });
+    await renderReview();
+    const item = receiptItem("scan-01.pdf");
+    expect(within(item).getByText("Couldn't read this receipt")).toBeTruthy();
+    fireEvent.click(button("Read scan-01.pdf Again", item));
+    expect(rescanReceipt).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/scan-01.pdf");
+    await settle();
+    expect(within(receiptItem("SAMPLE CAFE")).queryByText("Couldn't read this receipt")).toBeNull();
   });
 });
 
@@ -536,14 +627,14 @@ describe("decisions", () => {
   it("accepts a candidate, freeing the other one", async () => {
     await renderReview();
     fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
-    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOP-€20.00");
+    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOPEdited-€20.00");
     expect(receiptTitles()).toEqual(["GLOBEX"]);
-    expect(counts()).toEqual({ All: "4", "Needs Review": "0", Unmatched: "1", Matched: "3" });
+    expect(counts()).toEqual({ "To Decide": "1", Matched: "3", All: "4" });
     select("INITECH SERVICES");
     expect(receiptTitles()).toEqual(["INITECH", "HOOLI"]);
   });
 
-  it("moves focus to the inspector's first decision with Return, and commits the focused candidate with the Accept command", async () => {
+  it("moves focus to the details column's first decision with Return, and commits the focused candidate with the Accept command", async () => {
     const { commands } = await renderReview();
     list().focus();
     key("Enter");
@@ -554,7 +645,7 @@ describe("decisions", () => {
     expect(receiptTitles()).toEqual(["HOOLI"]);
   });
 
-  it("returns focus to the list after a decision in the inspector", async () => {
+  it("returns focus to the list after a decision in the details column", async () => {
     await renderReview();
     const assign = button("Assign GLOBEX", receiptItem("GLOBEX"));
     assign.focus();
@@ -578,8 +669,8 @@ describe("decisions", () => {
 
   it("rejects every candidate with None of These", async () => {
     await renderReview();
-    fireEvent.click(button("None of These", inspector()));
-    expect(options()[1]).toBe("* Unmatched2 MarGLOBEX SHOP-€20.00");
+    fireEvent.click(button("None of These", details()));
+    expect(options()[1]).toBe("* Unmatched2 MarGLOBEX SHOPEdited-€20.00");
     expect(receiptTitles()).toEqual(["GLOBEX", "HOOLI", "INITECH"]);
   });
 
@@ -587,7 +678,7 @@ describe("decisions", () => {
     await renderReview();
     select("INITECH SERVICES");
     fireEvent.click(button("Assign INITECH", receiptItem("INITECH")));
-    expect(within(inspector()).getByText("Manual match")).toBeTruthy();
+    expect(within(details()).getByText("Manual decision")).toBeTruthy();
     await advance(500);
     expect(vi.mocked(saveDraft).mock.calls[0][2]).toEqual({
       "tx-3": { status: "MATCHED", receipt_meta: [stripped(INITECH)], receipt_files: [INITECH.file], notes: "manual_match" },
@@ -597,8 +688,8 @@ describe("decisions", () => {
   it("marks a transaction as needing no receipt", async () => {
     await renderReview();
     select("INITECH SERVICES");
-    pick("No Receipt Needed", "Refund", inspector());
-    expect(within(inspector()).getByText("No receipt needed: Refund")).toBeTruthy();
+    pick("No Receipt Needed", "Refund", details());
+    expect(within(details()).getByText("No receipt needed: Refund")).toBeTruthy();
     await advance(500);
     expect(vi.mocked(saveDraft).mock.calls[0][2]).toEqual({ "tx-3": { status: "MATCHED", receipt_meta: [], receipt_files: [], notes: "refund" } });
   });
@@ -606,16 +697,16 @@ describe("decisions", () => {
   it("disputes a match, freeing its receipt", async () => {
     await renderReview();
     select("ACME CORP");
-    fireEvent.click(button("Remove Match", inspector()));
-    expect(options()[0]).toBe("* Unmatched1 MarACME CORP-€10.00");
+    fireEvent.click(button("Remove Match", details()));
+    expect(options()[0]).toBe("* Unmatched1 MarACME CORPEdited-€10.00");
     select("INITECH SERVICES");
     expect(receiptTitles()).toEqual(["INITECH", "ACME"]);
   });
 
   it("hands the selection to the next row when the decided one leaves the filter", async () => {
     await renderReview();
-    fireEvent.click(button("None of These", inspector()));
-    fireEvent.click(filterButton("Unmatched"));
+    fireEvent.click(button("None of These", details()));
+    fireEvent.click(filterButton("To Decide"));
     expect(selected()).toBe("GLOBEX SHOP");
     fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     expect(options()).toEqual(["* Unmatched3 MarINITECH SERVICES-€30.00"]);
@@ -637,7 +728,7 @@ describe("context menu", () => {
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "No Receipt Needed" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Refund" }));
-    expect(within(inspector()).getByText("No receipt needed: Refund")).toBeTruthy();
+    expect(within(details()).getByText("No receipt needed: Refund")).toBeTruthy();
   });
 
   it("names Reject by the row's status and assigns its focused receipt", async () => {
@@ -645,7 +736,46 @@ describe("context menu", () => {
     fireEvent.contextMenu(within(list()).getByText("GLOBEX SHOP"));
     expect(screen.getByRole("menuitem", { name: "None of These" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Assign Receipt" }));
-    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOP-€20.00");
+    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOPEdited-€20.00");
+  });
+
+  it("names Reject Needs a Receipt for a transaction marked as needing none", async () => {
+    await renderReview();
+    fireEvent.contextMenu(within(list()).getByText("HOOLI PAYROLL"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Needs a Receipt" }));
+    expect(options()[3]).toBe("* Unmatched4 MarHOOLI PAYROLLEdited+€5,000.00");
+  });
+
+  it("adds a match rule from a decision the user made", async () => {
+    vi.mocked(getRules).mockResolvedValue([{ id: "rule-1", receiptVendor: "ACME", transactionDescription: "ACME CORP" }]);
+    vi.mocked(saveRules).mockImplementation(async (rules) => rules);
+    await renderReview();
+    fireEvent.contextMenu(within(list()).getByText("ACME CORP"));
+    expect(screen.queryByRole("menuitem", { name: /^Always Match/ })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    select("GLOBEX SHOP");
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
+    fireEvent.contextMenu(within(list()).getByText("GLOBEX SHOP"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Always Match “GLOBEX” to “GLOBEX SHOP”" }));
+    await settle();
+    expect(saveRules).toHaveBeenCalledWith([
+      { id: "rule-1", receiptVendor: "ACME", transactionDescription: "ACME CORP" },
+      { id: expect.any(String), receiptVendor: "GLOBEX", transactionDescription: "GLOBEX SHOP" },
+    ]);
+    const banner = screen.getByText("Rule added. It applies the next time Concilia matches receipts.").closest<HTMLElement>(".banner")!;
+    fireEvent.click(button("Dismiss", banner));
+    expect(screen.queryByText(/Rule added/)).toBeNull();
+  });
+
+  it("does not add a rule that exists", async () => {
+    vi.mocked(getRules).mockResolvedValue([{ id: "rule-1", receiptVendor: "globex", transactionDescription: "globex shop" }]);
+    await renderReview();
+    fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
+    fireEvent.contextMenu(within(list()).getByText("GLOBEX SHOP"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Always Match “GLOBEX” to “GLOBEX SHOP”" }));
+    await settle();
+    expect(saveRules).not.toHaveBeenCalled();
+    expect(screen.getByText("That rule already exists.")).toBeTruthy();
   });
 
   it("offers a reimbursement Read Again and the previews", async () => {
@@ -657,22 +787,22 @@ describe("context menu", () => {
   });
 });
 
-describe("inspector width", () => {
-  it("resizes from its divider within 260 to 400 pixels and remembers the width", async () => {
+describe("details width", () => {
+  it("resizes from its divider within 280 to 420 pixels and remembers the width", async () => {
     await renderReview();
-    const divider = screen.getByRole("separator", { name: "Resize Inspector" });
-    const width = () => screen.getByRole("region", { name: /^Review / }).style.getPropertyValue("--inspector-width");
+    const divider = screen.getByRole("separator", { name: "Resize Details" });
+    const width = () => screen.getByRole("region", { name: /^Review / }).style.getPropertyValue("--details-width");
     expect(divider.getAttribute("aria-valuenow")).toBe("300");
     expect(width()).toBe("300px");
     fireEvent.keyDown(divider, { key: "ArrowLeft" });
     expect(width()).toBe("310px");
     fireEvent.keyDown(divider, { key: "End" });
-    expect(divider.getAttribute("aria-valuenow")).toBe("400");
+    expect(divider.getAttribute("aria-valuenow")).toBe("420");
     fireEvent.keyDown(divider, { key: "ArrowLeft" });
-    expect(divider.getAttribute("aria-valuenow")).toBe("400");
-    expect(localStorage.getItem("review.inspectorWidth")).toBe("400");
+    expect(divider.getAttribute("aria-valuenow")).toBe("420");
+    expect(localStorage.getItem("review.detailsWidth")).toBe("420");
     fireEvent.keyDown(divider, { key: "Home" });
-    expect(width()).toBe("260px");
+    expect(width()).toBe("280px");
   });
 });
 
@@ -687,7 +817,7 @@ describe("undo and redo", () => {
     expect(options()[1]).toBe("* Needs Review2 MarGLOBEX SHOP-€20.00");
     expect(commands().can.redo).toBe(true);
     act(() => commands().redo());
-    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOP-€20.00");
+    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOPEdited-€20.00");
     await advance(500);
     expect(Object.keys(vi.mocked(saveDraft).mock.calls[0][2])).toEqual(["tx-2"]);
   });
@@ -725,7 +855,6 @@ describe("commands", () => {
       redo: false,
       setFilter: true,
       focusSearch: true,
-      toggleInspector: true,
       scan: true,
       exportReport: true,
       finalize: true,
@@ -736,31 +865,25 @@ describe("commands", () => {
     expect(onAvailabilityChange).toHaveBeenLastCalledWith(expect.objectContaining({ accept: false }));
   });
 
-  it("reports whether the inspector is shown", async () => {
-    const onInspectorChange = vi.fn<(shown: boolean) => void>();
-    const { commands } = await renderReview({ onInspectorChange });
-    expect(onInspectorChange).toHaveBeenLastCalledWith(true);
-    act(() => commands().toggleInspector());
-    expect(onInspectorChange).toHaveBeenLastCalledWith(false);
-  });
-
   it("reports what Reject does for the selection", async () => {
-    const onRejectKindChange = vi.fn<(kind: "noneOfThese" | "removeMatch") => void>();
+    const onRejectKindChange = vi.fn<(kind: RejectKind) => void>();
     await renderReview({ onRejectKindChange });
     select("GLOBEX SHOP");
     expect(onRejectKindChange).toHaveBeenLastCalledWith("noneOfThese");
-    select("HOOLI PAYROLL");
+    select("ACME CORP");
     expect(onRejectKindChange).toHaveBeenLastCalledWith("removeMatch");
+    select("HOOLI PAYROLL");
+    expect(onRejectKindChange).toHaveBeenLastCalledWith("needsReceipt");
   });
 
   it("runs decisions on the selection", async () => {
     const { commands } = await renderReview();
     act(() => commands().noReceipt("bank_fee"));
-    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOP-€20.00");
+    expect(options()[1]).toBe("* No Receipt · Bank Fee2 MarGLOBEX SHOPEdited-€20.00");
     act(() => commands().reject());
-    expect(options()[1]).toBe("* Unmatched2 MarGLOBEX SHOP-€20.00");
+    expect(options()[1]).toBe("* Unmatched2 MarGLOBEX SHOPEdited-€20.00");
     act(() => commands().accept());
-    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOP-€20.00");
+    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOPEdited-€20.00");
     expect(receiptTitles()).toEqual(["GLOBEX"]);
   });
 
@@ -776,7 +899,7 @@ describe("commands", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("filters, moves and toggles the inspector", async () => {
+  it("filters, moves and focuses the search field", async () => {
     const { commands } = await renderReview();
     act(() => commands().nextPending());
     expect(selected()).toBe("INITECH SERVICES");
@@ -784,8 +907,6 @@ describe("commands", () => {
     expect(selected()).toBe("GLOBEX SHOP");
     act(() => commands().setFilter("matched"));
     expect(filterButton("Matched").getAttribute("aria-checked")).toBe("true");
-    act(() => commands().toggleInspector());
-    expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
     act(() => commands().focusSearch());
     expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search" }));
   });
@@ -881,7 +1002,7 @@ describe("Quick Look", () => {
 
   it("closes with Space and opens in Preview", async () => {
     await renderReview();
-    fireEvent.click(button("Quick Look", inspector()));
+    fireEvent.click(button("Quick Look", details()));
     const dialog = screen.getByRole("dialog");
     fireEvent.click(button("Open in Preview", dialog));
     expect(openReceipt).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/globex.pdf");
@@ -961,13 +1082,23 @@ describe("toolbar", () => {
     expect(openReport).toHaveBeenCalledTimes(1);
     expect(button("Scan for New Receipts", toolbar()).disabled).toBe(false);
     expect(button("Finalize…", toolbar()).disabled).toBe(false);
+    expect(button("Finalize…", toolbar()).classList.contains("default")).toBe(false);
   });
 
-  it("hides Finalize and disables Scan for a finalized month", async () => {
+  it("makes Finalize… the default button once nothing is left to decide", async () => {
+    vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_ACME] }));
+    await renderReview();
+    expect(button("Finalize…", toolbar()).classList.contains("default")).toBe(true);
+  });
+
+  it("offers Open Report in place of Finalize and disables Scan for a finalized month", async () => {
     vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus({ applied: true }));
+    vi.mocked(openReportFile).mockResolvedValue(undefined);
     const { commands } = await renderReview();
     expect(subtitle()).toBe("Finalized");
     expect(within(toolbar()).queryByRole("button", { name: "Finalize…" })).toBeNull();
+    fireEvent.click(button("Open Report", toolbar()));
+    expect(openReportFile).toHaveBeenCalledWith("2030", "03");
     expect(button("Scan for New Receipts", toolbar()).disabled).toBe(true);
     expect(button("Export Report…", toolbar()).disabled).toBe(false);
     expect(commands().can).toMatchObject({ scan: false, finalize: false, exportReport: true });
@@ -976,10 +1107,10 @@ describe("toolbar", () => {
   it("shows a finalized month read-only", async () => {
     vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus({ applied: true }));
     const { commands } = await renderReview();
-    expect(within(inspector()).getByText("This month is finalized. Reconcile it again to change decisions.")).toBeTruthy();
-    expect(within(inspector()).queryByRole("button", { name: /^Assign / })).toBeNull();
-    expect(within(inspector()).queryByRole("button", { name: "None of These" })).toBeNull();
-    expect(within(inspector()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
+    expect(within(details()).getByText("This month is finalized. Reconcile it again to change decisions.")).toBeTruthy();
+    expect(within(details()).queryByRole("button", { name: /^Assign / })).toBeNull();
+    expect(within(details()).queryByRole("button", { name: "None of These" })).toBeNull();
+    expect(within(details()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
     expect(commands().can).toMatchObject({ accept: false, reject: false, noReceipt: false, rescan: false, quickLook: true, openInPreview: true });
     fireEvent.click(button("Actions for GLOBEX", receiptItem("GLOBEX")));
     expect((screen.getByRole("menuitem", { name: "Read Again" }) as HTMLButtonElement).disabled).toBe(true);
@@ -1123,10 +1254,8 @@ describe("finalize", () => {
     await renderReview();
     fireEvent.click(button("Finalize…", toolbar()));
     const sheet = screen.getByRole("alertdialog", { name: "Finalize March 2030?" });
-    expect(sheet.textContent).toContain(
-      "4 receipts will be moved: 1 to _matched, 2 to _review and 1 to _unmatched. They stay in this month's receipts folder.",
-    );
-    expect(sheet.textContent).toContain("You can't undo this.");
+    expect(sheet.textContent).toContain("4 receipts will be sorted: 1 matched, 2 still to review, and 1 unmatched.");
+    expect(sheet.textContent).toContain("To change decisions later, use Reconcile Again.");
     expect(sheet.textContent).toContain("2 transactions still need a decision. They will be sorted as they are now.");
     expect(within(sheet).queryByRole("checkbox")).toBeNull();
     expect(document.activeElement).toBe(button("Cancel", sheet));
@@ -1140,8 +1269,22 @@ describe("finalize", () => {
     const { commands } = await renderReview();
     act(() => commands().finalize());
     const sheet = screen.getByRole("alertdialog");
-    expect(sheet.textContent).toContain("1 receipt will be moved: 1 to _matched, 0 to _review and 0 to _unmatched.");
+    expect(sheet.textContent).toContain("1 receipt will be sorted: 1 matched.");
     expect(sheet.textContent).not.toContain("still need");
+    expect(within(sheet).queryByRole("button", { name: "Review Remaining" })).toBeNull();
+  });
+
+  it("goes to the first transaction still to decide from Review Remaining", async () => {
+    await renderReview();
+    select("ACME CORP");
+    search("corp");
+    fireEvent.click(button("Finalize…", toolbar()));
+    fireEvent.click(button("Review Remaining", screen.getByRole("alertdialog")));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(filterButton("To Decide").getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByRole("searchbox", { name: "Search" }) as HTMLInputElement).value).toBe("");
+    expect(selected()).toBe("GLOBEX SHOP");
+    expect(document.activeElement).toBe(list());
   });
 
   it("saves pending changes, finalizes and reloads", async () => {
@@ -1164,6 +1307,16 @@ describe("finalize", () => {
     expect(getReview).toHaveBeenCalledTimes(2);
     expect(onChanged).toHaveBeenCalled();
     expect(subtitle()).toBe("Finalized");
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    const banner = screen.getByRole("status");
+    expect(banner.textContent).toContain("March 2030 is finalized. The receipts are sorted and the report is ready.");
+    vi.mocked(openReportFile).mockResolvedValue(undefined);
+    vi.mocked(revealPeriod).mockResolvedValue(undefined);
+    fireEvent.click(button("Open Report", banner));
+    expect(openReportFile).toHaveBeenCalledWith("2030", "03");
+    fireEvent.click(button("Show in Finder", banner));
+    expect(revealPeriod).toHaveBeenCalledWith("2030", "03");
+    fireEvent.click(button("Dismiss", banner));
     expect(screen.queryByRole("status")).toBeNull();
   });
 

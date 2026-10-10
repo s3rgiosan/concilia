@@ -29,12 +29,10 @@ pub const REVEAL_PERIOD: &str = "reveal_period";
 pub const UNDO: &str = "undo";
 pub const REDO: &str = "redo";
 pub const FIND: &str = "find";
-pub const FILTER_ALL: &str = "filter_all";
-pub const FILTER_REVIEW: &str = "filter_review";
-pub const FILTER_UNMATCHED: &str = "filter_unmatched";
+pub const FILTER_PENDING: &str = "filter_pending";
 pub const FILTER_MATCHED: &str = "filter_matched";
+pub const FILTER_ALL: &str = "filter_all";
 pub const TOGGLE_SIDEBAR: &str = "toggle_sidebar";
-pub const TOGGLE_INSPECTOR: &str = "toggle_inspector";
 pub const RECONCILE: &str = "reconcile";
 pub const SCAN: &str = "scan";
 pub const RERUN: &str = "rerun";
@@ -90,12 +88,10 @@ pub const ITEM_IDS: &[&str] = &[
     UNDO,
     REDO,
     FIND,
-    FILTER_ALL,
-    FILTER_REVIEW,
-    FILTER_UNMATCHED,
+    FILTER_PENDING,
     FILTER_MATCHED,
+    FILTER_ALL,
     TOGGLE_SIDEBAR,
-    TOGGLE_INSPECTOR,
     RECONCILE,
     SCAN,
     RERUN,
@@ -155,12 +151,10 @@ fn english(key: &str) -> &'static str {
         UNDO => "Undo",
         REDO => "Redo",
         FIND => "Find",
-        FILTER_ALL => "All",
-        FILTER_REVIEW => "Needs Review",
-        FILTER_UNMATCHED => "Unmatched",
+        FILTER_PENDING => "To Decide",
         FILTER_MATCHED => "Matched",
+        FILTER_ALL => "All",
         TOGGLE_SIDEBAR => "Show Sidebar",
-        TOGGLE_INSPECTOR => "Show Inspector",
         RECONCILE => "Reconcile",
         SCAN => "Scan for New Receipts",
         RERUN => "Reconcile Again…",
@@ -415,8 +409,6 @@ fn build(
 
     let new_month = b.item(NEW_MONTH, Some("CmdOrCtrl+N"))?;
     let add_statements = b.item(ADD_STATEMENTS, Some("CmdOrCtrl+O"))?;
-    let export_report = b.item(EXPORT_REPORT, Some("CmdOrCtrl+Shift+E"))?;
-    let open_report = b.item(OPEN_REPORT, None)?;
     let reveal_period = b.item(REVEAL_PERIOD, None)?;
     let file_menu = b.submenu(
         MENU_FILE,
@@ -424,8 +416,6 @@ fn build(
             &new_month,
             &add_statements,
             &b.separator()?,
-            &export_report,
-            &open_report,
             &reveal_period,
             &b.separator()?,
             &PredefinedMenuItem::close_window(app, Some(&b.text(CLOSE_WINDOW)))?,
@@ -450,22 +440,18 @@ fn build(
         ],
     )?;
 
-    let filter_all = b.item(FILTER_ALL, Some("CmdOrCtrl+1"))?;
-    let filter_review = b.item(FILTER_REVIEW, Some("CmdOrCtrl+2"))?;
-    let filter_unmatched = b.item(FILTER_UNMATCHED, Some("CmdOrCtrl+3"))?;
-    let filter_matched = b.item(FILTER_MATCHED, Some("CmdOrCtrl+4"))?;
+    let filter_pending = b.item(FILTER_PENDING, Some("CmdOrCtrl+1"))?;
+    let filter_matched = b.item(FILTER_MATCHED, Some("CmdOrCtrl+2"))?;
+    let filter_all = b.item(FILTER_ALL, Some("CmdOrCtrl+3"))?;
     let toggle_sidebar = b.item(TOGGLE_SIDEBAR, Some("Ctrl+Cmd+S"))?;
-    let toggle_inspector = b.item(TOGGLE_INSPECTOR, Some("CmdOrCtrl+Alt+I"))?;
     let view_menu = b.submenu(
         MENU_VIEW,
         &[
-            &filter_all,
-            &filter_review,
-            &filter_unmatched,
+            &filter_pending,
             &filter_matched,
+            &filter_all,
             &b.separator()?,
             &toggle_sidebar,
-            &toggle_inspector,
         ],
     )?;
 
@@ -473,9 +459,20 @@ fn build(
     let scan = b.item(SCAN, Some("CmdOrCtrl+Shift+R"))?;
     let rerun = b.item(RERUN, None)?;
     let finalize = b.item(FINALIZE, None)?;
+    let open_report = b.item(OPEN_REPORT, None)?;
+    let export_report = b.item(EXPORT_REPORT, Some("CmdOrCtrl+Shift+E"))?;
     let month_menu = b.submenu(
         MENU_MONTH,
-        &[&reconcile, &scan, &b.separator()?, &rerun, &finalize],
+        &[
+            &reconcile,
+            &scan,
+            &b.separator()?,
+            &finalize,
+            &rerun,
+            &b.separator()?,
+            &open_report,
+            &export_report,
+        ],
     )?;
 
     let accept = b.item(ACCEPT, Some("CmdOrCtrl+Enter"))?;

@@ -1,5 +1,5 @@
 import "./Review.css";
-import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type Ref } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorState, needsSettings } from "../components/ErrorState";
 import { Icon } from "../components/Icon";
@@ -11,7 +11,6 @@ import { errorDetail, errorKind, friendlyError } from "../lib/errors";
 import { useLatest } from "../lib/hooks/useLatest";
 import { useDockProgress } from "../lib/hooks/useDockProgress";
 import { useRun } from "../lib/hooks/useRun";
-import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import { useToolbarOverflow } from "../lib/hooks/useToolbarOverflow";
 import { periodLabel, type Period } from "../lib/period";
 import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
@@ -21,12 +20,16 @@ import {
   finalize,
   getDraft,
   getReview,
+  getRules,
   openReceipt,
+  openReport,
   openSettings,
   periodStatus,
   rescanReceipt,
   rescanReimbursement,
+  revealPeriod,
   saveDraft,
+  saveRules,
   startScan,
   type DroppedDecision,
   type Draft,
@@ -40,6 +43,7 @@ import {
   claimedFiles,
   filterCounts,
   finalizeCounts,
+  isNoReceipt,
   mergeDraft,
   patchReceipt,
   pendingCount,
@@ -52,9 +56,9 @@ import {
   type Filter,
   type NoReceiptCategory,
 } from "./effective";
+import { Details, type DetailsHandlers } from "./Details";
 import { FinalizeSheet } from "./FinalizeSheet";
 import { useHistory } from "./history";
-import { Inspector, type InspectorHandlers } from "./Inspector";
 import { QuickLook } from "./QuickLook";
 import { receiptTitle } from "./receipts";
 import { ReviewToolbar, TOOLBAR_LEVELS, type ToolbarLevel } from "./ReviewToolbar";
@@ -65,8 +69,8 @@ import { useDraftAutosave, type SaveState } from "./useDraftAutosave";
 
 type Loaded = { data: ReviewData; applied: boolean };
 
-/** The inspector's width range and default, in pixels. */
-export const INSPECTOR_WIDTH = { min: 260, max: 400, initial: 300 };
+/** The details column's width range and default, in pixels. */
+export const DETAILS_WIDTH = { min: 280, max: 420, initial: 300 };
 
 /**
  * The selected row, and where it was in the list, so the row after it takes over if it leaves.
@@ -74,7 +78,7 @@ export const INSPECTOR_WIDTH = { min: 260, max: 400, initial: 300 };
  */
 type Selection = { id: string | null; index: number; advance?: boolean };
 
-/** The receipt focused in the inspector, for the row it was focused in. */
+/** The receipt focused in the details column, for the row it was focused in. */
 type Focus = { rowId: string; file: string } | null;
 
 export interface ReviewProps {
@@ -94,16 +98,18 @@ export interface ReviewProps {
   onAvailabilityChange?: (can: ReviewAvailability) => void;
   /** Runs whenever the selected transaction changes what Reject does, such as for the app menu's label. */
   onRejectKindChange?: (kind: RejectKind) => void;
-  /** Runs whenever the inspector is shown or hidden, such as for the app menu's label. */
-  onInspectorChange?: (shown: boolean) => void;
   ref?: Ref<ReviewCommands>;
 }
 
+/** A short message over the list, such as a rule that was added. */
+type Notice = { tone: "success" | "info"; text: string };
+
 /**
- * The review of a month's matches: a list of transactions beside an inspector for the selected
- * one. Decisions save as a draft until Finalize applies them, and each can be undone.
+ * The review of a month's matches: a list of transactions beside the details of the selected
+ * one. It opens on the transactions still to decide when there are any. Decisions save as a draft
+ * until Finalize applies them, and each can be undone.
  */
-export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, onRejectKindChange, onInspectorChange, ref }: ReviewProps) {
+export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, onRejectKindChange, ref }: ReviewProps) {
   const { t, i18n } = useTranslation();
   const { year, month } = period;
   const listId = useId();
@@ -115,6 +121,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const history = useHistory<Draft>({});
   const [dirty, setDirty] = useState(false);
   const [filter, setFilterState] = useState<Filter>("all");
+  /** Whether the filter was set for the month, once its first load showed what is left to decide. */
+  const filterSet = useRef(false);
   const [search, setSearchState] = useState("");
   const [selection, setSelection] = useState<Selection>({ id: null, index: 0 });
   const [focus, setFocus] = useState<Focus>(null);
@@ -123,8 +131,10 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const [dropped, setDropped] = useState<DroppedDecision[]>([]);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
-  const [inspectorSetting, setInspectorSetting] = useSafeStorage("review.inspector", "shown");
-  const [inspectorWidth, setInspectorWidth] = useStoredWidth("review.inspectorWidth", INSPECTOR_WIDTH.initial, INSPECTOR_WIDTH.min, INSPECTOR_WIDTH.max);
+  /** Finalize succeeded while the review was open, so the completion banner shows. */
+  const [justFinalized, setJustFinalized] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [detailsWidth, setDetailsWidth] = useStoredWidth("review.detailsWidth", DETAILS_WIDTH.initial, DETAILS_WIDTH.min, DETAILS_WIDTH.max);
   const scan = useRun<{ dropped: DroppedDecision[] }>();
   useDockProgress(scan.state);
 
@@ -149,6 +159,11 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     Promise.all([getReview(year, month), getDraft(year, month), periodStatus(year, month)]).then(
       ([data, stored, periodState]) => {
         setLoaded({ data, applied: periodState.applied });
+        if (!filterSet.current) {
+          filterSet.current = true;
+          const open = pendingCount(mergeDraft(data.transactions, stored));
+          setFilterState(open > 0 && !periodState.applied ? "pending" : "all");
+        }
         resetHistory(stored);
         setDirty(false);
         forgetSaveState();
@@ -171,6 +186,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const shownReimbursements = useMemo(() => (data ? visibleReimbursements(data.reimbursements, filter, search) : []), [data, filter, search]);
   const rows = useMemo(() => buildRows(visible, shownReimbursements), [visible, shownReimbursements]);
   const reimbursementTotal = data ? data.reimbursements.reduce((sum, r) => sum + (r.amount_cents ?? 0), 0) : 0;
+  const edited = useMemo(() => new Set(Object.keys(draft)), [draft]);
 
   const selected = selection.id === null ? initialSelection(rows) : resolveSelection(rows, selection.id, selection.index, selection.advance);
   const selectedIndex = selected ? rows.indexOf(selected) : -1;
@@ -190,7 +206,6 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const scanning = scan.state.phase === "running";
   const busy = finalizing || scanning;
   const ready = loaded !== null;
-  const inspectorShown = inspectorSetting !== "hidden";
   /** Decisions can change: the month is not finalized and nothing else runs. */
   const decidable = !busy && !applied;
 
@@ -212,7 +227,6 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     redo: history.canRedo && decidable,
     setFilter: ready,
     focusSearch: ready,
-    toggleInspector: ready,
     scan: ready && !busy && !applied,
     exportReport: ready && !busy,
     finalize: ready && !busy && !applied,
@@ -323,6 +337,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       .then(() => finalize(year, month))
       .then(() => {
         setConfirmFinalize(false);
+        setJustFinalized(true);
+        setNotice(null);
         load();
         onChanged?.();
       })
@@ -344,9 +360,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     listRef.current?.focus();
   }
 
-  /** Moves focus to the inspector's first decision control, so Return there commits it. */
-  function focusInspectorAction() {
-    const first = sectionRef.current?.querySelector(".inspector [data-inspector-action]");
+  /** Moves focus to the details column's first decision control, so Return there commits it. */
+  function focusDetailsAction() {
+    const first = sectionRef.current?.querySelector(".details [data-details-action]");
     const target = first instanceof HTMLButtonElement ? first : first?.querySelector("button");
     target?.focus();
   }
@@ -410,7 +426,6 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       searchRef.current?.focus();
       searchRef.current?.select();
     },
-    toggleInspector: () => setInspectorSetting(inspectorShown ? "hidden" : "shown"),
     scan: () => {
       if (can.scan) {
         startScanning();
@@ -431,22 +446,26 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
 
   useImperativeHandle(ref, () => commands);
 
+  // Runs after the closing sheet hands focus back, so the list keeps it.
+  const focusListAfterSheet = useRef(false);
+  useEffect(() => {
+    if (!confirmFinalize && focusListAfterSheet.current) {
+      focusListAfterSheet.current = false;
+      listRef.current?.focus();
+    }
+  }, [confirmFinalize]);
+
   const canKey = JSON.stringify(can);
   const reportAvailability = useLatest(onAvailabilityChange);
   useEffect(() => {
     reportAvailability.current?.(JSON.parse(canKey) as ReviewAvailability);
   }, [canKey, reportAvailability]);
 
-  const rejectKind: RejectKind = selectedTx?.status === "REVIEW" ? "noneOfThese" : "removeMatch";
+  const rejectKind = rejectKindOf(selectedTx);
   const reportRejectKind = useLatest(onRejectKindChange);
   useEffect(() => {
     reportRejectKind.current?.(rejectKind);
   }, [rejectKind, reportRejectKind]);
-
-  const reportInspector = useLatest(onInspectorChange);
-  useEffect(() => {
-    reportInspector.current?.(inspectorShown);
-  }, [inspectorShown, reportInspector]);
 
   function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.metaKey || e.ctrlKey || e.altKey) {
@@ -472,7 +491,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         return;
       case "Enter":
         e.preventDefault();
-        focusInspectorAction();
+        focusDetailsAction();
         return;
       default:
         return;
@@ -542,32 +561,57 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     return subtitle;
   }
 
-  /** Runs a decision made in the inspector, then returns focus to the list. */
-  function fromInspector(run: () => void) {
+  /** Runs a decision made in the details column, then returns focus to the list. */
+  function fromDetails(run: () => void) {
     run();
     focusList();
   }
 
-  const handlers: InspectorHandlers = {
+  const handlers: DetailsHandlers = {
     onFocusReceipt: (receipt) => {
       if (selected) {
         setFocus({ rowId: selected.id, file: receipt.file });
       }
     },
     onAccept: (receipt) =>
-      fromInspector(() => {
+      fromDetails(() => {
         if (selectedTx && decidable) {
           acceptReceipt(selectedTx, receipt);
         }
       }),
-    onReject: () => fromInspector(commands.reject),
-    onNoReceipt: (category) => fromInspector(() => commands.noReceipt(category)),
+    onReject: () => fromDetails(commands.reject),
+    onNoReceipt: (category) => fromDetails(() => commands.noReceipt(category)),
     onRescan: (receipt) => {
       void rescan(receipt, selected?.kind === "reimbursement");
     },
     onOpen: open,
     onQuickLook: () => setQuickLook(true),
   };
+
+  /** Adds a match rule from a decision: the receipt's vendor to the transaction's description. */
+  function addRule(vendor: string, description: string) {
+    getRules()
+      .then((rules) => {
+        const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+        const exists = rules.some((r) => same(r.receiptVendor, vendor) && same(r.transactionDescription, description));
+        if (exists) {
+          setNotice({ tone: "info", text: t("review.rule.exists") });
+          return;
+        }
+        const rule = { id: crypto.randomUUID(), receiptVendor: vendor, transactionDescription: description };
+        return saveRules([...rules, rule]).then(() => setNotice({ tone: "success", text: t("review.rule.added") }));
+      })
+      .catch(onError);
+  }
+
+  /** Always Match for a transaction the user matched to a receipt with a vendor, or null. */
+  function ruleEntry(tx: Transaction): MenuEntry | null {
+    const vendor = tx.receipt_meta[0]?.vendor?.trim();
+    if (!edited.has(tx.id) || tx.status !== "MATCHED" || isNoReceipt(tx.notes) || !vendor) {
+      return null;
+    }
+    return { label: t("review.rule.alwaysMatch", { vendor, description: tx.description }), onSelect: () => addRule(vendor, tx.description) };
+  }
 
   /** The commands of a row's context menu, for that row and the receipt it shows. */
   function rowMenu(row: ListRow): MenuEntry[] {
@@ -592,10 +636,11 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       ];
     }
     const { tx } = row;
+    const rule = applied ? null : ruleEntry(tx);
     return [
       { label: t("menu.accept"), onSelect: () => shown && acceptReceipt(tx, shown), disabled: !decidable || tx.status === "MATCHED" || !shown },
       {
-        label: t(tx.status === "REVIEW" ? "menu.reject_review" : "menu.reject"),
+        label: t(rejectMenuLabel(rejectKindOf(tx))),
         onSelect: () => decide(tx, unmatch()),
         disabled: !decidable || tx.status === "UNMATCHED",
       },
@@ -604,6 +649,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         disabled: !decidable || tx.status === "MATCHED",
         submenu: NO_RECEIPT_CATEGORIES.map((category) => ({ label: t(`menu.no_receipt_${category}`), onSelect: () => decide(tx, noReceipt(category)) })),
       },
+      ...(rule ? (["separator", rule] as MenuEntry[]) : []),
       "separator",
       ...look,
     ];
@@ -616,11 +662,55 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     void popUpMenu(rowMenu(row), { x: e.clientX, y: e.clientY });
   }
 
+  /** Closes the Finalize sheet and goes to the first transaction still to decide. */
+  function reviewRemaining() {
+    focusListAfterSheet.current = true;
+    setConfirmFinalize(false);
+    setSearchState("");
+    setFilterState("pending");
+    setSelection({ id: null, index: 0 });
+  }
+
+  /** The list's message when it shows no rows, with the step that leads on. */
+  function emptyList(): ReactNode {
+    const query = search.trim();
+    if (query) {
+      return <p className="review__empty-title">{t("review.noResults", { query })}</p>;
+    }
+    if (filter === "pending" && pending === 0) {
+      return (
+        <>
+          <p className="review__empty-title">{t("review.empty.doneTitle")}</p>
+          {applied ? null : (
+            <>
+              <p className="review__empty-message">{t("review.empty.doneMessage")}</p>
+              <button type="button" className="default" onClick={commands.finalize} disabled={!can.finalize}>
+                {t("review.finalize")}
+              </button>
+            </>
+          )}
+        </>
+      );
+    }
+    if (filter !== "pending" && pending > 0) {
+      return (
+        <>
+          <p className="review__empty-title">{t(`review.empty.none_${filter}`)}</p>
+          <p className="review__empty-message">{t("review.empty.pendingMessage", { count: pending })}</p>
+          <button type="button" onClick={() => setFilter("pending")}>
+            {t("review.empty.showThem")}
+          </button>
+        </>
+      );
+    }
+    return <p className="review__empty-title">{t(`review.empty.none_${filter}`)}</p>;
+  }
+
   return (
     <section
       ref={sectionRef}
       className="review"
-      style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}
+      style={{ "--details-width": `${detailsWidth}px` } as CSSProperties}
       aria-label={t("review.title", { period: periodLabel(period, t) })}>
       {subtitle}
       <ToolbarPortal target={toolbar.trailing}>
@@ -639,16 +729,41 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
           busy={busy}
           finalized={applied}
           moreActions={moreActions}
-          inspectorShown={inspectorShown}
           onScan={commands.scan}
           onExport={commands.exportReport}
           onFinalize={commands.finalize}
-          onToggleInspector={commands.toggleInspector}
+          onOpenReport={() => {
+            openReport(year, month).catch(onError);
+          }}
           level={toolbarLevel}
         />
       </ToolbarPortal>
 
       <div className="review__main">
+        {applied && justFinalized ? (
+          <div className="banner banner--success review__banner" role="status">
+            <Icon name="check" size={14} className="banner__icon--success" />
+            <span className="grow">{t("review.finalizedBanner", { period: periodLabel(period, t) })}</span>
+            <button type="button" className="banner__action" onClick={() => revealPeriod(year, month).catch(onError)}>
+              {t("month.showInFinder")}
+            </button>
+            <button type="button" className="banner__action" onClick={() => openReport(year, month).catch(onError)}>
+              {t("month.openReport")}
+            </button>
+            <button type="button" className="icon" aria-label={t("common.dismiss")} title={t("common.dismiss")} onClick={() => setJustFinalized(false)}>
+              <Icon name="xmark" size={12} />
+            </button>
+          </div>
+        ) : null}
+        {notice ? (
+          <div className={`banner ${notice.tone === "success" ? "banner--success" : "banner--info"} review__banner`} role="status">
+            <Icon name={notice.tone === "success" ? "check" : "rules"} size={14} className={notice.tone === "success" ? "banner__icon--success" : undefined} />
+            <span className="grow">{notice.text}</span>
+            <button type="button" className="icon" aria-label={t("common.dismiss")} title={t("common.dismiss")} onClick={() => setNotice(null)}>
+              <Icon name="xmark" size={12} />
+            </button>
+          </div>
+        ) : null}
         {dropped.length > 0 ? (
           <div className="banner banner--warn review__banner" role="status">
             <Icon name="warning" size={14} />
@@ -666,6 +781,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
             rows={rows}
             viewKey={`${filter}|${search}`}
             selectedId={selected?.id ?? null}
+            edited={edited}
             reimbursementTotal={reimbursementTotal}
             listRef={listRef}
             onSelect={selectRow}
@@ -676,29 +792,29 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
             onContextMenu={showRowMenu}
             onKeyDown={onListKeyDown}
           />
-          {rows.length === 0 ? (
-            <p className="review__empty">{search.trim() ? t("review.noResults", { query: search.trim() }) : t("review.noTransactions")}</p>
-          ) : null}
+          {rows.length === 0 ? <div className="review__empty">{emptyList()}</div> : null}
         </div>
       </div>
 
-      <Presence>
-        {inspectorShown ? (
-          <>
-            <ResizeHandle
-              label={t("review.resizeInspector")}
-              width={inspectorWidth}
-              min={INSPECTOR_WIDTH.min}
-              max={INSPECTOR_WIDTH.max}
-              grows="left"
-              scope={sectionRef}
-              variable="--inspector-width"
-              onResize={setInspectorWidth}
-            />
-            <Inspector row={selected} receipts={receipts} focused={focused} rescanning={rescanning} readOnly={applied} handlers={handlers} />
-          </>
-        ) : null}
-      </Presence>
+      <ResizeHandle
+        label={t("review.resizeDetails")}
+        width={detailsWidth}
+        min={DETAILS_WIDTH.min}
+        max={DETAILS_WIDTH.max}
+        grows="left"
+        scope={sectionRef}
+        variable="--details-width"
+        onResize={setDetailsWidth}
+      />
+      <Details
+        row={selected}
+        receipts={receipts}
+        focused={focused}
+        rescanning={rescanning}
+        readOnly={applied}
+        edited={selectedTx !== null && edited.has(selectedTx.id)}
+        handlers={handlers}
+      />
 
       <Presence>
         {quickLook && selected ? (
@@ -734,11 +850,36 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
             busy={finalizing}
             onCancel={() => setConfirmFinalize(false)}
             onConfirm={runFinalize}
+            onReviewRemaining={reviewRemaining}
           />
         ) : null}
       </Presence>
     </section>
   );
+}
+
+/** What Reject does for a transaction, which names its menu item and button. */
+export function rejectKindOf(tx: Transaction | null): RejectKind {
+  if (tx?.status === "REVIEW") {
+    return "noneOfThese";
+  }
+  if (tx && isNoReceipt(tx.notes)) {
+    return "needsReceipt";
+  }
+  return "removeMatch";
+}
+
+/** The menu label key of Reject for what it does. */
+function rejectMenuLabel(kind: RejectKind): string {
+  switch (kind) {
+    case "noneOfThese":
+      return "menu.reject_review";
+    case "needsReceipt":
+      return "menu.reject_no_receipt";
+    case "removeMatch":
+    default:
+      return "menu.reject";
+  }
 }
 
 /** The save state after the subtitle's status: " · Saving…", " · Saved" or a failure. */

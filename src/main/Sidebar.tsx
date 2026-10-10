@@ -1,8 +1,9 @@
-import { useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorText } from "../components/ErrorText";
 import { Icon } from "../components/Icon";
 import { groupByYear, periodKey, statusLine, type Period } from "../lib/period";
+import { useLatest } from "../lib/hooks/useLatest";
 import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import type { PeriodSummary } from "../lib/tauri";
 
@@ -20,9 +21,12 @@ function optionId(key: string): string {
  * The months, newest first under year headers, as a single-selection list. Each row names the
  * month and says where it stands, once the months have loaded. A press selects a month, ↑/↓,
  * Home and End move the selection, and a right click offers the month's commands from `menu`.
- * Its width is the `--sidebar-width` custom property.
+ * Its width is the `--sidebar-width` custom property. As an `overlay` it lies over the content
+ * and takes focus; Esc or a press outside it (other than on the sidebar button) runs `onDismiss`.
  */
 export function Sidebar({
+  overlay = false,
+  onDismiss,
   periods,
   selected,
   onSelect,
@@ -33,6 +37,8 @@ export function Sidebar({
   onNewMonth,
   menu,
 }: {
+  overlay?: boolean;
+  onDismiss?: () => void;
   periods: PeriodSummary[];
   selected: string;
   onSelect: (period: Period) => void;
@@ -49,6 +55,24 @@ export function Sidebar({
   const list = useRef<HTMLDivElement>(null);
   const groups = groupByYear(periods);
   const index = periods.findIndex((p) => periodKey(p) === selected);
+  const nav = useRef<HTMLElement>(null);
+  const dismiss = useLatest(onDismiss);
+
+  useEffect(() => {
+    if (!overlay) {
+      return;
+    }
+    list.current?.focus();
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target;
+      if (!(target instanceof Element) || nav.current?.contains(target) || target.closest("[data-sidebar-toggle]")) {
+        return;
+      }
+      dismiss.current?.();
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [overlay, dismiss]);
 
   function select(summary: PeriodSummary) {
     onSelect({ year: summary.year, month: summary.month });
@@ -64,6 +88,13 @@ export function Sidebar({
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     let next: number;
     switch (e.key) {
+      case "Escape":
+        if (overlay) {
+          e.preventDefault();
+          onDismiss?.();
+          document.querySelector<HTMLElement>("[data-sidebar-toggle]")?.focus();
+        }
+        return;
       case "ArrowDown":
         next = Math.min(index + 1, periods.length - 1);
         break;
@@ -88,7 +119,7 @@ export function Sidebar({
   }
 
   return (
-    <nav className="sidebar" aria-label={t("sidebar.months")}>
+    <nav ref={nav} className={overlay ? "sidebar sidebar--overlay" : "sidebar"} aria-label={t("sidebar.months")}>
       <div
         ref={list}
         className="sidebar__list"

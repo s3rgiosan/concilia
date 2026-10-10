@@ -125,21 +125,29 @@
     "transactions": "Transactions",
     "noTransactions": "No transactions",
     "noResults": "No Results for “{{query}}”",
-    "noSelection": "No transaction selected.",
-    "inspector": "Inspector",
-    "showInspector": "Show Inspector",
-    "hideInspector": "Hide Inspector",
+    "empty": {
+      "doneTitle": "Every Transaction Has a Decision",
+      "doneMessage": "Finalize the month to sort its receipts and save the report.",
+      "none_pending": "Nothing to Decide",
+      "none_matched": "No Matched Transactions",
+      "none_all": "No Transactions",
+      "pendingMessage_one": "{{count}} transaction still needs a decision.",
+      "pendingMessage_other": "{{count}} transactions still need a decision.",
+      "showThem": "Show Them"
+    },
+    "noSelection": "No Selection",
+    "details": "Details",
     "filter": "Filter",
     "filters": {
-      "all": "All",
-      "review": "Needs Review",
-      "unmatched": "Unmatched",
-      "matched": "Matched"
+      "pending": "To Decide",
+      "matched": "Matched",
+      "all": "All"
     },
     "status": {
       "review": "Needs Review",
       "unmatched": "Unmatched",
-      "matched": "Matched"
+      "matched": "Matched",
+      "noReceipt": "No Receipt · {{category}}"
     },
     "search": "Search",
     "scan": "Scan for New Receipts",
@@ -163,7 +171,8 @@
       "noneOfThese": "None of These",
       "removeMatch": "Remove Match",
       "rescan": "Read Again",
-      "quickLook": "Quick Look"
+      "quickLook": "Quick Look",
+      "needsReceipt": "Needs a Receipt"
     },
     "receiptActions": "Actions for {{name}}",
     "assignReceipt": "Assign {{name}}",
@@ -177,6 +186,7 @@
       "fx": "Differs by more than 10% ({{currency}} receipt)"
     },
     "noReceiptMenu": "No Receipt Needed",
+    "noReceiptMore": "Other Categories",
     "noReceiptNeeded": "No receipt needed: {{category}}",
     "noReceiptCategories": {
       "bankFee": "Bank fee",
@@ -190,6 +200,10 @@
     "dateUnknown": "Date unknown",
     "amountUnknown": "Amount unknown",
     "lowConfidence": "unsure reading",
+    "unreadable": "Couldn't read this receipt",
+    "readAgainNamed": "Read {{name}} Again",
+    "edited": "Edited",
+    "manualDecision": "Manual decision",
     "matchReason": {
       "bankFeeAuto": "Bank fee (auto)",
       "nameAmountMatch": "Name & amount match",
@@ -221,17 +235,33 @@
     },
     "finalizeConfirm": {
       "title": "Finalize {{period}}?",
-      "moves_zero": "No receipts will be moved.",
-      "moves_one": "{{count}} receipt will be moved: {{matched}} to _matched, {{review}} to _review and {{unmatched}} to _unmatched. It stays in this month's receipts folder.",
-      "moves_other": "{{count}} receipts will be moved: {{matched}} to _matched, {{review}} to _review and {{unmatched}} to _unmatched. They stay in this month's receipts folder.",
-      "irreversible": "Your decisions are saved and the files are moved. You can't undo this.",
+      "moves_zero": "No receipts will be sorted.",
+      "moves_one": "{{count}} receipt will be sorted: {{parts}}.",
+      "moves_other": "{{count}} receipts will be sorted: {{parts}}.",
+      "groups": {
+        "matched_one": "{{count}} matched",
+        "matched_other": "{{count}} matched",
+        "review_one": "{{count}} still to review",
+        "review_other": "{{count}} still to review",
+        "unmatched_one": "{{count}} unmatched",
+        "unmatched_other": "{{count}} unmatched"
+      },
+      "report": "Concilia sorts the receipts into folders inside this month's receipts folder and saves the Excel report.",
+      "later": "To change decisions later, use Reconcile Again.",
+      "reviewRemaining": "Review Remaining",
       "pending_one": "{{count}} transaction still needs a decision. It will be sorted as it is now.",
       "pending_other": "{{count}} transactions still need a decision. They will be sorted as they are now.",
       "confirm": "Finalize"
     },
-    "resizeInspector": "Resize Inspector",
+    "resizeDetails": "Resize Details",
     "clearSearch": "Clear Search",
     "finalizedNote": "This month is finalized. Reconcile it again to change decisions.",
+    "finalizedBanner": "{{period}} is finalized. The receipts are sorted and the report is ready.",
+    "rule": {
+      "alwaysMatch": "Always Match “{{vendor}}” to “{{description}}”",
+      "added": "Rule added. It applies the next time Concilia matches receipts.",
+      "exists": "That rule already exists."
+    },
     "loadFailed": "Couldn't Open This Month"
   },
   "lang": {
@@ -380,14 +410,11 @@
     "undo": "Undo",
     "redo": "Redo",
     "find": "Find",
-    "filter_all": "All",
-    "filter_review": "Needs Review",
-    "filter_unmatched": "Unmatched",
+    "filter_pending": "To Decide",
     "filter_matched": "Matched",
+    "filter_all": "All",
     "show_sidebar": "Show Sidebar",
     "hide_sidebar": "Hide Sidebar",
-    "show_inspector": "Show Inspector",
-    "hide_inspector": "Hide Inspector",
     "reconcile": "Reconcile",
     "scan": "Scan for New Receipts",
     "rerun": "Reconcile Again…",
@@ -395,6 +422,7 @@
     "accept": "Assign Receipt",
     "reject": "Remove Match",
     "reject_review": "None of These",
+    "reject_no_receipt": "Needs a Receipt",
     "no_receipt": "No Receipt Needed",
     "no_receipt_bank_fee": "Bank Fee",
     "no_receipt_salary": "Salary",

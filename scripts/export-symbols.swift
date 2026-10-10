@@ -28,7 +28,8 @@ let symbols: [(name: String, symbol: String)] = [
     ("globe", "globe"),
     ("sparkles", "sparkles"),
     ("sidebar", "sidebar.left"),
-    ("inspector", "info.circle"),
+    ("share", "square.and.arrow.up"),
+    ("pencil", "pencil"),
     ("scan", "doc.badge.plus"),
     ("clear", "xmark.circle.fill"),
 ]

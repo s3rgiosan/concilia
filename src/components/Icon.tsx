@@ -24,7 +24,8 @@ export const SYMBOL_NAMES = [
   "globe",
   "sparkles",
   "sidebar",
-  "inspector",
+  "share",
+  "pencil",
   "scan",
   "clear",
 ] as const;

@@ -6,6 +6,7 @@
 }
 
 .main__body {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -61,9 +62,62 @@
   transition: none;
 }
 
+/*
+ * In a narrow window the sidebar lies over the content, on a translucent material, and slides in
+ * from the leading edge and back out the same way.
+ */
+.sidebar--overlay {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  border-right-color: var(--separator);
+  background: color-mix(in srgb, var(--window-solid) 82%, transparent);
+  box-shadow: 0 0 24px rgb(0 0 0 / 18%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  transition: transform var(--pane-duration) var(--ease-settle);
+}
+
+@starting-style {
+  .presence[data-presence="enter"] .sidebar--overlay {
+    width: var(--sidebar-width, 220px);
+    transform: translateX(-100%);
+  }
+}
+
+.presence[data-presence="exit"] .sidebar--overlay {
+  width: var(--sidebar-width, 220px);
+  transform: translateX(-100%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar {
     transition: none;
+  }
+
+  /* Reduce Motion: the overlay fades in and out in place. */
+  .sidebar--overlay {
+    transition: opacity 150ms ease-out;
+  }
+
+  @starting-style {
+    .presence[data-presence="enter"] .sidebar--overlay {
+      transform: none;
+      opacity: 0;
+    }
+  }
+
+  .presence[data-presence="exit"] .sidebar--overlay {
+    transform: none;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar--overlay {
+    background: var(--window-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 
