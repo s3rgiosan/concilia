@@ -209,15 +209,11 @@
   color: var(--accent);
 }
 
+/* The buttons stack at full width so the card keeps one layout at every sidebar width and in every language. */
 .update-card__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
-}
-
-/* The buttons share a row when it fits them and stack at full width when it does not. */
-.update-card__actions > button {
-  flex: 1 1 auto;
 }
 
 .sidebar__label {
