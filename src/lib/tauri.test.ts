@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => {
     listen: vi.fn(),
     getVersion: vi.fn(),
     setTitle: vi.fn(),
+    setProgressBar: vi.fn(),
+    requestUserAttention: vi.fn(),
     Channel,
   };
 });
@@ -22,7 +24,15 @@ const mocks = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, convertFileSrc: mocks.convertFileSrc, Channel: mocks.Channel }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ setTitle: mocks.setTitle }) }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    setTitle: mocks.setTitle,
+    setProgressBar: mocks.setProgressBar,
+    requestUserAttention: mocks.requestUserAttention,
+  }),
+  ProgressBarStatus: { None: "none", Normal: "normal", Indeterminate: "indeterminate" },
+  UserAttentionType: { Critical: 1, Informational: 2 },
+}));
 
 const api = await import("./tauri");
 
@@ -175,6 +185,48 @@ describe("setWindowTitle", () => {
   });
 });
 
+describe("menu commands", () => {
+  it("sends the labels", async () => {
+    await api.setMenu({ menu_file: "Ficheiro" });
+    expect(mocks.invoke).toHaveBeenCalledWith("set_menu", { labels: { menu_file: "Ficheiro" } });
+  });
+
+  it("sends the enabled map", async () => {
+    await api.setMenuState({ accept: false });
+    expect(mocks.invoke).toHaveBeenCalledWith("set_menu_state", { enabled: { accept: false } });
+  });
+});
+
+describe("dock", () => {
+  beforeEach(() => mocks.setProgressBar.mockResolvedValue(undefined));
+
+  it("shows a percentage", async () => {
+    await api.setDockProgress(42.4);
+    expect(mocks.setProgressBar).toHaveBeenCalledWith({ status: "normal", progress: 42 });
+  });
+
+  it("clamps the percentage", async () => {
+    await api.setDockProgress(140);
+    expect(mocks.setProgressBar).toHaveBeenCalledWith({ status: "normal", progress: 100 });
+  });
+
+  it("shows an indeterminate bar", async () => {
+    await api.setDockProgress("indeterminate");
+    expect(mocks.setProgressBar).toHaveBeenCalledWith({ status: "indeterminate" });
+  });
+
+  it("clears the bar", async () => {
+    await api.setDockProgress(null);
+    expect(mocks.setProgressBar).toHaveBeenCalledWith({ status: "none" });
+  });
+
+  it("requests informational attention", async () => {
+    mocks.requestUserAttention.mockResolvedValue(undefined);
+    await api.requestAttention();
+    expect(mocks.requestUserAttention).toHaveBeenCalledWith(2);
+  });
+});
+
 describe("receiptUrl", () => {
   it("encodes the period-relative path on the receipt scheme", () => {
     expect(api.receiptUrl("2030/03/receipts/acme.pdf")).toBe("receipt://localhost/2030%2F03%2Freceipts%2Facme.pdf");
@@ -211,6 +263,24 @@ describe("event listeners", () => {
     fire({ busy: "yes" });
     fire(null);
     expect(handler.mock.calls).toEqual([[true], [false], [false], [false]]);
+  });
+
+  it("passes the id of a chosen menu item on", () => {
+    const handler = vi.fn();
+    const { name, fire } = captureListener(() => api.onMenu(handler));
+    expect(name).toBe(api.MENU_EVENT);
+    fire({ id: "accept" });
+    expect(handler).toHaveBeenCalledExactlyOnceWith("accept");
+  });
+
+  it("drops a malformed menu payload", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const handler = vi.fn();
+    const { fire } = captureListener(() => api.onMenu(handler));
+    fire({ id: 3 });
+    fire(null);
+    expect(handler).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(2);
   });
 
   it("passes update progress on", () => {

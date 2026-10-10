@@ -36,7 +36,9 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   receiptUrl: vi.fn(),
   rescanReceipt: vi.fn(),
   rescanReimbursement: vi.fn(),
+  requestAttention: vi.fn(() => Promise.resolve()),
   saveDraft: vi.fn(),
+  setDockProgress: vi.fn(() => Promise.resolve()),
   startScan: vi.fn(),
 }));
 
@@ -354,21 +356,27 @@ describe("list", () => {
     expect(selected()).toBe("GLOBEX SHOP");
   });
 
-  it("jumps to the next and previous transaction needing a decision with ⌘] and ⌘[", async () => {
-    await renderReview();
-    fireEvent.keyDown(window, { key: "]", metaKey: true });
+  it("jumps to the next and previous transaction needing a decision", async () => {
+    const { commands } = await renderReview();
+    act(() => commands().nextPending());
     expect(selected()).toBe("INITECH SERVICES");
-    fireEvent.keyDown(window, { key: "]", metaKey: true });
+    act(() => commands().nextPending());
     expect(selected()).toBe("INITECH SERVICES");
-    fireEvent.keyDown(window, { key: "[", metaKey: true });
-    expect(selected()).toBe("GLOBEX SHOP");
-    fireEvent.keyDown(window, { key: "]" });
+    act(() => commands().previousPending());
     expect(selected()).toBe("GLOBEX SHOP");
   });
 
-  it("focuses the search field with ⌘F", async () => {
+  it("does not handle ⌘] and ⌘F itself", async () => {
     await renderReview();
+    fireEvent.keyDown(window, { key: "]", metaKey: true });
+    expect(selected()).toBe("GLOBEX SHOP");
     fireEvent.keyDown(window, { key: "f", metaKey: true });
+    expect(document.activeElement).not.toBe(screen.getByRole("searchbox", { name: "Search" }));
+  });
+
+  it("focuses the search field", async () => {
+    const { commands } = await renderReview();
+    act(() => commands().focusSearch());
     expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search" }));
   });
 
@@ -650,6 +658,14 @@ describe("commands", () => {
     select("ACME CORP");
     expect(commands().can).toMatchObject({ accept: false, reject: true, noReceipt: false, previousPending: false, nextPending: true });
     expect(onAvailabilityChange).toHaveBeenLastCalledWith(expect.objectContaining({ accept: false }));
+  });
+
+  it("reports whether the inspector is shown", async () => {
+    const onInspectorChange = vi.fn<(shown: boolean) => void>();
+    const { commands } = await renderReview({ onInspectorChange });
+    expect(onInspectorChange).toHaveBeenLastCalledWith(true);
+    act(() => commands().toggleInspector());
+    expect(onInspectorChange).toHaveBeenLastCalledWith(false);
   });
 
   it("runs decisions on the selection", async () => {
@@ -945,15 +961,6 @@ describe("scan for new receipts", () => {
     await settle();
     expect(onError).toHaveBeenCalledWith(error);
     expect(startScan).not.toHaveBeenCalled();
-  });
-
-  it("ignores ⌘] while the scan sheet shows", async () => {
-    scanRun();
-    await renderReview();
-    fireEvent.click(button("Scan for New Receipts", toolbar()));
-    await settle();
-    fireEvent.keyDown(window, { key: "]", metaKey: true });
-    expect(selected()).toBe("GLOBEX SHOP");
   });
 });
 

@@ -8,6 +8,8 @@ use serde::Deserialize;
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, SubmenuBuilder};
 use tauri::{AppHandle, Wry};
 
+use crate::error::{CommandError, CommandResult};
+
 /// Event sent to the main window when a menu item is chosen; the payload is `{ "id": … }`.
 pub const MENU_EVENT: &str = "menu";
 
@@ -509,14 +511,18 @@ pub fn set_menu(
     app: AppHandle,
     state: tauri::State<'_, MenuState>,
     labels: MenuLabels,
-) -> Result<(), String> {
-    apply(&app, &state, &labels).map_err(|e| e.to_string())
+) -> CommandResult<()> {
+    apply(&app, &state, &labels).map_err(CommandError::internal)
 }
 
 /// Enables or disables items by id; unknown ids are ignored.
 #[tauri::command]
-pub fn set_menu_state(state: tauri::State<'_, MenuState>, enabled: HashMap<String, bool>) {
+pub fn set_menu_state(
+    state: tauri::State<'_, MenuState>,
+    enabled: HashMap<String, bool>,
+) -> CommandResult<()> {
     state.set_enabled(enabled);
+    Ok(())
 }
 
 #[cfg(test)]

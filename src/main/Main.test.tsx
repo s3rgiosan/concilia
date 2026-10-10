@@ -10,13 +10,18 @@ import {
   installUpdate,
   listPeriods,
   onBusyChanged,
+  onMenu,
   onSettingsChanged,
   onUpdateCheckResult,
   onUpdateProgress,
   openReport,
   pendingUpdate,
   pickStatements,
+  requestAttention,
   revealPeriod,
+  setDockProgress,
+  setMenu,
+  setMenuState,
   setWindowTitle,
   startReconcile,
   type AppStateView,
@@ -38,6 +43,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   installUpdate: vi.fn(),
   listPeriods: vi.fn(),
   onBusyChanged: vi.fn(),
+  onMenu: vi.fn(),
   onSettingsChanged: vi.fn(),
   onUpdateCheckResult: vi.fn(),
   onUpdateProgress: vi.fn(),
@@ -47,7 +53,11 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   pickReceiptsRoot: vi.fn(),
   pickStatements: vi.fn(),
   revealPeriod: vi.fn(),
+  requestAttention: vi.fn(),
   saveSettings: vi.fn(),
+  setDockProgress: vi.fn(),
+  setMenu: vi.fn(),
+  setMenuState: vi.fn(),
   setWindowTitle: vi.fn(),
   startReconcile: vi.fn(),
 }));
@@ -95,6 +105,7 @@ vi.mock("../review/Review", async () => {
 let pushSettings: (view: AppStateView) => void;
 let pushCheckResult: (result: UpdateCheckResult) => void;
 let pushProgress: (progress: UpdateProgress) => void;
+let pushMenu: (id: string) => void;
 
 const UNCONFIGURED = makeView({
   settings: makeSettings({ receipts_root: null }),
@@ -151,6 +162,14 @@ beforeEach(() => {
   vi.mocked(listPeriods).mockResolvedValue(LISTED);
   vi.mocked(pickStatements).mockResolvedValue([]);
   vi.mocked(setWindowTitle).mockResolvedValue(undefined);
+  vi.mocked(setMenu).mockResolvedValue(undefined);
+  vi.mocked(setMenuState).mockResolvedValue(undefined);
+  vi.mocked(setDockProgress).mockResolvedValue(undefined);
+  vi.mocked(requestAttention).mockResolvedValue(undefined);
+  vi.mocked(onMenu).mockImplementation((handler) => {
+    pushMenu = handler;
+    return Promise.resolve(() => undefined);
+  });
   vi.mocked(onSettingsChanged).mockImplementation((handler) => {
     pushSettings = handler;
     return Promise.resolve(() => undefined);
@@ -676,5 +695,91 @@ describe("window title", () => {
     vi.mocked(setWindowTitle).mockRejectedValue(new Error("denied"));
     await renderMain();
     expect(log).toHaveBeenCalledWith("could not set the window title", expect.any(Error));
+  });
+});
+
+describe("app menu", () => {
+  function lastMenuState(): Record<string, boolean> {
+    const calls = vi.mocked(setMenuState).mock.calls;
+    return calls[calls.length - 1][0];
+  }
+
+  it("sends only the always-on items before setup", async () => {
+    await renderMain(UNCONFIGURED);
+    expect(lastMenuState()).toMatchObject({ settings: true, help: true, new_month: false, toggle_sidebar: false });
+  });
+
+  it("enables the statements items on a month that accepts statements", async () => {
+    await renderMain();
+    expect(lastMenuState()).toMatchObject({ new_month: true, add_statements: true, reconcile: false, rerun: false, accept: false });
+    await addStatement();
+    expect(lastMenuState().reconcile).toBe(true);
+  });
+
+  it("enables the month items of a month in review", async () => {
+    await renderMain();
+    selectMonth(/February/);
+    await screen.findByText("Review 2030-02");
+    expect(lastMenuState()).toMatchObject({ add_statements: false, reconcile: false, rerun: true, open_report: true, reveal_period: true });
+  });
+
+  it("opens the New Month sheet from the menu", async () => {
+    await renderMain();
+    act(() => pushMenu("new_month"));
+    expect(screen.getByRole("dialog", { name: "New Month" })).toBeTruthy();
+  });
+
+  it("reconciles from the menu", async () => {
+    reconcileRun();
+    await renderMain();
+    await addStatement();
+    act(() => pushMenu("reconcile"));
+    expect(startReconcile).toHaveBeenCalledWith("2030", "03", [{ path: STATEMENT_PATH, bank: "cgd" }], false, expect.any(Function));
+  });
+
+  it("opens the file picker from the menu", async () => {
+    await renderMain();
+    await act(async () => pushMenu("add_statements"));
+    expect(pickStatements).toHaveBeenCalledTimes(1);
+  });
+
+  it("reveals the month and toggles the sidebar from the menu", async () => {
+    vi.mocked(revealPeriod).mockResolvedValue(undefined);
+    await renderMain();
+    act(() => pushMenu("reveal_period"));
+    expect(revealPeriod).toHaveBeenCalledWith("2030", "03");
+    expect(screen.getByRole("navigation", { name: "Months" })).toBeTruthy();
+    await act(async () => pushMenu("toggle_sidebar"));
+    expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
+    expect(vi.mocked(setMenu).mock.calls[vi.mocked(setMenu).mock.calls.length - 1][0].toggle_sidebar).toBe("Show Sidebar");
+  });
+
+  it("re-runs and opens the report of a month in review from the menu", async () => {
+    vi.mocked(openReport).mockResolvedValue(undefined);
+    await renderMain();
+    selectMonth(/February/);
+    await screen.findByText("Review 2030-02");
+    act(() => pushMenu("open_report"));
+    expect(openReport).toHaveBeenCalledWith("2030", "02");
+    act(() => pushMenu("rerun"));
+    expect(screen.getByRole("alertdialog", { name: "Re-run February 2030?" })).toBeTruthy();
+  });
+});
+
+describe("dock progress", () => {
+  it("follows the receipts being read and clears when the run ends", async () => {
+    const run = await startReconciling();
+    expect(setDockProgress).toHaveBeenLastCalledWith("indeterminate");
+    run.push({ step: "extracting", current: 10, total: 40 });
+    expect(setDockProgress).toHaveBeenLastCalledWith(25);
+    await act(async () => run.result.reject(new Error("failed")));
+    expect(setDockProgress).toHaveBeenLastCalledWith(null);
+  });
+
+  it("requests attention when the run ends in the background", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const run = await startReconciling();
+    await act(async () => run.result.reject(new Error("failed")));
+    expect(requestAttention).toHaveBeenCalledTimes(1);
   });
 });

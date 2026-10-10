@@ -6,6 +6,7 @@ import type { PopUpAction } from "../components/PopUpButton";
 import { ToolbarPortal, type ToolbarSlots } from "../components/Toolbar";
 import { friendlyError } from "../lib/errors";
 import { useLatest } from "../lib/hooks/useLatest";
+import { useDockProgress } from "../lib/hooks/useDockProgress";
 import { useRun } from "../lib/hooks/useRun";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import { useToolbarRoom } from "../lib/hooks/useToolbarRoom";
@@ -80,6 +81,8 @@ export interface ReviewProps {
   onError: (e: unknown) => void;
   /** Runs whenever the commands that can run change, such as for the app menu. */
   onAvailabilityChange?: (can: ReviewAvailability) => void;
+  /** Runs whenever the inspector is shown or hidden, such as for the app menu's label. */
+  onInspectorChange?: (shown: boolean) => void;
   ref?: Ref<ReviewCommands>;
 }
 
@@ -87,7 +90,7 @@ export interface ReviewProps {
  * The review of a month's matches: a list of transactions beside an inspector for the selected
  * one. Decisions save as a draft until Finalize applies them, and each can be undone.
  */
-export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, ref }: ReviewProps) {
+export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, onInspectorChange, ref }: ReviewProps) {
   const { t } = useTranslation();
   const { year, month } = period;
   const listId = useId();
@@ -108,6 +111,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const [finalizing, setFinalizing] = useState(false);
   const [inspectorSetting, setInspectorSetting] = useSafeStorage("review.inspector", "shown");
   const scan = useRun<{ dropped: DroppedDecision[] }>();
+  useDockProgress(scan.state);
   const toolbarRoom = useToolbarRoom(toolbar.trailing);
 
   const draft = history.present;
@@ -384,39 +388,16 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
 
   useImperativeHandle(ref, () => commands);
 
-  const latestCommands = useLatest(commands);
   const canKey = JSON.stringify(can);
   const reportAvailability = useLatest(onAvailabilityChange);
   useEffect(() => {
     reportAvailability.current?.(JSON.parse(canKey) as ReviewAvailability);
   }, [canKey, reportAvailability]);
 
-  // ⌘] and ⌘[ move between transactions needing a decision, ⌘F goes to the search field.
+  const reportInspector = useLatest(onInspectorChange);
   useEffect(() => {
-    function onKey(e: globalThis.KeyboardEvent) {
-      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || document.querySelector(".sheet-backdrop, .quicklook-backdrop")) {
-        return;
-      }
-      switch (e.key) {
-        case "]":
-          e.preventDefault();
-          latestCommands.current.nextPending();
-          break;
-        case "[":
-          e.preventDefault();
-          latestCommands.current.previousPending();
-          break;
-        case "f":
-          e.preventDefault();
-          latestCommands.current.focusSearch();
-          break;
-        default:
-          break;
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [latestCommands]);
+    reportInspector.current?.(inspectorShown);
+  }, [inspectorShown, reportInspector]);
 
   function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.metaKey || e.ctrlKey || e.altKey) {

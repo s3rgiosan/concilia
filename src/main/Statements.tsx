@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useImperativeHandle, useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { PopUpButton } from "../components/PopUpButton";
@@ -31,6 +31,7 @@ export function receiptsFolder(root: string, period: Period): string {
  * added so far and, for an empty month, where its receipts go.
  */
 export function Statements({
+  ref,
   period,
   summary,
   receiptsRoot,
@@ -39,6 +40,8 @@ export function Statements({
   onReveal,
   onError,
 }: {
+  /** Lets the app menu open the file picker. */
+  ref?: Ref<{ browse: () => void }>;
   period: Period;
   summary: PeriodSummary;
   receiptsRoot: string | null;
@@ -69,6 +72,8 @@ export function Statements({
       }
     }, onError);
   }
+
+  useImperativeHandle(ref, () => ({ browse }));
 
   // Portuguese writes month names in lower case inside a sentence.
   const name = t(`form.months.${period.month}`);

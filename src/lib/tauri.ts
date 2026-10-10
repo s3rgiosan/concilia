@@ -3,7 +3,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, ProgressBarStatus, UserAttentionType } from "@tauri-apps/api/window";
 import { isAppStateView } from "./guards";
 
 export type Language = "en" | "pt";
@@ -160,6 +160,7 @@ export interface UpdateCheckResult {
 
 export const SETTINGS_CHANGED_EVENT = "settings-changed";
 export const BUSY_CHANGED_EVENT = "busy-changed";
+export const MENU_EVENT = "menu";
 export const UPDATE_PROGRESS_EVENT = "update-progress";
 export const UPDATE_CHECK_RESULT_EVENT = "update-check-result";
 
@@ -321,6 +322,37 @@ export function setWindowTitle(title: string): Promise<void> {
   return getCurrentWindow().setTitle(title);
 }
 
+/**
+ * Shows a run's progress on the Dock icon: a percentage (0 to 100), "indeterminate" before the
+ * first count is known, or null to clear it.
+ */
+export function setDockProgress(progress: number | "indeterminate" | null): Promise<void> {
+  const window = getCurrentWindow();
+  if (progress === null) {
+    return window.setProgressBar({ status: ProgressBarStatus.None });
+  }
+  if (progress === "indeterminate") {
+    return window.setProgressBar({ status: ProgressBarStatus.Indeterminate });
+  }
+  const percent = Math.min(100, Math.max(0, Math.round(progress)));
+  return window.setProgressBar({ status: ProgressBarStatus.Normal, progress: percent });
+}
+
+/** Bounces the Dock icon once. */
+export function requestAttention(): Promise<void> {
+  return getCurrentWindow().requestUserAttention(UserAttentionType.Informational);
+}
+
+/** Rebuilds the menu bar with these labels, by the keys in src-tauri/src/menu.rs. */
+export function setMenu(labels: Record<string, string>): Promise<void> {
+  return invoke("set_menu", { labels });
+}
+
+/** Enables or disables menu items by id; ids not in the map keep their state. */
+export function setMenuState(enabled: Record<string, boolean>): Promise<void> {
+  return invoke("set_menu_state", { enabled });
+}
+
 export function appVersion(): Promise<string> {
   return getVersion();
 }
@@ -342,6 +374,18 @@ export function onSettingsChanged(handler: (view: AppStateView) => void): Promis
 
 export function onBusyChanged(handler: (busy: boolean) => void): Promise<UnlistenFn> {
   return listen<{ busy?: unknown }>(BUSY_CHANGED_EVENT, (event) => handler(event.payload?.busy === true));
+}
+
+/** Listens for menu items chosen in the menu bar; the handler receives the item's id. */
+export function onMenu(handler: (id: string) => void): Promise<UnlistenFn> {
+  return listen<{ id?: unknown }>(MENU_EVENT, (event) => {
+    const id = event.payload?.id;
+    if (typeof id === "string") {
+      handler(id);
+    } else {
+      console.error("ignoring malformed menu payload");
+    }
+  });
 }
 
 export function onUpdateProgress(handler: (progress: UpdateProgress) => void): Promise<UnlistenFn> {

@@ -5,6 +5,8 @@ import { Icon } from "../components/Icon";
 import { ActionPopUpButton, type PopUpAction } from "../components/PopUpButton";
 import { Toolbar, ToolbarPortal } from "../components/Toolbar";
 import { errorKind, friendlyError } from "../lib/errors";
+import { useDockProgress } from "../lib/hooks/useDockProgress";
+import { useMenu } from "../lib/hooks/useMenu";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useRun, type RunState } from "../lib/hooks/useRun";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
@@ -28,7 +30,7 @@ import { RunProgress } from "./RunProgress";
 import { Sidebar, type RunningMonth } from "./Sidebar";
 import { Statements, type Statement } from "./Statements";
 import { UpdateBanner } from "./UpdateBanner";
-import type { ReviewCommands } from "../review/commands";
+import type { ReviewAvailability, ReviewCommands } from "../review/commands";
 import { Welcome } from "./Welcome";
 
 const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.Review })));
@@ -84,7 +86,12 @@ export function Main() {
   const [trailingSlot, setTrailingSlot] = useState<HTMLElement | null>(null);
   /** The open review's commands, for the app menu. */
   const reviewCommands = useRef<ReviewCommands>(null);
+  const [reviewCan, setReviewCan] = useState<ReviewAvailability | null>(null);
+  const [inspectorShown, setInspectorShown] = useState(true);
+  /** The statements area's file picker, for the app menu. */
+  const statementsPicker = useRef<{ browse: () => void }>(null);
   const run = useRun<Summary>();
+  useDockProgress(run.state);
 
   const configured = state?.configured === true;
   const root = state?.settings.receipts_root ?? null;
@@ -185,6 +192,33 @@ export function Main() {
   const listReady = listed !== null || listError !== null;
   const reviewable = isReviewable(summary);
 
+  const onStatementsScreen = Boolean(state?.configured) && listReady && !runHere && !reviewable;
+  const reviewShown = Boolean(state?.configured) && listReady && !runHere && reviewable;
+  useMenu(
+    {
+      configured,
+      sidebarShown,
+      inspectorShown,
+      acceptsStatements: onStatementsScreen && !running,
+      canReconcile: monthStatements.length > 0 || summary.transactions > 0,
+      hasResult: reviewable,
+      running,
+      reviewCan: reviewShown ? reviewCan : null,
+    },
+    {
+      newMonth: () => setSheet("new-month"),
+      addStatements: () => statementsPicker.current?.browse(),
+      reconcile: () => reconcile(false),
+      rerun: () => setSheet("rerun"),
+      openReport: () => {
+        openReport(selected.year, selected.month).catch(setMessage);
+      },
+      revealPeriod: reveal,
+      toggleSidebar: () => setSidebarSetting(sidebarShown ? "hidden" : "shown"),
+    },
+    reviewCommands,
+  );
+
   let detail: ReactNode = null;
   let subtitle: ReactNode = null;
   let trailing: ReactNode = null;
@@ -252,6 +286,8 @@ export function Main() {
             moreActions={actions}
             onChanged={refresh}
             onError={setMessage}
+            onAvailabilityChange={setReviewCan}
+            onInspectorChange={setInspectorShown}
           />
         </Suspense>
       );
@@ -272,6 +308,7 @@ export function Main() {
       );
       detail = (
         <Statements
+          ref={statementsPicker}
           period={selected}
           summary={summary}
           receiptsRoot={root}

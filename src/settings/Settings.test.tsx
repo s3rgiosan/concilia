@@ -17,6 +17,7 @@ import {
   removeServiceAccount,
   saveRules,
   saveSettings,
+  setWindowTitle,
   testGeminiConnection,
   type AppStateView,
   type Settings as SettingsData,
@@ -41,6 +42,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   removeServiceAccount: vi.fn(),
   saveRules: vi.fn(),
   saveSettings: vi.fn(),
+  setWindowTitle: vi.fn(),
   testGeminiConnection: vi.fn(),
 }));
 
@@ -115,9 +117,16 @@ function commitText(label: string, value: string) {
 }
 
 describe("Settings window", () => {
-  it("sets the window title", async () => {
+  it("titles the window after the active pane", async () => {
+    vi.mocked(setWindowTitle).mockResolvedValue(undefined);
     await renderSettings();
-    expect(document.title).toBe("Settings");
+    expect(document.title).toBe("Folder");
+    expect(setWindowTitle).toHaveBeenLastCalledWith("Folder");
+    fireEvent.click(screen.getByRole("button", { name: "Gemini" }));
+    expect(document.title).toBe("Gemini");
+    expect(setWindowTitle).toHaveBeenLastCalledWith("Gemini");
+    fireEvent.click(screen.getByRole("button", { name: "General" }));
+    expect(setWindowTitle).toHaveBeenLastCalledWith("General");
   });
 
   it("lists the panes in order", async () => {

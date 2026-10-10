@@ -5,7 +5,8 @@ import { Icon, type IconName } from "../components/Icon";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import { friendlyError } from "../lib/errors";
-import { saveSettings, type Settings as SettingsData } from "../lib/tauri";
+import { isPreview } from "../lib/preview";
+import { saveSettings, setWindowTitle, type Settings as SettingsData } from "../lib/tauri";
 import { FolderTab } from "./FolderTab";
 import { GeminiTab } from "./GeminiTab";
 import { GeneralTab } from "./GeneralTab";
@@ -33,9 +34,13 @@ export function Settings() {
   const pane: Pane = isPane(stored) ? stored : "folder";
   const [error, setError] = useState<string | null>(null);
 
+  const paneTitle = t(`settings.tabs.${pane}`);
   useEffect(() => {
-    document.title = t("settings.title");
-  }, [t]);
+    document.title = paneTitle;
+    if (!isPreview()) {
+      setWindowTitle(paneTitle).catch((e) => console.error("could not set the window title", e));
+    }
+  }, [paneTitle]);
 
   // Saves run one after another, each from the settings the previous one produced, so a
   // change made while another is saving keeps both.
