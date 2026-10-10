@@ -465,7 +465,7 @@ describe("list", () => {
 });
 
 describe("empty list", () => {
-  it("says when every transaction has a decision and offers Finalize", async () => {
+  it("says when every transaction has a decision and offers Finalize…", async () => {
     await renderReview({}, { opening: true });
     fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     fireEvent.click(button("Assign INITECH", receiptItem("INITECH")));
@@ -473,7 +473,7 @@ describe("empty list", () => {
     expect(screen.getByText("Every Transaction Has a Decision")).toBeTruthy();
     expect(screen.getByText("Finalize the month to sort its receipts and save the report.")).toBeTruthy();
     expect(within(details()).getByText("No Selection")).toBeTruthy();
-    const finalizeHere = within(list().parentElement!).getByRole("button", { name: "Finalize" });
+    const finalizeHere = within(list().parentElement!).getByRole("button", { name: "Finalize…" });
     expect(finalizeHere.classList.contains("default")).toBe(true);
     fireEvent.click(finalizeHere);
     expect(screen.getByRole("alertdialog", { name: "Finalize March 2030?" })).toBeTruthy();
@@ -1126,14 +1126,14 @@ describe("toolbar", () => {
     pick("More Actions", "Open Report", toolbar());
     expect(openReport).toHaveBeenCalledTimes(1);
     expect(button("Scan for New Receipts", toolbar()).disabled).toBe(false);
-    expect(button("Finalize", toolbar()).disabled).toBe(false);
-    expect(button("Finalize", toolbar()).classList.contains("default")).toBe(false);
+    expect(button("Finalize…", toolbar()).disabled).toBe(false);
+    expect(button("Finalize…", toolbar()).classList.contains("default")).toBe(false);
   });
 
-  it("makes Finalize the default button once nothing is left to decide", async () => {
+  it("makes Finalize… the default button once nothing is left to decide", async () => {
     vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_ACME] }));
     await renderReview();
-    expect(button("Finalize", toolbar()).classList.contains("default")).toBe(true);
+    expect(button("Finalize…", toolbar()).classList.contains("default")).toBe(true);
   });
 
   it("offers Open Report in place of Finalize and disables Scan for a finalized month", async () => {
@@ -1141,7 +1141,7 @@ describe("toolbar", () => {
     vi.mocked(openReportFile).mockResolvedValue(undefined);
     const { commands } = await renderReview();
     expect(subtitle()).toBe("Finalized");
-    expect(within(toolbar()).queryByRole("button", { name: "Finalize" })).toBeNull();
+    expect(within(toolbar()).queryByRole("button", { name: "Finalize…" })).toBeNull();
     fireEvent.click(button("Open Report", toolbar()));
     expect(openReportFile).toHaveBeenCalledWith("2030", "03");
     expect(button("Scan for New Receipts", toolbar()).disabled).toBe(true);
@@ -1283,7 +1283,7 @@ describe("scan for new receipts", () => {
     expect(within(dialog).getByRole("progressbar", { name: "Extracting receipt data" })).toBeTruthy();
     expect(button("Scan for New Receipts", toolbar()).disabled).toBe(true);
     expect(button("Export Report…", toolbar()).disabled).toBe(true);
-    expect(button("Finalize", toolbar()).disabled).toBe(true);
+    expect(button("Finalize…", toolbar()).disabled).toBe(true);
     run.result.resolve({ summary: SUMMARY, dropped_decisions: [], new_receipts: 0, newly_matched: 0 });
     await settle();
   });
@@ -1458,7 +1458,7 @@ describe("export report", () => {
 describe("finalize", () => {
   it("asks with the counts of the receipts that move and what is left", async () => {
     await renderReview();
-    fireEvent.click(button("Finalize", toolbar()));
+    fireEvent.click(button("Finalize…", toolbar()));
     const sheet = screen.getByRole("alertdialog", { name: "Finalize March 2030?" });
     expect(sheet.textContent).toContain("4 receipts will be sorted: 1 matched, 2 still to review, and 1 unmatched.");
     expect(sheet.textContent).toContain("To change decisions later, use Reconcile Again.");
@@ -1484,7 +1484,7 @@ describe("finalize", () => {
     await renderReview();
     select("ACME CORP");
     search("corp");
-    fireEvent.click(button("Finalize", toolbar()));
+    fireEvent.click(button("Finalize…", toolbar()));
     fireEvent.click(button("Review Remaining", screen.getByRole("alertdialog")));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(filterButton("To Decide").getAttribute("aria-checked")).toBe("true");
@@ -1498,7 +1498,7 @@ describe("finalize", () => {
     vi.mocked(finalize).mockReturnValue(done.promise);
     const { onChanged } = await renderReview();
     decideFirst();
-    fireEvent.click(button("Finalize", toolbar()));
+    fireEvent.click(button("Finalize…", toolbar()));
     const sheet = screen.getByRole("alertdialog");
     fireEvent.click(button("Finalize", sheet));
     expect(button("Working…", sheet).disabled).toBe(true);
@@ -1530,7 +1530,7 @@ describe("finalize", () => {
     const error = { kind: "busy", message: "scan running" };
     vi.mocked(finalize).mockRejectedValue(error);
     const { onError } = await renderReview();
-    fireEvent.click(button("Finalize", toolbar()));
+    fireEvent.click(button("Finalize…", toolbar()));
     const sheet = screen.getByRole("alertdialog");
     fireEvent.click(button("Finalize", sheet));
     await settle();

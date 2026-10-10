@@ -172,7 +172,7 @@
     "search": "Search",
     "scan": "Scan for New Receipts",
     "exportReport": "Export Report…",
-    "finalize": "Finalize",
+    "finalize": "Finalize…",
     "scanDroppedBanner_one": "{{count}} decision was discarded because its receipt is gone: {{names}}.",
     "scanDroppedBanner_other": "{{count}} decisions were discarded because their receipts are gone: {{names}}.",
     "addStatements": {

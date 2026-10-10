@@ -71,7 +71,7 @@ function FilterControl({ filter, counts, onFilter, showCounts }: { filter: Filte
  * The review's controls in the window toolbar: the status filter, then Scan for New Receipts,
  * Export Report… and the `•••` menu in one group, the primary button and search. The `•••` menu
  * starts with Add Statements…, except for a finalized month, then the month's other actions. The
- * primary button is Finalize, the default button once nothing is left to decide, or Open Report
+ * primary button is Finalize…, the default button once nothing is left to decide, or Open Report
  * for a finalized month. As the window narrows (`level`), the counts go, Scan and Export move
  * into the `•••` menu, and then the filter becomes a pop-up button.
  */
