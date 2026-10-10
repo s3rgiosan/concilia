@@ -2,6 +2,7 @@
 
 import { getVersion } from "@tauri-apps/api/app";
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow, ProgressBarStatus, UserAttentionType } from "@tauri-apps/api/window";
 import { isAppStateView } from "./guards";
@@ -320,6 +321,11 @@ export function installUpdate(): Promise<void> {
 /** Sets the title of the window this page runs in, as the Window menu and Mission Control show it. */
 export function setWindowTitle(title: string): Promise<void> {
   return getCurrentWindow().setTitle(title);
+}
+
+/** Resizes the window this page runs in to a content size in logical pixels. */
+export function setWindowSize(width: number, height: number): Promise<void> {
+  return getCurrentWindow().setSize(new LogicalSize(width, height));
 }
 
 /**

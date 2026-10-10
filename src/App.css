@@ -9,6 +9,7 @@
   --label: #1d1d1f;
   --label-secondary: rgb(60 60 67 / 72%);
   --label-tertiary: rgb(60 60 67 / 45%);
+  --placeholder: var(--label-tertiary);
   --separator: rgb(0 0 0 / 10%);
   --fill: rgb(0 0 0 / 5%);
   --fill-strong: rgb(0 0 0 / 9%);
@@ -117,6 +118,12 @@
     --green: -apple-system-green;
     --blue: -apple-system-blue;
     --gray: -apple-system-gray;
+  }
+}
+
+@supports (color: -apple-system-placeholder-text) {
+  :root {
+    --placeholder: -apple-system-placeholder-text;
   }
 }
 
@@ -277,7 +284,7 @@ textarea:focus-visible {
 }
 
 .field::placeholder {
-  color: var(--label-secondary);
+  color: var(--placeholder);
 }
 
 .field:focus {
@@ -324,7 +331,7 @@ textarea:focus-visible {
 }
 
 .search input::placeholder {
-  color: var(--label-secondary);
+  color: var(--placeholder);
 }
 
 .search input::-webkit-search-cancel-button {
@@ -467,10 +474,10 @@ input[type="checkbox"].toggle {
   appearance: none;
   position: relative;
   flex: none;
-  width: 44px;
-  height: 24px;
+  width: 32px;
+  height: 18px;
   margin: 0;
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--control-fill-strong);
   transition: background-color 160ms ease-out;
 }
@@ -480,9 +487,9 @@ input[type="checkbox"].toggle::after {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 26px;
-  height: 20px;
-  border-radius: 10px;
+  width: 18px;
+  height: 14px;
+  border-radius: 7px;
   background: #fff;
   box-shadow:
     0 0 0 0.5px rgb(0 0 0 / 8%),
@@ -495,7 +502,7 @@ input[type="checkbox"].toggle:checked {
 }
 
 input[type="checkbox"].toggle:checked::after {
-  transform: translateX(14px);
+  transform: translateX(10px);
 }
 
 input[type="checkbox"].toggle:disabled {

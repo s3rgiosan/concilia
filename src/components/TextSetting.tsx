@@ -3,7 +3,8 @@ import { useFormDescription } from "./Form";
 
 /**
  * A text field that saves when it loses focus or on Return, and puts the saved value back on
- * Escape. Its text follows `value` whenever the field is not being edited.
+ * Escape. Its text follows `value` whenever the field is not being edited. With `suggestions` it
+ * is a combo box: typing stays free and the system's suggestion list offers the values.
  */
 export function TextSetting({
   id,
@@ -11,6 +12,7 @@ export function TextSetting({
   value,
   placeholder,
   disabled,
+  suggestions,
   onCommit,
 }: {
   id: string;
@@ -18,6 +20,7 @@ export function TextSetting({
   value: string;
   placeholder?: string;
   disabled?: boolean;
+  suggestions?: string[];
   onCommit: (value: string) => void;
 }) {
   const describedBy = useFormDescription();
@@ -37,30 +40,42 @@ export function TextSetting({
     }
   }
 
+  const listId = suggestions ? `${id}-suggestions` : undefined;
+
   return (
-    <input
-      id={id}
-      className="field"
-      aria-label={label}
-      aria-describedby={describedBy}
-      value={draft}
-      placeholder={placeholder}
-      disabled={disabled}
-      spellCheck={false}
-      autoCorrect="off"
-      autoCapitalize="off"
-      onFocus={() => setEditing(true)}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.currentTarget.blur();
-        } else if (e.key === "Escape") {
-          setDraft(value);
-          setEditing(false);
-          e.currentTarget.blur();
-        }
-      }}
-    />
+    <>
+      <input
+        id={id}
+        className="field"
+        aria-label={label}
+        aria-describedby={describedBy}
+        list={listId}
+        value={draft}
+        placeholder={placeholder}
+        disabled={disabled}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        onFocus={() => setEditing(true)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          } else if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+            e.currentTarget.blur();
+          }
+        }}
+      />
+      {suggestions ? (
+        <datalist id={listId}>
+          {suggestions.map((suggestion) => (
+            <option key={suggestion} value={suggestion} />
+          ))}
+        </datalist>
+      ) : null}
+    </>
   );
 }

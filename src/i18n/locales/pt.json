@@ -256,7 +256,6 @@
       "pdfTools": "Ferramentas de PDF",
       "pdfToolsBundled": "poppler {{version}}, incluído no Concilia",
       "pdfToolsSystem": "poppler {{version}}",
-      "languageSection": "Idioma",
       "updatesSection": "Atualizações",
       "versionLabel": "Versão",
       "checkNowLabel": "Procurar agora",
@@ -265,7 +264,6 @@
       "statusAvailable": "Versão {{version}} disponível",
       "statusFailed": "Não foi possível procurar atualizações",
       "statusInstallFailed": "Não foi possível instalar a atualização",
-      "pdfSection": "Ferramentas de PDF",
       "checkNow": "Procurar agora"
     },
     "folder": {
@@ -308,7 +306,10 @@
       "addRuleTitle": "Adicionar regra",
       "deleteRule": "Eliminar regra",
       "incomplete": "Preencha as duas palavras-chave de todas as regras.",
-      "editRuleTitle": "Editar regra"
+      "editRuleTitle": "Editar regra",
+      "editRule": "Editar…",
+      "removed": "Regra removida.",
+      "undoRemove": "Desfazer"
     }
   },
   "update": {
@@ -367,6 +368,7 @@
     "select_all": "Selecionar tudo",
     "minimize": "Minimizar",
     "zoom": "Zoom",
+    "bring_all_to_front": "Trazer tudo para a frente",
     "close_window": "Fechar janela",
     "settings": "Definições…",
     "check_updates": "Procurar atualizações…",

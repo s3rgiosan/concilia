@@ -35,7 +35,7 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
 
   return (
     <div className="form-pane">
-      <FormSection title={t("settings.general.languageSection")} footer={t("settings.general.languageHint")}>
+      <FormSection footer={t("settings.general.languageHint")}>
         <FormRow label={t("settings.general.language")} htmlFor="language">
           <PopUpButton<LanguageChoice>
             id="language"
@@ -65,7 +65,7 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
         </FormRow>
       </FormSection>
 
-      <FormSection title={t("settings.general.pdfSection")}>
+      <FormSection>
         <FormRow label={t("settings.general.pdfTools")}>
           <span className="value">{pdfTools}</span>
         </FormRow>

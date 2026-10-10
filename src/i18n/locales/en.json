@@ -256,7 +256,6 @@
       "pdfTools": "PDF tools",
       "pdfToolsBundled": "poppler {{version}}, included with Concilia",
       "pdfToolsSystem": "poppler {{version}}",
-      "languageSection": "Language",
       "updatesSection": "Updates",
       "versionLabel": "Version",
       "checkNowLabel": "Check now",
@@ -265,7 +264,6 @@
       "statusAvailable": "Version {{version}} available",
       "statusFailed": "Couldn’t check for updates",
       "statusInstallFailed": "Couldn’t install the update",
-      "pdfSection": "PDF tools",
       "checkNow": "Check Now"
     },
     "folder": {
@@ -308,7 +306,10 @@
       "addRuleTitle": "Add Rule",
       "deleteRule": "Delete Rule",
       "incomplete": "Fill in both keywords of every rule.",
-      "editRuleTitle": "Edit Rule"
+      "editRuleTitle": "Edit Rule",
+      "editRule": "Edit…",
+      "removed": "Rule removed.",
+      "undoRemove": "Undo"
     }
   },
   "update": {
@@ -367,6 +368,7 @@
     "select_all": "Select All",
     "minimize": "Minimize",
     "zoom": "Zoom",
+    "bring_all_to_front": "Bring All to Front",
     "close_window": "Close Window",
     "settings": "Settings…",
     "check_updates": "Check for Updates…",

@@ -47,8 +47,9 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
             }
         }
         Route::Frontend => {
+            let settings_focused = windows::is_focused(app, windows::SETTINGS_LABEL);
             let _ = app.emit_to(
-                windows::MAIN_LABEL,
+                menu::event_target(id, settings_focused),
                 menu::MENU_EVENT,
                 serde_json::json!({ "id": id }),
             );

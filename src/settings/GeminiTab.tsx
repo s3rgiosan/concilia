@@ -4,9 +4,11 @@ import { ErrorText } from "../components/ErrorText";
 import { FormRow, FormSection } from "../components/Form";
 import { Sheet } from "../components/Sheet";
 import { TextSetting } from "../components/TextSetting";
-import { errorDetail, friendlyError } from "../lib/errors";
 import { importServiceAccount, removeServiceAccount, testGeminiConnection, type AppStateView } from "../lib/tauri";
 import type { PaneProps } from "./types";
+
+const REGIONS = ["europe-west1", "europe-west4", "europe-west9", "us-central1", "us-east4", "asia-southeast1"];
+const MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"];
 
 type TestState = { kind: "idle" } | { kind: "testing" } | { kind: "ok" } | { kind: "failed"; error: unknown };
 
@@ -62,13 +64,6 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
   }
 
   const testFailure = test.kind === "failed" ? test.error : null;
-  const testFailureTitle =
-    testFailure === null
-      ? undefined
-      : [friendlyError(testFailure, t), errorDetail(testFailure) ? t("errors.details", { detail: errorDetail(testFailure) }) : null]
-          .filter(Boolean)
-          .join(" ");
-
   const projectPlaceholder = account?.project_id
     ? t("settings.gemini.projectFromKey", { project: account.project_id })
     : t("settings.gemini.projectRequired");
@@ -104,6 +99,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
             label={t("settings.gemini.region")}
             value={gemini.location}
             placeholder="europe-west1"
+            suggestions={REGIONS}
             disabled={locked}
             onCommit={(location) => save((s) => ({ ...s, gemini: { ...s.gemini, location } }))}
           />
@@ -114,12 +110,13 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
             label={t("settings.gemini.model")}
             value={gemini.model}
             placeholder="gemini-2.5-flash"
+            suggestions={MODELS}
             disabled={locked}
             onCommit={(model) => save((s) => ({ ...s, gemini: { ...s.gemini, model } }))}
           />
         </FormRow>
         <FormRow label={t("settings.gemini.connection")}>
-          <span className="value value--status" role="status" title={testFailureTitle}>
+          <span className="value value--status" role="status">
             {test.kind === "ok" ? (
               <>
                 <span className="dot dot--green" aria-hidden="true" />

@@ -10,6 +10,7 @@ import {
   importServiceAccount,
   installUpdate,
   onBusyChanged,
+  onMenu,
   onSettingsChanged,
   onUpdateProgress,
   pickReceiptsRoot,
@@ -17,6 +18,7 @@ import {
   removeServiceAccount,
   saveRules,
   saveSettings,
+  setWindowSize,
   setWindowTitle,
   testGeminiConnection,
   type AppStateView,
@@ -35,6 +37,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   importServiceAccount: vi.fn(),
   installUpdate: vi.fn(),
   onBusyChanged: vi.fn(),
+  onMenu: vi.fn(),
   onSettingsChanged: vi.fn(),
   onUpdateProgress: vi.fn(),
   pickReceiptsRoot: vi.fn(),
@@ -42,12 +45,14 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   removeServiceAccount: vi.fn(),
   saveRules: vi.fn(),
   saveSettings: vi.fn(),
+  setWindowSize: vi.fn(),
   setWindowTitle: vi.fn(),
   testGeminiConnection: vi.fn(),
 }));
 
 let pushSettings: (view: AppStateView) => void;
 let pushBusy: (busy: boolean) => void;
+let pushMenu: (id: string) => void;
 let pushProgress: (progress: UpdateProgress) => void;
 /** The view the window loaded; saved settings are echoed back on top of it. */
 let current: AppStateView;
@@ -60,6 +65,10 @@ beforeEach(() => {
   });
   vi.mocked(onBusyChanged).mockImplementation((handler) => {
     pushBusy = handler;
+    return Promise.resolve(() => undefined);
+  });
+  vi.mocked(onMenu).mockImplementation((handler) => {
+    pushMenu = handler;
     return Promise.resolve(() => undefined);
   });
   vi.mocked(onUpdateProgress).mockImplementation((handler) => {
@@ -87,12 +96,12 @@ async function renderSettings(view: AppStateView = makeView(), pane?: string) {
   }
   vi.mocked(getAppState).mockResolvedValue(view);
   const result = render(<Settings />);
-  await screen.findByRole("navigation", { name: "Settings" });
+  await screen.findByRole("tablist", { name: "Settings" });
   return result;
 }
 
 function tab(name: string): HTMLElement {
-  return screen.getByRole("button", { name });
+  return screen.getByRole("tab", { name });
 }
 
 function button(name: string): HTMLButtonElement {
@@ -122,22 +131,78 @@ describe("Settings window", () => {
     await renderSettings();
     expect(document.title).toBe("Folder");
     expect(setWindowTitle).toHaveBeenLastCalledWith("Folder");
-    fireEvent.click(screen.getByRole("button", { name: "Gemini" }));
+    fireEvent.click(tab("Gemini"));
     expect(document.title).toBe("Gemini");
     expect(setWindowTitle).toHaveBeenLastCalledWith("Gemini");
-    fireEvent.click(screen.getByRole("button", { name: "General" }));
+    fireEvent.click(tab("General"));
     expect(setWindowTitle).toHaveBeenLastCalledWith("General");
+  });
+
+  it("sizes the window to its content within limits", async () => {
+    let notify: () => void = () => undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          notify = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.mocked(setWindowSize).mockResolvedValue(undefined);
+    try {
+      await renderSettings();
+      expect(setWindowSize).toHaveBeenCalledWith(640, 240);
+      expect(notify).toBeTypeOf("function");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("moves between the tabs with the arrow keys", async () => {
+    await renderSettings();
+    expect([tab("Folder"), tab("Gemini"), tab("Rules"), tab("General")].map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
+    fireEvent.keyDown(tab("Folder"), { key: "ArrowRight" });
+    expect(tab("Gemini").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tab("Gemini"));
+    fireEvent.keyDown(tab("Gemini"), { key: "ArrowLeft" });
+    fireEvent.keyDown(tab("Folder"), { key: "ArrowLeft" });
+    expect(tab("General").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tab("General"), { key: "ArrowRight" });
+    expect(tab("Folder").getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tab("Folder"), { key: "a" });
+    expect(tab("Folder").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("labels the pane by its tab", async () => {
+    await renderSettings(makeView(), "gemini");
+    const panel = screen.getByRole("tabpanel", { name: "Gemini" });
+    expect(panel.id).toBe(tab("Gemini").getAttribute("aria-controls"));
+  });
+
+  it("runs Edit > Undo in a focused text field", async () => {
+    const exec = vi.fn(() => true);
+    Object.defineProperty(document, "execCommand", { value: exec, configurable: true });
+    await renderSettings(makeView(), "gemini");
+    field("Project").focus();
+    await act(async () => pushMenu("undo"));
+    expect(exec).toHaveBeenCalledWith("undo");
+    await act(async () => pushMenu("redo"));
+    expect(exec).toHaveBeenCalledWith("redo");
+    await act(async () => pushMenu("find"));
+    expect(exec).toHaveBeenCalledTimes(2);
   });
 
   it("lists the panes in order", async () => {
     await renderSettings();
-    const tabs = within(screen.getByRole("navigation", { name: "Settings" })).getAllByRole("button");
+    const tabs = within(screen.getByRole("tablist", { name: "Settings" })).getAllByRole("tab");
     expect(tabs.map((t) => t.textContent)).toEqual(["Folder", "Gemini", "Rules", "General"]);
   });
 
   it("opens on Folder and switches panes", async () => {
     await renderSettings();
-    expect(tab("Folder").getAttribute("aria-pressed")).toBe("true");
+    expect(tab("Folder").getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Receipts folder")).toBeTruthy();
 
     fireEvent.click(tab("Gemini"));
@@ -147,8 +212,8 @@ describe("Settings window", () => {
     expect(await screen.findByText("No rules yet.")).toBeTruthy();
 
     fireEvent.click(tab("General"));
-    expect(tab("General").getAttribute("aria-pressed")).toBe("true");
-    expect(tab("Folder").getAttribute("aria-pressed")).toBe("false");
+    expect(tab("General").getAttribute("aria-selected")).toBe("true");
+    expect(tab("Folder").getAttribute("aria-selected")).toBe("false");
     expect(screen.getByLabelText("Language")).toBeTruthy();
     expect(screen.queryByText("Receipts folder")).toBeNull();
   });
@@ -159,12 +224,12 @@ describe("Settings window", () => {
     expect(localStorage.getItem("settings.pane")).toBe("gemini");
     unmount();
     await renderSettings();
-    expect(tab("Gemini").getAttribute("aria-pressed")).toBe("true");
+    expect(tab("Gemini").getAttribute("aria-selected")).toBe("true");
   });
 
   it("opens on Folder when the stored pane is unknown", async () => {
     await renderSettings(makeView(), "advanced");
-    expect(tab("Folder").getAttribute("aria-pressed")).toBe("true");
+    expect(tab("Folder").getAttribute("aria-selected")).toBe("true");
   });
 
   it("works when storage throws", async () => {
@@ -175,9 +240,9 @@ describe("Settings window", () => {
       throw new Error("denied");
     });
     await renderSettings();
-    expect(tab("Folder").getAttribute("aria-pressed")).toBe("true");
+    expect(tab("Folder").getAttribute("aria-selected")).toBe("true");
     fireEvent.click(tab("General"));
-    expect(tab("General").getAttribute("aria-pressed")).toBe("true");
+    expect(tab("General").getAttribute("aria-selected")).toBe("true");
   });
 
   it("shows a load error with Try Again", async () => {
@@ -189,7 +254,7 @@ describe("Settings window", () => {
     current = makeView();
     vi.mocked(getAppState).mockResolvedValueOnce(current);
     fireEvent.click(button("Try Again"));
-    expect(await screen.findByRole("navigation", { name: "Settings" })).toBeTruthy();
+    expect(await screen.findByRole("tablist", { name: "Settings" })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -263,10 +328,10 @@ describe("General pane", () => {
     return status.querySelector(".dot")?.className ?? null;
   }
 
-  it("groups the rows under Language, Updates and PDF tools", async () => {
+  it("has one section heading, for Updates", async () => {
     await renderGeneral();
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(headings).toEqual(["Language", "Updates", "PDF tools"]);
+    expect(headings).toEqual(["Updates"]);
     expect(screen.getByText("Also sets the language of the Excel report.").className).toBe("form-section__footer");
     expect(screen.getByText("Version")).toBeTruthy();
     expect(screen.getByText("Check now")).toBeTruthy();
@@ -584,6 +649,15 @@ describe("Gemini pane", () => {
     expect(lastSaved().gemini.project).toBeNull();
   });
 
+  it("suggests regions and models while the fields stay free text", async () => {
+    await renderSettings(makeView(), "gemini");
+    const listOf = (label: string) => document.getElementById(field(label).getAttribute("list") ?? "");
+    expect(Array.from(listOf("Region")?.querySelectorAll("option") ?? []).map((o) => o.value)).toContain("europe-west4");
+    expect(Array.from(listOf("Model")?.querySelectorAll("option") ?? []).map((o) => o.value)).toContain("gemini-2.5-pro");
+    commitText("Model", "gemini-3-custom");
+    expect(lastSaved().gemini.model).toBe("gemini-3-custom");
+  });
+
   it("saves a trimmed location and model", async () => {
     await renderSettings(makeView(), "gemini");
     expect(field("Region").value).toBe("europe-west1");
@@ -649,7 +723,7 @@ describe("Gemini pane", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("reports a failed connection next to the button and under the section", async () => {
+  it("reports a failed connection next to the button and as text under the section", async () => {
     const message = "Google didn't accept the key. Check the key, the project and that the Agent Platform API is enabled.";
     vi.mocked(testGeminiConnection).mockRejectedValue({ kind: "unauthorized", message: "" });
     await renderSettings(makeView(), "gemini");
@@ -660,7 +734,7 @@ describe("Gemini pane", () => {
     const status = screen.getByRole("status");
     expect(status.textContent).toBe("Failed");
     expect(status.querySelector(".dot")?.className).toBe("dot dot--red");
-    expect(status.getAttribute("title")).toBe(message);
+    expect(status.getAttribute("title")).toBeNull();
     expect(button("Test Connection").disabled).toBe(false);
   });
 
@@ -705,7 +779,7 @@ describe("Rules pane", () => {
   ];
 
   function rows(): HTMLElement[] {
-    return within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    return within(screen.getByRole("grid")).getAllByRole("row").slice(1);
   }
 
   async function renderRules(initial = rules) {
@@ -741,6 +815,9 @@ describe("Rules pane", () => {
 
     fireEvent.change(sheetInput("Receipt keyword"), { target: { value: " initech " } });
     expect(add.disabled).toBe(true);
+    expect(within(sheet).queryByText("Fill in both keywords of every rule.")).toBeNull();
+
+    fireEvent.keyDown(sheetInput("Receipt keyword"), { key: "Enter" });
     expect(within(sheet).getByText("Fill in both keywords of every rule.")).toBeTruthy();
 
     fireEvent.change(sheetInput("Transaction keyword"), { target: { value: "initech llc " } });
@@ -757,11 +834,18 @@ describe("Rules pane", () => {
     expect(rows()[2].textContent).toBe("initechinitech llc");
   });
 
-  it("does not warn about an empty new rule", async () => {
+  it("does not warn about missing keywords while typing", async () => {
     await renderRules();
     fireEvent.click(button("Add Rule…"));
     fireEvent.change(sheetInput("Receipt keyword"), { target: { value: "   " } });
     expect(screen.queryByText("Fill in both keywords of every rule.")).toBeNull();
+  });
+
+  it("warns when Return is pressed with both keywords empty", async () => {
+    await renderRules();
+    fireEvent.click(button("Add Rule…"));
+    fireEvent.keyDown(sheetInput("Transaction keyword"), { key: "Enter" });
+    expect(screen.getByText("Fill in both keywords of every rule.")).toBeTruthy();
   });
 
   it("cancels adding a rule", async () => {
@@ -800,16 +884,88 @@ describe("Rules pane", () => {
     expect(saveRules).toHaveBeenCalledWith([{ ...makeRule(), id: "00000000-0000-4000-8000-000000000002" }]);
   });
 
-  it("selects a row on click and deletes it with the minus button", async () => {
+  it("selects a row on click and removes it with the minus button", async () => {
     await renderRules();
     expect(button("Delete Rule").disabled).toBe(true);
+    expect(button("Edit…").disabled).toBe(true);
     fireEvent.click(rows()[0]);
     expect(rows()[0].getAttribute("aria-selected")).toBe("true");
     expect(rows()[1].getAttribute("aria-selected")).toBe("false");
     fireEvent.click(button("Delete Rule"));
     expect(saveRules).toHaveBeenCalledWith([rules[1]]);
     await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0].getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it("edits the selected rule with the Edit button", async () => {
+    await renderRules();
+    fireEvent.click(rows()[1]);
+    fireEvent.click(button("Edit…"));
+    expect(screen.getByRole("dialog", { name: "Edit Rule" })).toBeTruthy();
+    expect(sheetInput("Receipt keyword").value).toBe("globex");
+  });
+
+  it("moves between rows with the arrow keys and keeps one row in the tab order", async () => {
+    await renderRules();
+    expect(rows().map((row) => row.tabIndex)).toEqual([0, -1]);
+    rows()[0].focus();
+    fireEvent.keyDown(rows()[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(rows()[1]);
+    expect(rows()[1].getAttribute("aria-selected")).toBe("true");
+    expect(rows().map((row) => row.tabIndex)).toEqual([-1, 0]);
+    fireEvent.keyDown(rows()[1], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(rows()[1]);
+    fireEvent.keyDown(rows()[1], { key: "ArrowUp" });
+    expect(document.activeElement).toBe(rows()[0]);
+    fireEvent.keyDown(rows()[0], { key: "End" });
+    expect(rows()[1].getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(rows()[1], { key: "Home" });
+    expect(rows()[0].getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("undoes a removal from the banner and puts the rule back in its row", async () => {
+    await renderRules();
+    fireEvent.click(rows()[0]);
+    fireEvent.click(button("Delete Rule"));
+    const banner = await screen.findByText("Rule removed.");
+    expect(banner).toBeTruthy();
+    fireEvent.click(button("Undo"));
+    expect(saveRules).toHaveBeenLastCalledWith(rules);
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(rows()[0].textContent).toBe("acmeacme corp");
+    expect(rows()[0].getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByText("Rule removed.")).toBeNull();
+  });
+
+  it("undoes a removal from Edit > Undo", async () => {
+    await renderRules();
+    fireEvent.keyDown(rows()[1], { key: "Delete" });
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    await act(async () => pushMenu("undo"));
+    expect(saveRules).toHaveBeenLastCalledWith(rules);
+    await waitFor(() => expect(rows()).toHaveLength(2));
+  });
+
+  it("does nothing on Edit > Undo when nothing was removed", async () => {
+    await renderRules();
+    await act(async () => pushMenu("undo"));
+    expect(saveRules).not.toHaveBeenCalled();
+  });
+
+  it("disables adding, editing and removing when the settings are read-only", async () => {
+    vi.mocked(getRules).mockResolvedValue(rules);
+    await renderSettings(makeView({ read_only: true }), "rules");
+    await screen.findByRole("region", { name: "Match rules" });
+    expect(button("Add Rule…").disabled).toBe(true);
+    fireEvent.click(rows()[0]);
     expect(button("Delete Rule").disabled).toBe(true);
+    expect(button("Edit…").disabled).toBe(true);
+    fireEvent.doubleClick(rows()[0]);
+    fireEvent.keyDown(rows()[0], { key: "Enter" });
+    fireEvent.keyDown(rows()[0], { key: "Delete" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(saveRules).not.toHaveBeenCalled();
   });
 
   it.each(["Backspace", "Delete"])("deletes a focused row with %s", async (key) => {
@@ -834,6 +990,7 @@ describe("Rules pane", () => {
     fireEvent.click(rows()[0]);
     fireEvent.click(button("Delete Rule"));
     expect(button("Add Rule…").disabled).toBe(true);
+    expect(button("Edit…").disabled).toBe(true);
     expect(button("Delete Rule").disabled).toBe(true);
     await act(async () => saving.resolve([rules[1]]));
     expect(button("Add Rule…").disabled).toBe(false);
@@ -863,6 +1020,6 @@ describe("Rules pane", () => {
     vi.mocked(getRules).mockRejectedValue({ kind: "parse", message: "match-rules.json" });
     await renderSettings(makeView(), "rules");
     expect((await screen.findByRole("alert")).textContent).toContain("Details: match-rules.json");
-    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByRole("grid")).toBeNull();
   });
 });

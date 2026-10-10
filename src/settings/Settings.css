@@ -5,13 +5,24 @@
   overflow: hidden;
 }
 
-/* Pane switcher: icon above label, each pane in its own rounded button, a separator under it. */
-.toolbar {
+/*
+ * Pane switcher drawn in the overlay title bar: icon above label, each pane in its own rounded
+ * button. The bar is 62 px; src-tauri/src/windows.rs centres the traffic lights in it.
+ */
+.settings__bar {
   display: flex;
+  flex: none;
+  box-sizing: border-box;
+  align-items: center;
   justify-content: center;
+  height: 62px;
+  padding: 0 12px;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.settings__tabs {
+  display: flex;
   gap: 4px;
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--separator);
 }
 
 .toolbar__tab {
@@ -37,13 +48,16 @@
 }
 
 .pane {
-  display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 18px;
   min-height: 0;
   padding: 20px 20px 18px;
   overflow-y: auto;
+}
+
+.pane__content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .path {
@@ -60,17 +74,24 @@
   gap: 6px;
 }
 
-.rules__table {
-  width: 100%;
-  border-collapse: collapse;
+.rules__scroll {
+  max-height: 232px;
   border-radius: var(--radius-group);
   background: var(--group-bg);
   box-shadow: 0 0 0 0.5px var(--separator);
-  overflow: hidden;
+  overflow-y: auto;
+}
+
+.rules__table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
 .rules__table th {
+  position: sticky;
+  top: 0;
   padding: 6px 12px;
+  background: var(--surface);
   color: var(--label-secondary);
   font-size: 11px;
   font-weight: 500;
@@ -83,8 +104,18 @@
   overflow-wrap: anywhere;
 }
 
+.rules__table tbody tr {
+  outline: none;
+}
+
+/* The selected row is accent-coloured while the table has focus and grey otherwise. */
 .rules__row--selected td {
-  background: var(--selection);
+  background: var(--selected-bg-inactive);
+}
+
+.rules__table:focus-within .rules__row--selected td {
+  background: var(--selected-bg);
+  color: var(--selected-text);
 }
 
 .rules__empty {
@@ -102,9 +133,12 @@
   width: 100%;
 }
 
-.rules .add-remove {
-  align-self: flex-start;
+.rules__buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+
 
 .value {
   color: var(--label-secondary);

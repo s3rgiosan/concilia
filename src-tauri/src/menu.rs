@@ -5,10 +5,14 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde::Deserialize;
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, SubmenuBuilder};
+use tauri::menu::{
+    AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, SubmenuBuilder, HELP_SUBMENU_ID,
+    WINDOW_SUBMENU_ID,
+};
 use tauri::{AppHandle, Wry};
 
 use crate::error::{CommandError, CommandResult};
+use crate::windows;
 
 /// Event sent to the main window when a menu item is chosen; the payload is `{ "id": … }`.
 pub const MENU_EVENT: &str = "menu";
@@ -71,6 +75,7 @@ pub const PASTE: &str = "paste";
 pub const SELECT_ALL: &str = "select_all";
 pub const MINIMIZE: &str = "minimize";
 pub const ZOOM: &str = "zoom";
+pub const BRING_ALL_TO_FRONT: &str = "bring_all_to_front";
 pub const CLOSE_WINDOW: &str = "close_window";
 
 /// Ids of the items and submenus the frontend can enable or disable and that send events.
@@ -133,6 +138,7 @@ pub const EXTRA_LABEL_KEYS: &[&str] = &[
     SELECT_ALL,
     MINIMIZE,
     ZOOM,
+    BRING_ALL_TO_FRONT,
     CLOSE_WINDOW,
 ];
 
@@ -193,6 +199,7 @@ fn english(key: &str) -> &'static str {
         SELECT_ALL => "Select All",
         MINIMIZE => "Minimize",
         ZOOM => "Zoom",
+        BRING_ALL_TO_FRONT => "Bring All to Front",
         CLOSE_WINDOW => "Close Window",
         _ => "",
     }
@@ -240,6 +247,21 @@ pub fn route(id: &str) -> Route {
     }
 }
 
+/// The window that receives a `menu` event for `id`: Undo and Redo go to the Settings window
+/// while it has focus, everything else to the main window.
+pub fn event_target(id: &str, settings_focused: bool) -> &'static str {
+    match id {
+        UNDO | REDO if settings_focused => windows::SETTINGS_LABEL,
+        _ => windows::MAIN_LABEL,
+    }
+}
+
+/// Whether Undo and Redo are enabled: always while the Settings window has focus, where text
+/// fields and removed rules can be undone; otherwise as the main window asked.
+fn undo_redo_enabled(settings_focused: bool, requested: Option<bool>) -> bool {
+    settings_focused || requested.unwrap_or(true)
+}
+
 /// Keeps only the entries of `enabled` that name a known item.
 pub fn known_states(enabled: HashMap<String, bool>) -> HashMap<String, bool> {
     enabled
@@ -272,26 +294,49 @@ pub struct MenuState {
 struct Inner {
     handles: HashMap<String, Handle>,
     enabled: HashMap<String, bool>,
+    settings_focused: bool,
+}
+
+impl Inner {
+    /// The flag to apply to `id`, or None when the item keeps its current state.
+    fn effective(&self, id: &str) -> Option<bool> {
+        let requested = self.enabled.get(id).copied();
+        match id {
+            UNDO | REDO => Some(undo_redo_enabled(self.settings_focused, requested)),
+            _ => requested,
+        }
+    }
 }
 
 impl MenuState {
     fn install(&self, handles: HashMap<String, Handle>) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        for (id, handle) in &handles {
-            if let Some(enabled) = inner.enabled.get(id) {
-                let _ = handle.set_enabled(*enabled);
+        inner.handles = handles;
+        for (id, handle) in &inner.handles {
+            if let Some(enabled) = inner.effective(id) {
+                let _ = handle.set_enabled(enabled);
             }
         }
-        inner.handles = handles;
+    }
+
+    /// Records whether the Settings window has focus, which keeps Undo and Redo enabled.
+    pub fn set_settings_focused(&self, focused: bool) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.settings_focused = focused;
+        for id in [UNDO, REDO] {
+            if let (Some(handle), Some(enabled)) = (inner.handles.get(id), inner.effective(id)) {
+                let _ = handle.set_enabled(enabled);
+            }
+        }
     }
 
     fn set_enabled(&self, enabled: HashMap<String, bool>) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         for (id, value) in known_states(enabled) {
-            if let Some(handle) = inner.handles.get(&id) {
-                let _ = handle.set_enabled(value);
+            inner.enabled.insert(id.clone(), value);
+            if let (Some(handle), Some(enabled)) = (inner.handles.get(&id), inner.effective(&id)) {
+                let _ = handle.set_enabled(enabled);
             }
-            inner.enabled.insert(id, value);
         }
     }
 }
@@ -469,16 +514,24 @@ fn build(
     let previous_pending = b.item(PREVIOUS_PENDING, Some("CmdOrCtrl+["))?;
     let go_menu = b.submenu(MENU_GO, &[&next_pending, &previous_pending])?;
 
-    let window_menu = b.submenu(
-        MENU_WINDOW,
+    // These ids make `set_menu` register the submenus with macOS: the Window menu then lists the
+    // open windows and the tiling commands, and the Help menu gets its search field.
+    let window_menu = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
+        b.text(MENU_WINDOW),
+        true,
         &[
             &PredefinedMenuItem::minimize(app, Some(&b.text(MINIMIZE)))?,
             &PredefinedMenuItem::maximize(app, Some(&b.text(ZOOM)))?,
+            &b.separator()?,
+            &PredefinedMenuItem::bring_all_to_front(app, Some(&b.text(BRING_ALL_TO_FRONT)))?,
         ],
     )?;
 
     let help = b.item(HELP, None)?;
-    let help_menu = b.submenu(MENU_HELP, &[&help])?;
+    let help_menu =
+        Submenu::with_id_and_items(app, HELP_SUBMENU_ID, b.text(MENU_HELP), true, &[&help])?;
 
     let menu = Menu::with_items(
         app,
@@ -576,6 +629,21 @@ mod tests {
             ("bogus".to_string(), true),
         ]));
         assert_eq!(known, HashMap::from([(RECONCILE.to_string(), false)]));
+    }
+
+    #[test]
+    fn undo_and_redo_go_to_the_focused_settings_window() {
+        assert_eq!(event_target(UNDO, true), windows::SETTINGS_LABEL);
+        assert_eq!(event_target(REDO, true), windows::SETTINGS_LABEL);
+        assert_eq!(event_target(UNDO, false), windows::MAIN_LABEL);
+        assert_eq!(event_target(RECONCILE, true), windows::MAIN_LABEL);
+    }
+
+    #[test]
+    fn undo_and_redo_stay_enabled_while_settings_has_focus() {
+        assert!(undo_redo_enabled(true, Some(false)));
+        assert!(!undo_redo_enabled(false, Some(false)));
+        assert!(undo_redo_enabled(false, None));
     }
 
     #[test]

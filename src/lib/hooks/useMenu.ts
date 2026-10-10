@@ -63,6 +63,7 @@ const LABEL_KEYS = [
   "select_all",
   "minimize",
   "zoom",
+  "bring_all_to_front",
   "close_window",
   "settings",
   "check_updates",
