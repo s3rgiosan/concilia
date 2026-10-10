@@ -1,6 +1,6 @@
-//! The reconciliation jobs on a period folder: reconcile, scan, rescan, report export, review
-//! data and drafts. Statement text and receipt extraction are fakes, so nothing here needs
-//! poppler or the network.
+//! The reconciliation jobs on a period folder: reconcile, scan, adding statements, rescan,
+//! report export, review data, drafts and month folders. Statement text and receipt extraction
+//! are fakes, so nothing here needs poppler or the network.
 
 mod common;
 
@@ -780,6 +780,506 @@ async fn scanning_drops_decisions_whose_receipts_disappeared() {
         RunEvent::ReimbursementsFound { count: 0 },
     ]);
     assert_eq!(h.take_events(), expected);
+}
+
+// Adding statements.
+
+const HOOLI_ID: &str = "tx-004-2030-03-04--3000";
+const INITECH_ID: &str = "tx-005-2030-03-06--5000";
+
+/// A second statement: the ACME purchase again, plus two new purchases.
+const SECOND_STATEMENT: &[&str] = &[
+    "EXTRATO 2030-03 (2)",
+    "  2030-03-01 2030-03-01 ACME CORP              -10,00      90,00",
+    "  2030-03-04 2030-03-04 HOOLI                  -30,00      60,00",
+    "  2030-03-06 2030-03-06 INITECH                -50,00      10,00",
+];
+
+/// The standard period reconciled, with a review decision on GLOBEX, and the second
+/// statement ready to add.
+async fn reconciled_with_draft(h: &Harness) -> (StatementFile, Draft) {
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let decisions = draft(json!({
+        GLOBEX_ID: { "status": "MATCHED", "receipt_files": [], "receipt_meta": [], "notes": "transfer" }
+    }));
+    pipeline::save_draft(&h.paths, &decisions).unwrap();
+    h.extractor.take_calls();
+    h.take_events();
+    (h.statement("second.pdf", SECOND_STATEMENT), decisions)
+}
+
+fn transaction_ids(h: &Harness) -> Vec<String> {
+    let transactions: Vec<StatementTransaction> = read_json_file(&h.paths.transactions());
+    transactions.into_iter().map(|t| t.id).collect()
+}
+
+#[tokio::test]
+async fn adding_statements_keeps_ids_and_the_draft() {
+    let h = Harness::new();
+    let (second, decisions) = reconciled_with_draft(&h).await;
+
+    let added = pipeline::add_statements(&h.ctx(), &[second]).await.unwrap();
+
+    assert_eq!(
+        transaction_ids(&h),
+        [ACME_ID, FEE_ID, GLOBEX_ID, HOOLI_ID, INITECH_ID]
+    );
+    assert_eq!(pipeline::read_draft(&h.paths).unwrap(), decisions);
+    assert_eq!((added.added, added.duplicates_skipped), (2, 1));
+    assert!(added.dropped_decisions.is_empty());
+    assert_eq!(
+        added.statements,
+        [pipeline::StatementOutcome {
+            file: "second.pdf".into(),
+            bank: Bank::Cgd,
+            added: 2,
+            skipped: 1,
+        }]
+    );
+    let result = h.match_result();
+    let ids: Vec<&str> = result.transactions.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, [ACME_ID, FEE_ID, GLOBEX_ID, HOOLI_ID, INITECH_ID]);
+    assert_eq!(result.transactions[0].status, Status::Matched);
+    assert_eq!(added.summary.total_transactions, 5);
+
+    let mut expected = vec![
+        RunEvent::Parsing { count: 1 },
+        RunEvent::ReceiptsFound { count: 2 },
+    ];
+    expected.extend(extracting(2));
+    expected.extend([
+        RunEvent::Matching,
+        RunEvent::ReimbursementsFound { count: 0 },
+    ]);
+    assert_eq!(h.take_events(), expected);
+}
+
+#[tokio::test]
+async fn added_transactions_match_receipts_already_extracted() {
+    let h = Harness::new();
+    let (second, _) = reconciled_with_draft(&h).await;
+    h.extractor.knows("hooli.pdf", 3000, "HOOLI");
+    let hooli = h.receipt("hooli.pdf");
+
+    let added = pipeline::add_statements(&h.ctx(), &[second]).await.unwrap();
+
+    // Only the new file is read; the INITECH receipt comes from the cache.
+    assert_eq!(h.extractor.take_calls(), ["hooli.pdf"]);
+    assert_eq!(added.newly_matched, 2);
+    let result = h.match_result();
+    let by_id = |id: &str| {
+        result
+            .transactions
+            .iter()
+            .find(|t| t.id == id)
+            .unwrap()
+            .clone()
+    };
+    let initech = h
+        .paths
+        .receipts
+        .join("initech.png")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(by_id(INITECH_ID).status, Status::Matched);
+    assert_eq!(by_id(INITECH_ID).receipt_files, [initech]);
+    assert_eq!(by_id(HOOLI_ID).receipt_files, [hooli]);
+    assert!(result.unmatched_receipts.is_empty());
+    assert_eq!(added.summary.total_receipts, 3);
+}
+
+#[tokio::test]
+async fn adding_statements_drops_decisions_whose_receipts_disappeared() {
+    let h = Harness::new();
+    let (second, _) = reconciled_with_draft(&h).await;
+    let initech = h.paths.receipts.join("initech.png");
+    let stored = initech.to_string_lossy().into_owned();
+    pipeline::save_draft(
+        &h.paths,
+        &draft(json!({
+            GLOBEX_ID: {
+                "status": "MATCHED",
+                "receipt_files": [stored],
+                "receipt_meta": [receipt_meta(&stored, 5000, "INITECH")],
+                "notes": "manual_match"
+            }
+        })),
+    )
+    .unwrap();
+    std::fs::remove_file(&initech).unwrap();
+
+    let added = pipeline::add_statements(&h.ctx(), &[second]).await.unwrap();
+
+    assert_eq!(
+        added.dropped_decisions,
+        [DroppedDecision {
+            tx_id: GLOBEX_ID.into(),
+            description: "GLOBEX".into(),
+            removed_receipt_files: vec!["initech.png".into()],
+        }]
+    );
+    assert!(pipeline::read_draft(&h.paths).unwrap().is_empty());
+}
+
+/// A decision assigning `file` to GLOBEX by hand.
+fn assigned_to_globex(file: &str, cents: i64, vendor: &str) -> Draft {
+    draft(json!({
+        GLOBEX_ID: {
+            "status": "MATCHED",
+            "receipt_files": [file],
+            "receipt_meta": [receipt_meta(file, cents, vendor)],
+            "notes": "manual_match"
+        }
+    }))
+}
+
+/// The review pool and GLOBEX's receipts once the saved draft applies.
+fn pool_and_globex(h: &Harness) -> (Vec<String>, Vec<String>) {
+    let result = h.match_result();
+    let decisions = pipeline::read_draft(&h.paths).unwrap();
+    let merged = concilia_lib::review::merge_draft(&result, &decisions).unwrap();
+    let globex = merged.iter().find(|t| t.id == GLOBEX_ID).unwrap();
+    let pool = concilia_lib::review::effective_unmatched(&result, &merged);
+    (files(&pool), globex.receipt_files.clone())
+}
+
+#[tokio::test]
+async fn scanning_keeps_a_hand_assigned_receipt_from_other_transactions() {
+    let h = Harness::new();
+    h.extractor.knows("acme.pdf", 1000, "ACME");
+    h.receipt("acme.pdf");
+    // Unreadable at first, so the matcher leaves it alone and the user assigns it.
+    let scan = h.receipt("scan.png");
+    let mut lines = STATEMENT.to_vec();
+    lines.push("  2030-03-08 2030-03-08 HOOLI                  -50,00      19,00");
+    let statement = h.statement("statement.pdf", &lines);
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let decisions = assigned_to_globex(&scan, 5000, "HOOLI");
+    pipeline::save_draft(&h.paths, &decisions).unwrap();
+    // Read again, it now has the HOOLI transaction's amount.
+    h.extractor.knows("scan.png", 5000, "HOOLI");
+
+    let (_, dropped) = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert!(dropped.is_empty());
+    assert_eq!(pipeline::read_draft(&h.paths).unwrap(), decisions);
+    let result = h.match_result();
+    let hooli = result
+        .transactions
+        .iter()
+        .find(|t| t.description == "HOOLI")
+        .unwrap();
+    assert_eq!(hooli.status, Status::Unmatched);
+    assert!(hooli.receipt_files.is_empty());
+    assert_eq!(
+        files(&result.unmatched_receipts),
+        std::slice::from_ref(&scan)
+    );
+    let (pool, globex) = pool_and_globex(&h);
+    assert!(pool.is_empty(), "{pool:?}");
+    assert_eq!(globex, std::slice::from_ref(&scan));
+
+    // Undoing the decision returns the receipt to the pool.
+    pipeline::delete_draft(&h.paths).unwrap();
+    let (pool, _) = pool_and_globex(&h);
+    assert_eq!(pool, [scan]);
+}
+
+#[tokio::test]
+async fn added_transactions_leave_a_hand_assigned_receipt_alone() {
+    let h = Harness::new();
+    let (second, _) = reconciled_with_draft(&h).await;
+    let initech = h
+        .paths
+        .receipts
+        .join("initech.png")
+        .to_string_lossy()
+        .into_owned();
+    let decisions = assigned_to_globex(&initech, 5000, "INITECH");
+    pipeline::save_draft(&h.paths, &decisions).unwrap();
+
+    let added = pipeline::add_statements(&h.ctx(), &[second]).await.unwrap();
+
+    assert_eq!(added.newly_matched, 0);
+    assert_eq!(pipeline::read_draft(&h.paths).unwrap(), decisions);
+    let result = h.match_result();
+    let new_initech = result
+        .transactions
+        .iter()
+        .find(|t| t.id == INITECH_ID)
+        .unwrap();
+    assert_eq!(new_initech.status, Status::Unmatched);
+    assert!(new_initech.receipt_files.is_empty());
+    let (pool, globex) = pool_and_globex(&h);
+    assert!(pool.is_empty(), "{pool:?}");
+    assert_eq!(globex, [initech]);
+    // The receipt matched automatically before stays with its transaction.
+    assert_eq!(result.transactions[0].status, Status::Matched);
+}
+
+#[tokio::test]
+async fn adding_a_statement_twice_skips_every_row() {
+    let h = Harness::new();
+    let (second, _) = reconciled_with_draft(&h).await;
+    let first = h.statement("statement.pdf", STATEMENT);
+
+    let again = pipeline::add_statements(&h.ctx(), &[first]).await.unwrap();
+    assert_eq!((again.added, again.duplicates_skipped), (0, 3));
+    assert_eq!(again.newly_matched, 0);
+
+    let twice = pipeline::add_statements(&h.ctx(), &[second.clone(), second])
+        .await
+        .unwrap();
+    assert_eq!((twice.added, twice.duplicates_skipped), (2, 4));
+    let outcomes: Vec<(usize, usize)> = twice
+        .statements
+        .iter()
+        .map(|s| (s.added, s.skipped))
+        .collect();
+    assert_eq!(outcomes, [(2, 1), (0, 3)]);
+    assert_eq!(
+        transaction_ids(&h),
+        [ACME_ID, FEE_ID, GLOBEX_ID, HOOLI_ID, INITECH_ID]
+    );
+}
+
+#[tokio::test]
+async fn identical_rows_within_one_added_statement_stay_distinct() {
+    let h = Harness::new();
+    let (_, _) = reconciled_with_draft(&h).await;
+    let repeated = h.statement(
+        "repeated.pdf",
+        &[
+            "  2030-03-07 2030-03-07 EXAMPLE FEE             -1,00       9,00",
+            "  2030-03-07 2030-03-07 EXAMPLE FEE             -1,00       8,00",
+        ],
+    );
+
+    let added = pipeline::add_statements(&h.ctx(), &[repeated])
+        .await
+        .unwrap();
+
+    assert_eq!((added.added, added.duplicates_skipped), (2, 0));
+    assert_eq!(
+        &transaction_ids(&h)[3..],
+        ["tx-004-2030-03-07--100", "tx-005-2030-03-07--100"]
+    );
+}
+
+#[tokio::test]
+async fn adding_statements_to_a_finalized_period_is_refused() {
+    let h = Harness::new();
+    let (second, _) = reconciled_with_draft(&h).await;
+    write_file(&h.paths.applied_marker(), b"2030-04-01T00:00:00Z");
+    let before = std::fs::read(h.paths.transactions()).unwrap();
+
+    let error = pipeline::add_statements(&h.ctx(), &[second])
+        .await
+        .unwrap_err();
+
+    assert_eq!(error, PipelineError::Finalized);
+    assert_eq!(std::fs::read(h.paths.transactions()).unwrap(), before);
+    assert_eq!(h.statements.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn adding_statements_needs_a_reconciled_period() {
+    let h = Harness::new();
+    let second = h.statement("second.pdf", SECOND_STATEMENT);
+
+    let error = pipeline::add_statements(&h.ctx(), &[second])
+        .await
+        .unwrap_err();
+
+    assert_code(&error, "not_reconciled");
+    assert!(!h.paths.transactions().exists());
+}
+
+#[tokio::test]
+async fn added_statements_are_checked_like_reconcile_input() {
+    let h = Harness::new();
+    let _ = reconciled_with_draft(&h).await;
+    let parsed_before = h.statements.calls.load(Ordering::SeqCst);
+
+    let error = pipeline::add_statements(&h.ctx(), &[]).await.unwrap_err();
+    assert_code(&error, "no_statements");
+
+    let missing = StatementFile {
+        path: h.dir.path().join("statements/missing.pdf"),
+        bank: Bank::Cgd,
+    };
+    let good = h.statement("second.pdf", SECOND_STATEMENT);
+    let error = pipeline::add_statements(&h.ctx(), &[good, missing])
+        .await
+        .unwrap_err();
+    assert_code(&error, "not_pdf");
+    assert_eq!(h.statements.calls.load(Ordering::SeqCst), parsed_before);
+
+    let empty = h.statement("empty.pdf", &["EXTRATO 2030-03", "SALDO FINAL 0,00"]);
+    let error = pipeline::add_statements(&h.ctx(), &[empty])
+        .await
+        .unwrap_err();
+    assert_code(&error, "no_bank_match");
+    assert_eq!(transaction_ids(&h), [ACME_ID, FEE_ID, GLOBEX_ID]);
+}
+
+#[tokio::test]
+async fn cancelling_an_addition_leaves_the_period_as_it_was() {
+    let h = Harness::new();
+    let (second, decisions) = reconciled_with_draft(&h).await;
+    h.receipt("hooli.pdf");
+    h.extractor.set(Behaviour::Hang);
+    let saved = |h: &Harness| {
+        [
+            h.paths.transactions(),
+            h.paths.match_result(),
+            h.paths.statements(),
+        ]
+        .map(|file| std::fs::read(file).unwrap())
+    };
+    let before = saved(&h);
+    let mut ctx = h.ctx();
+    ctx.options.attempt_timeout = Duration::from_secs(60);
+
+    let cancel = async {
+        while h.extractor.call_count() == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        h.cancel.cancel();
+    };
+    let run = tokio::time::timeout(
+        Duration::from_secs(5),
+        pipeline::add_statements(&ctx, std::slice::from_ref(&second)),
+    );
+    let (result, ()) = tokio::join!(run, cancel);
+
+    let error = result.expect("cancel ends the run").unwrap_err();
+    assert_eq!(error, PipelineError::Cancelled);
+    assert_eq!(saved(&h), before);
+    assert_eq!(pipeline::read_draft(&h.paths).unwrap(), decisions);
+}
+
+#[test]
+fn adding_statements_takes_the_period_lock_reconcile_takes() {
+    let locks = PeriodLocks::new();
+    let reconciling = locks
+        .try_exclusive(&period(), concilia_lib::locks::RunKind::Reconcile)
+        .unwrap();
+    assert_eq!(
+        locks
+            .try_exclusive(&period(), concilia_lib::locks::RunKind::AddStatements)
+            .err(),
+        Some(concilia_lib::locks::Busy::Running(
+            concilia_lib::locks::RunKind::Reconcile
+        ))
+    );
+    drop(reconciling);
+
+    let adding = locks
+        .try_exclusive(&period(), concilia_lib::locks::RunKind::AddStatements)
+        .unwrap();
+    assert!(locks
+        .try_exclusive(&period(), concilia_lib::locks::RunKind::Reconcile)
+        .is_err());
+    assert!(locks.try_rescan(&period(), "/r/acme.pdf".into()).is_err());
+    assert!(locks.cancel(&period()));
+    assert!(adding.token().is_cancelled());
+}
+
+#[tokio::test]
+async fn lists_the_statements_a_period_holds() {
+    let h = Harness::new();
+    assert!(pipeline::read_statements(&h.paths).is_empty());
+    let (second, _) = reconciled_with_draft(&h).await;
+
+    let listed = pipeline::read_statements(&h.paths);
+    let rows: Vec<(&str, Bank, usize)> = listed
+        .iter()
+        .map(|s| (s.file.as_str(), s.bank, s.transactions))
+        .collect();
+    assert_eq!(rows, [("statement.pdf", Bank::Cgd, 3)]);
+
+    let first = h.statement("statement.pdf", STATEMENT);
+    pipeline::add_statements(&h.ctx(), &[second, first])
+        .await
+        .unwrap();
+
+    let listed = pipeline::read_statements(&h.paths);
+    let rows: Vec<(&str, usize)> = listed
+        .iter()
+        .map(|s| (s.file.as_str(), s.transactions))
+        .collect();
+    // The repeated statement added nothing, so it is not listed again.
+    assert_eq!(rows, [("statement.pdf", 3), ("second.pdf", 2)]);
+    assert_eq!(listed[1].added_at.len(), 20);
+
+    let review = pipeline::review_data(&h.paths).unwrap();
+    assert_eq!(review["statements"][1]["file"], "second.pdf");
+    assert_eq!(review["statements"][1]["bank"], "cgd");
+    assert_eq!(review["statements"][1]["transactions"], 2);
+
+    // Reconciling again from the saved transactions keeps the list.
+    pipeline::reconcile(&h.ctx(), &[], false).await.unwrap();
+    assert_eq!(pipeline::read_statements(&h.paths).len(), 2);
+}
+
+// Month folders.
+
+#[test]
+fn ensures_the_receipts_folder_of_a_month() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let paths = pipeline::ensure_period_dirs(dir.path(), &period()).unwrap();
+
+    assert_eq!(paths, period().paths(dir.path()));
+    assert!(paths.receipts.is_dir());
+    write_file(&paths.receipts.join("acme.pdf"), b"x");
+    pipeline::ensure_period_dirs(dir.path(), &period()).unwrap();
+    assert!(paths.receipts.join("acme.pdf").is_file());
+
+    let summary = pipeline::period_summary(dir.path(), &Period::parse("2030", "04").unwrap());
+    assert_eq!(summary.status, pipeline::PeriodState::Empty);
+    pipeline::ensure_period_dirs(dir.path(), &Period::parse("2030", "04").unwrap()).unwrap();
+    let months: Vec<String> = pipeline::list_periods(dir.path())
+        .iter()
+        .map(|p| format!("{}-{}", p.year, p.month))
+        .collect();
+    assert_eq!(months, ["2030-04", "2030-03"]);
+}
+
+#[test]
+fn creates_no_folders_without_the_receipts_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("missing-root");
+
+    assert!(pipeline::ensure_period_dirs(&root, &period()).is_err());
+    assert!(!root.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn creates_no_folders_through_a_symlink_out_of_the_root() {
+    let outside = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.join("2030")).unwrap();
+
+    let error = pipeline::ensure_period_dirs(&root, &period()).unwrap_err();
+
+    assert_code(&error, "outside_root");
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+
+    std::fs::remove_file(root.join("2030")).unwrap();
+    std::os::unix::fs::symlink(outside.path().join("gone"), root.join("2030")).unwrap();
+    let error = pipeline::ensure_period_dirs(&root, &period()).unwrap_err();
+    assert_code(&error, "outside_root");
+    assert!(!outside.path().join("gone").exists());
 }
 
 // Resolving files of a period.

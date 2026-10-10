@@ -134,10 +134,45 @@ export interface Transaction {
   notes: string;
 }
 
+export type Bank = "cgd";
+
+/** A bank statement whose transactions a month holds, oldest first. */
+export interface StatementRecord {
+  /** File name of the statement PDF. */
+  file: string;
+  bank: Bank;
+  /** Transactions the statement added to the month. */
+  transactions: number;
+  /** ISO 8601 UTC timestamp. */
+  added_at: string;
+}
+
 export interface ReviewData {
   transactions: Transaction[];
   unmatched_receipts: ReceiptMeta[];
   reimbursements: ReceiptMeta[];
+  /** The statements the month holds; `get_review` always sends it. */
+  statements?: StatementRecord[];
+}
+
+/** What one statement given to `add_statements` contributed. */
+export interface StatementOutcome {
+  file: string;
+  bank: Bank;
+  added: number;
+  /** Rows skipped because the month already holds them. */
+  skipped: number;
+}
+
+export interface AddStatementsResult {
+  summary: Summary;
+  /** New transactions added to the month. */
+  added: number;
+  duplicates_skipped: number;
+  /** New transactions matched, bank fees included. */
+  newly_matched: number;
+  statements: StatementOutcome[];
+  dropped_decisions: DroppedDecision[];
 }
 
 /** Pending review decisions: the transaction fields each decision overrides. */
@@ -212,6 +247,11 @@ export function listPeriods(): Promise<PeriodSummary[]> {
   return invoke<PeriodSummary[]>("list_periods");
 }
 
+/** Creates the month's folders and returns its entry for the month list. */
+export function createPeriod(year: string, month: string): Promise<PeriodSummary> {
+  return invoke<PeriodSummary>("create_period", { year, month });
+}
+
 /** The statement PDFs picked; empty when the dialog was cancelled. */
 export function pickStatements(): Promise<string[]> {
   return invoke<string[]>("pick_statements");
@@ -249,6 +289,16 @@ export function startReconcile(
 
 export function startScan(year: string, month: string, onEvent: (event: RunEvent) => void): RunHandle<ScanResult> {
   return run<ScanResult>("scan_receipts", year, month, {}, onEvent);
+}
+
+/** Adds statements to a month in review, keeping its transaction IDs and review draft. */
+export function startAddStatements(
+  year: string,
+  month: string,
+  statements: StatementInput[],
+  onEvent: (event: RunEvent) => void,
+): RunHandle<AddStatementsResult> {
+  return run<AddStatementsResult>("add_statements", year, month, { statements }, onEvent);
 }
 
 /** Stops the month's running job. Resolves to whether one was running. */

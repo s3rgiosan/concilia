@@ -101,6 +101,11 @@ impl PeriodPaths {
         self.docs.join("transactions.json")
     }
 
+    /// The statements whose transactions `transactions.json` holds.
+    pub fn statements(&self) -> PathBuf {
+        self.docs.join("statements.json")
+    }
+
     /// The receipt extraction cache.
     pub fn receipts_cache(&self) -> PathBuf {
         self.docs.join("receipts.json")

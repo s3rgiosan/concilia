@@ -170,6 +170,18 @@ pub struct DroppedDecision {
     pub removed_receipt_files: Vec<String>,
 }
 
+/// A bank statement whose transactions a period holds, as listed in `statements.json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatementRecord {
+    /// File name of the statement PDF.
+    pub file: String,
+    pub bank: crate::bank::Bank,
+    /// Transactions the statement added to the period.
+    pub transactions: usize,
+    /// ISO 8601 UTC timestamp of when it was added.
+    pub added_at: String,
+}
+
 /// Language of the Excel report.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

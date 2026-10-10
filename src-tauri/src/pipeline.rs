@@ -1,7 +1,7 @@
 //! The reconciliation jobs on one period's files: reconcile, scan, rescan, Finalize, report
 //! export and review data. Callers hold the period's locks; nothing here touches Tauri.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::bank::{normalize_statements, Bank};
+use crate::bank::{append_statements, normalize_statements, Bank};
 use crate::error::ErrorKind;
 use crate::excel;
 use crate::extract::{
@@ -20,13 +20,13 @@ use crate::finalize;
 use crate::fsutil::{read_json_opt, write_atomic, write_json, FsError};
 use crate::matcher::match_transactions;
 use crate::model::{
-    Draft, DroppedDecision, Language, MatchResult, ReceiptMeta, Rule, StatementTransaction, Status,
-    Summary,
+    Draft, DroppedDecision, Language, MatchResult, RawTransaction, ReceiptMeta, Rule,
+    StatementRecord, StatementTransaction, Status, Summary,
 };
 use crate::period::{Period, PeriodPaths};
 use crate::poppler::{Poppler, PopplerError};
 use crate::receipts::{is_receipt_name, walk, STATUS_FOLDERS};
-use crate::review::{clean_draft, effective_unmatched, merge_draft, summary};
+use crate::review::{claimed_files, clean_draft, effective_unmatched, merge_draft, summary};
 
 /// How long a single-receipt rescan may take.
 const RESCAN_TIMEOUT: Duration = Duration::from_secs(180);
@@ -210,12 +210,11 @@ async fn extract_to_cache(
     Ok(receipts)
 }
 
-/// Extracts the period's receipts, matches them and writes `match-result.json`.
-async fn extract_and_match(
+/// Extracts the receipts in the period's `receipts/` folder, through the cache.
+async fn extract_receipts(
     ctx: &RunContext<'_>,
-    transactions: &[StatementTransaction],
     force: bool,
-) -> Result<(Vec<ReceiptMeta>, MatchResult), PipelineError> {
+) -> Result<Vec<ReceiptMeta>, PipelineError> {
     let files = walk(&ctx.paths.receipts);
     (ctx.progress)(RunEvent::ReceiptsFound { count: files.len() });
     let receipts = extract_to_cache(
@@ -227,6 +226,16 @@ async fn extract_and_match(
     )
     .await?;
     ctx.check_cancelled()?;
+    Ok(receipts)
+}
+
+/// Extracts the period's receipts, matches them and writes `match-result.json`.
+async fn extract_and_match(
+    ctx: &RunContext<'_>,
+    transactions: &[StatementTransaction],
+    force: bool,
+) -> Result<(Vec<ReceiptMeta>, MatchResult), PipelineError> {
+    let receipts = extract_receipts(ctx, force).await?;
     (ctx.progress)(RunEvent::Matching);
     let result = match_transactions(transactions, &receipts, &ctx.rules);
     write_json(&ctx.paths.match_result(), &result)?;
@@ -267,6 +276,179 @@ fn write_report(
     std::fs::rename(&tmp, path).map_err(|e| io(path, e))
 }
 
+fn no_bank_match() -> PipelineError {
+    PipelineError::coded(
+        ErrorKind::Parse,
+        "no_bank_match",
+        "no transactions found in the statements; check the bank selected for each file",
+    )
+}
+
+/// Checks that every statement is an existing PDF, then reads each one with its bank's
+/// parser.
+async fn parse_statements(
+    ctx: &RunContext<'_>,
+    statements: &[StatementFile],
+) -> Result<Vec<Vec<RawTransaction>>, PipelineError> {
+    (ctx.progress)(RunEvent::Parsing {
+        count: statements.len(),
+    });
+    if let Some(statement) = statements
+        .iter()
+        .find(|s| !is_pdf(&s.path) || !s.path.is_file())
+    {
+        return Err(PipelineError::coded(
+            ErrorKind::InvalidInput,
+            "not_pdf",
+            format!("{} is not a PDF file", statement.path.display()),
+        ));
+    }
+    let mut parsed = Vec::new();
+    for statement in statements {
+        let text = ctx.statements.text(&statement.path).await?;
+        ctx.check_cancelled()?;
+        parsed.push(statement.bank.parse_text(&text));
+    }
+    Ok(parsed)
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+/// Records for the statements that added at least one transaction.
+fn statement_records(statements: &[StatementFile], counts: &[usize]) -> Vec<StatementRecord> {
+    let now = time_now_iso();
+    statements
+        .iter()
+        .zip(counts)
+        .filter(|(_, count)| **count > 0)
+        .map(|(statement, count)| StatementRecord {
+            file: file_name(&statement.path),
+            bank: statement.bank,
+            transactions: *count,
+            added_at: now.clone(),
+        })
+        .collect()
+}
+
+/// Receipt files that saved draft decisions bind to their transactions, with the ID of the
+/// transaction each one belongs to. A decision claims the receipts of a transaction it leaves
+/// MATCHED, unless it marks the transaction as needing no receipt, as `claimed_files` counts
+/// them for the review pool.
+fn draft_claims(previous: &MatchResult, draft: &Draft) -> HashMap<String, String> {
+    let merged = match merge_draft(previous, draft) {
+        Ok(merged) => merged,
+        Err(error) => {
+            log::warn!("matching without the review draft: {error}");
+            return HashMap::new();
+        }
+    };
+    merged
+        .into_iter()
+        .filter(|tx| draft.contains_key(&tx.id))
+        .flat_map(|tx| {
+            let files = claimed_files(std::slice::from_ref(&tx));
+            files.into_iter().map(move |file| (file, tx.id.clone()))
+        })
+        .collect()
+}
+
+/// Matches the transactions again without handing a receipt claimed by a draft decision to
+/// any transaction. Claimed receipts stay out of the automatic pool and are listed among the
+/// unmatched receipts unless their own transaction's previous entry lists them, so they return
+/// to the review pool when the decision is undone.
+fn match_keeping_draft(
+    paths: &PeriodPaths,
+    transactions: &[StatementTransaction],
+    receipts: &[ReceiptMeta],
+    rules: &[Rule],
+) -> MatchResult {
+    let previous: Option<MatchResult> = read_lenient(&paths.match_result());
+    let draft: Draft = read_lenient(&paths.draft()).unwrap_or_default();
+    let (Some(previous), false) = (previous, draft.is_empty()) else {
+        return match_transactions(transactions, receipts, rules);
+    };
+    let present: HashSet<&str> = receipts.iter().map(|r| r.file.as_str()).collect();
+    let claims: HashMap<String, String> = draft_claims(&previous, &draft)
+        .into_iter()
+        .filter(|(file, _)| present.contains(file.as_str()))
+        .collect();
+    if claims.is_empty() {
+        return match_transactions(transactions, receipts, rules);
+    }
+
+    let pool: Vec<ReceiptMeta> = receipts
+        .iter()
+        .filter(|r| !claims.contains_key(&r.file))
+        .cloned()
+        .collect();
+    let mut result = match_transactions(transactions, &pool, rules);
+
+    // The transactions holding a claim keep the entry the user decided on, less receipts that
+    // are gone.
+    let owners: HashSet<&str> = claims.values().map(String::as_str).collect();
+    for tx in &mut result.transactions {
+        if !owners.contains(tx.id.as_str()) {
+            continue;
+        }
+        if let Some(before) = previous.transactions.iter().find(|p| p.id == tx.id) {
+            let mut kept = before.clone();
+            kept.receipt_meta
+                .retain(|m| present.contains(m.file.as_str()));
+            kept.receipt_files.retain(|f| present.contains(f.as_str()));
+            *tx = kept;
+        }
+    }
+
+    let referenced: HashSet<String> = result
+        .transactions
+        .iter()
+        .flat_map(|tx| tx.receipt_meta.iter().map(|m| m.file.clone()))
+        .collect();
+    for receipt in receipts {
+        let unreferenced_claim =
+            claims.contains_key(&receipt.file) && !referenced.contains(&receipt.file);
+        if unreferenced_claim {
+            result.unmatched_receipts.push(receipt.clone());
+            result
+                .receipts_by_status
+                .unmatched
+                .push(receipt.file.clone());
+        }
+    }
+    result
+}
+
+/// Rewrites the saved review draft without the decisions whose receipts are gone, and returns
+/// those decisions. A draft that cannot be read or written is left as it is.
+fn clean_saved_draft(
+    paths: &PeriodPaths,
+    receipts: &[ReceiptMeta],
+    result: &MatchResult,
+) -> Vec<DroppedDecision> {
+    match read_json_opt::<Draft>(&paths.draft()) {
+        Ok(Some(draft)) => {
+            let present: HashSet<String> = receipts.iter().map(|r| r.file.clone()).collect();
+            let (kept, removed) = clean_draft(&draft, &present, &result.transactions);
+            if let Err(error) = write_json(&paths.draft(), &kept) {
+                log::warn!("could not update the review draft: {error}");
+                Vec::new()
+            } else {
+                removed
+            }
+        }
+        Ok(None) => Vec::new(),
+        Err(error) => {
+            log::warn!("could not read the review draft: {error}");
+            Vec::new()
+        }
+    }
+}
+
 /// Parses the statements (or reuses `transactions.json` when there are none), extracts and
 /// matches the receipts, extracts reimbursements and writes the report. `clear_cache` first
 /// moves finalized receipts back and extracts everything again.
@@ -294,33 +476,16 @@ pub async fn reconcile(
             )
         })?
     } else {
-        (ctx.progress)(RunEvent::Parsing {
-            count: statements.len(),
-        });
-        let mut parsed = Vec::new();
-        for statement in statements {
-            if !is_pdf(&statement.path) || !statement.path.is_file() {
-                return Err(PipelineError::coded(
-                    ErrorKind::InvalidInput,
-                    "not_pdf",
-                    format!("{} is not a PDF file", statement.path.display()),
-                ));
-            }
-            let text = ctx.statements.text(&statement.path).await?;
-            ctx.check_cancelled()?;
-            parsed.push(statement.bank.parse_text(&text));
-        }
-        let transactions =
+        let parsed = parse_statements(ctx, statements).await?;
+        let normalized =
             normalize_statements(&parsed).map_err(|e| PipelineError::Parse(e.to_string()))?;
-        if transactions.is_empty() {
-            return Err(PipelineError::coded(
-                ErrorKind::Parse,
-                "no_bank_match",
-                "no transactions found in the statements; check the bank selected for each file",
-            ));
+        if normalized.transactions.is_empty() {
+            return Err(no_bank_match());
         }
-        write_json(&ctx.paths.transactions(), &transactions)?;
-        transactions
+        write_json(&ctx.paths.transactions(), &normalized.transactions)?;
+        let records = statement_records(statements, &normalized.counts);
+        write_json(&ctx.paths.statements(), &records)?;
+        normalized.transactions
     };
 
     let (receipts, result) = extract_and_match(ctx, &transactions, clear_cache).await?;
@@ -343,24 +508,114 @@ pub async fn scan_receipts(
         return Err(PipelineError::Finalized);
     }
     create_dir(&ctx.paths.receipts)?;
-    let (receipts, result) = extract_and_match(ctx, &transactions, false).await?;
+    let receipts = extract_receipts(ctx, false).await?;
+    (ctx.progress)(RunEvent::Matching);
+    let result = match_keeping_draft(&ctx.paths, &transactions, &receipts, &ctx.rules);
+    write_json(&ctx.paths.match_result(), &result)?;
     extract_reimbursements(ctx, false).await?;
-
-    let mut dropped = Vec::new();
-    match read_json_opt::<Draft>(&ctx.paths.draft()) {
-        Ok(Some(draft)) => {
-            let present: HashSet<String> = receipts.iter().map(|r| r.file.clone()).collect();
-            let (kept, removed) = clean_draft(&draft, &present, &result.transactions);
-            if let Err(error) = write_json(&ctx.paths.draft(), &kept) {
-                log::warn!("could not update the review draft: {error}");
-            } else {
-                dropped = removed;
-            }
-        }
-        Ok(None) => {}
-        Err(error) => log::warn!("could not read the review draft: {error}"),
-    }
+    let dropped = clean_saved_draft(&ctx.paths, &receipts, &result);
     Ok((summary(&result, receipts.len()), dropped))
+}
+
+/// What one statement given to `add_statements` contributed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatementOutcome {
+    pub file: String,
+    pub bank: Bank,
+    pub added: usize,
+    /// Rows skipped because the period already holds them.
+    pub skipped: usize,
+}
+
+/// The outcome of adding statements to a period in review.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AddStatementsResult {
+    pub summary: Summary,
+    /// New transactions added to the period.
+    pub added: usize,
+    pub duplicates_skipped: usize,
+    /// New transactions the matcher marked MATCHED, bank fees included.
+    pub newly_matched: usize,
+    pub statements: Vec<StatementOutcome>,
+    pub dropped_decisions: Vec<DroppedDecision>,
+}
+
+/// Adds statements to a reconciled period that is not finalized. Existing transactions keep
+/// their IDs, so the review draft still lines up; new ones are numbered after them and rows
+/// already present are skipped. Receipts are scanned as `scan_receipts` does, everything is
+/// matched again, and draft decisions whose receipts are gone are dropped.
+pub async fn add_statements(
+    ctx: &RunContext<'_>,
+    statements: &[StatementFile],
+) -> Result<AddStatementsResult, PipelineError> {
+    if ctx.paths.applied_marker().exists() {
+        return Err(PipelineError::Finalized);
+    }
+    let existing: Vec<StatementTransaction> =
+        read_json_opt(&ctx.paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
+    if statements.is_empty() {
+        return Err(PipelineError::coded(
+            ErrorKind::InvalidInput,
+            "no_statements",
+            "choose at least one bank statement to add",
+        ));
+    }
+
+    let parsed = parse_statements(ctx, statements).await?;
+    if parsed.iter().all(Vec::is_empty) {
+        return Err(no_bank_match());
+    }
+    let appended =
+        append_statements(&existing, &parsed).map_err(|e| PipelineError::Parse(e.to_string()))?;
+    let new_ids: HashSet<String> = appended
+        .transactions
+        .iter()
+        .map(|tx| tx.id.clone())
+        .collect();
+    let mut transactions = existing;
+    transactions.extend(appended.transactions);
+    ctx.check_cancelled()?;
+
+    // Only caches are written until the last cancellation point, so a cancelled run leaves
+    // the period as it was.
+    create_dir(&ctx.paths.receipts)?;
+    let receipts = extract_receipts(ctx, false).await?;
+    (ctx.progress)(RunEvent::Matching);
+    let result = match_keeping_draft(&ctx.paths, &transactions, &receipts, &ctx.rules);
+    extract_reimbursements(ctx, false).await?;
+    ctx.check_cancelled()?;
+
+    write_json(&ctx.paths.transactions(), &transactions)?;
+    write_json(&ctx.paths.match_result(), &result)?;
+    let added_counts: Vec<usize> = appended.counts.iter().map(|c| c.added).collect();
+    let mut records = read_statements(&ctx.paths);
+    records.extend(statement_records(statements, &added_counts));
+    write_json(&ctx.paths.statements(), &records)?;
+    let dropped_decisions = clean_saved_draft(&ctx.paths, &receipts, &result);
+
+    let newly_matched = result
+        .transactions
+        .iter()
+        .filter(|tx| tx.status == Status::Matched && new_ids.contains(&tx.id))
+        .count();
+    let outcomes: Vec<StatementOutcome> = statements
+        .iter()
+        .zip(&appended.counts)
+        .map(|(statement, count)| StatementOutcome {
+            file: file_name(&statement.path),
+            bank: statement.bank,
+            added: count.added,
+            skipped: count.skipped,
+        })
+        .collect();
+    Ok(AddStatementsResult {
+        summary: summary(&result, receipts.len()),
+        added: new_ids.len(),
+        duplicates_skipped: appended.counts.iter().map(|c| c.skipped).sum(),
+        newly_matched,
+        statements: outcomes,
+        dropped_decisions,
+    })
 }
 
 /// Which folder a rescanned file belongs to.
@@ -661,7 +916,13 @@ pub fn review_data(paths: &PeriodPaths) -> Result<Value, PipelineError> {
         "transactions": transactions,
         "unmatched_receipts": result.unmatched_receipts.iter().map(with_path).collect::<Vec<_>>(),
         "reimbursements": reimbursements.iter().map(with_path).collect::<Vec<_>>(),
+        "statements": read_statements(paths),
     }))
+}
+
+/// The statements recorded for a period, oldest first; empty when none are recorded.
+pub fn read_statements(paths: &PeriodPaths) -> Vec<StatementRecord> {
+    read_lenient(&paths.statements()).unwrap_or_default()
 }
 
 /// What exists for a period.
@@ -760,6 +1021,49 @@ fn read_lenient<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
             None
         }
     }
+}
+
+/// The month-list entry of one period under `root`.
+pub fn period_summary(root: &Path, period: &Period) -> PeriodSummary {
+    summarize_period(period, &period.paths(root))
+}
+
+/// Creates `<root>/YYYY/MM/receipts/` one folder at a time. `root` must exist, and every
+/// folder on the way must resolve inside it, so a symlink leading elsewhere is refused before
+/// anything is created through it.
+pub fn ensure_period_dirs(root: &Path, period: &Period) -> Result<PeriodPaths, PipelineError> {
+    let root_real = root.canonicalize().map_err(|e| io(root, e))?;
+    let paths = period.paths(root);
+    let outside = || {
+        PipelineError::coded(
+            ErrorKind::InvalidInput,
+            "outside_root",
+            format!("{} leads outside the receipts folder", paths.prefix),
+        )
+    };
+    let mut dir = root.to_path_buf();
+    for part in [period.year(), period.month(), "receipts"] {
+        dir.push(part);
+        match dir.canonicalize() {
+            Ok(real) => {
+                if !real.starts_with(&root_real) {
+                    return Err(outside());
+                }
+                if !real.is_dir() {
+                    return Err(io(&dir, "not a folder"));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if dir.symlink_metadata().is_ok() {
+                    // A dangling symlink: creating through it would land outside the root.
+                    return Err(outside());
+                }
+                std::fs::create_dir(&dir).map_err(|e| io(&dir, e))?;
+            }
+            Err(error) => return Err(io(&dir, error)),
+        }
+    }
+    Ok(paths)
 }
 
 fn summarize_period(period: &Period, paths: &PeriodPaths) -> PeriodSummary {

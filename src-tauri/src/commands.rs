@@ -21,7 +21,7 @@ use crate::extract::{ExtractOptions, GeminiExtractor};
 use crate::locks::{ExclusiveGuard, RunKind};
 use crate::model::{Draft, DroppedDecision, Rule, Summary};
 use crate::period::{Period, PeriodPaths};
-use crate::pipeline::{self, RescanKind, RunContext, RunEvent, StatementFile};
+use crate::pipeline::{self, AddStatementsResult, RescanKind, RunContext, RunEvent, StatementFile};
 use crate::poppler::PopplerStatus;
 use crate::updates::{UpdateInfo, UpdateManager, UPDATE_PROGRESS_EVENT};
 use crate::windows;
@@ -31,6 +31,15 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 fn period(year: &str, month: &str) -> CommandResult<Period> {
     Period::parse(year, month).map_err(fail)
+}
+
+fn receipts_root(state: &AppState) -> CommandResult<PathBuf> {
+    state.receipts_root().ok_or_else(|| {
+        CommandError::new(
+            ErrorKind::NotConfigured,
+            "choose the receipts folder in Settings",
+        )
+    })
 }
 
 fn changed(app: &AppHandle, view: AppStateView) -> AppStateView {
@@ -146,12 +155,7 @@ pub fn period_status(
 pub async fn list_periods(
     state: State<'_, Arc<AppState>>,
 ) -> CommandResult<Vec<pipeline::PeriodSummary>> {
-    let root = state.receipts_root().ok_or_else(|| {
-        fail(CommandError::new(
-            ErrorKind::NotConfigured,
-            "choose the receipts folder in Settings",
-        ))
-    })?;
+    let root = receipts_root(&state).map_err(fail)?;
     blocking(move || pipeline::list_periods(&root)).await
 }
 
@@ -226,6 +230,19 @@ fn timed_out<T>(
     }
 }
 
+fn statement_files(statements: Vec<StatementInput>) -> CommandResult<Vec<StatementFile>> {
+    statements
+        .into_iter()
+        .map(|s| {
+            Ok(StatementFile {
+                path: PathBuf::from(s.path),
+                bank: s.bank.parse::<Bank>()?,
+            })
+        })
+        .collect::<CommandResult<Vec<_>>>()
+        .map_err(fail)
+}
+
 #[tauri::command]
 pub async fn reconcile(
     state: State<'_, Arc<AppState>>,
@@ -236,16 +253,7 @@ pub async fn reconcile(
     on_event: Channel<RunEvent>,
 ) -> CommandResult<Summary> {
     let period = period(&year, &month)?;
-    let files = statements
-        .into_iter()
-        .map(|s| {
-            Ok(StatementFile {
-                path: PathBuf::from(s.path),
-                bank: s.bank.parse::<Bank>()?,
-            })
-        })
-        .collect::<CommandResult<Vec<_>>>()
-        .map_err(fail)?;
+    let files = statement_files(statements)?;
     let job = start_job(&state, &period, RunKind::Reconcile).map_err(fail)?;
     let token = job.guard.token().clone();
     let progress = progress_sender(on_event, token.clone());
@@ -299,6 +307,35 @@ pub async fn scan_receipts(
         summary,
         dropped_decisions,
     })
+}
+
+/// Adds statements to a month in review, keeping its transaction IDs and review draft.
+#[tauri::command]
+pub async fn add_statements(
+    state: State<'_, Arc<AppState>>,
+    year: String,
+    month: String,
+    statements: Vec<StatementInput>,
+    on_event: Channel<RunEvent>,
+) -> CommandResult<AddStatementsResult> {
+    let period = period(&year, &month)?;
+    let files = statement_files(statements)?;
+    let job = start_job(&state, &period, RunKind::AddStatements).map_err(fail)?;
+    let token = job.guard.token().clone();
+    let progress = progress_sender(on_event, token.clone());
+    let ctx = RunContext {
+        paths: job.paths.clone(),
+        extractor: &job.extractor,
+        statements: &state.poppler,
+        rules: state.rules(),
+        language: state.settings().report_language(),
+        options: ExtractOptions::default(),
+        progress: &progress,
+        cancel: token,
+    };
+    let result = tokio::time::timeout(RUN_TIMEOUT, pipeline::add_statements(&ctx, &files)).await;
+    drop(job);
+    timed_out(result).map_err(fail)
 }
 
 /// Stops the period's running job. Returns whether one was running.
@@ -511,7 +548,20 @@ pub fn open_receipt(
     open(&app, &file.canonical)
 }
 
-/// Shows the period's folder in the file manager.
+/// Creates a month's folders and returns its entry for the month list.
+#[tauri::command]
+pub fn create_period(
+    state: State<'_, Arc<AppState>>,
+    year: String,
+    month: String,
+) -> CommandResult<pipeline::PeriodSummary> {
+    let period = period(&year, &month)?;
+    let root = receipts_root(&state).map_err(fail)?;
+    pipeline::ensure_period_dirs(&root, &period).map_err(fail)?;
+    Ok(pipeline::period_summary(&root, &period))
+}
+
+/// Shows the period's folder in the file manager, creating it first when it is missing.
 #[tauri::command]
 pub fn reveal_period(
     app: AppHandle,
@@ -519,13 +569,8 @@ pub fn reveal_period(
     year: String,
     month: String,
 ) -> CommandResult<()> {
-    let paths = state.period_paths(&period(&year, &month)?).map_err(fail)?;
-    if !paths.dir.is_dir() {
-        return Err(fail(CommandError::new(
-            ErrorKind::NotFound,
-            "the period folder does not exist yet",
-        )));
-    }
+    let root = receipts_root(&state).map_err(fail)?;
+    let paths = pipeline::ensure_period_dirs(&root, &period(&year, &month)?).map_err(fail)?;
     app.opener()
         .reveal_item_in_dir(&paths.dir)
         .map_err(|e| fail(CommandError::new(ErrorKind::Io, e.to_string())))

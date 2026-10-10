@@ -8,6 +8,7 @@ import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import type {
+  AddStatementsResult,
   AppStateView,
   Draft,
   Missing,
@@ -138,16 +139,16 @@ function initialPeriods(scenario: string, now: Date): Map<string, PeriodSummary>
 }
 
 /** Replays a run's progress over a few seconds, stopping when `cancelled` turns true. */
-async function replay(channel: Channel<RunEvent>, scan: boolean, cancelled: () => boolean): Promise<void> {
+async function replay(channel: Channel<RunEvent>, kind: "reconcile" | "scan" | "add", cancelled: () => boolean): Promise<void> {
   const send = (event: RunEvent) => channel.onmessage(event);
-  const steps: RunEvent[] = scan ? [] : [{ step: "parsing", count: 2 }];
+  const steps: RunEvent[] = kind === "scan" ? [] : [{ step: "parsing", count: kind === "add" ? 1 : 2 }];
   steps.push({ step: "receipts_found", count: 38 });
   for (let current = 0; current <= 38; current += 2) {
     steps.push({ step: "extracting", current, total: 38 });
   }
   steps.push({ step: "matching" }, { step: "reimbursements_found", count: 2 });
   steps.push({ step: "extracting_reimbursements", current: 0, total: 2 }, { step: "extracting_reimbursements", current: 2, total: 2 });
-  if (!scan) {
+  if (kind === "reconcile") {
     steps.push({ step: "exporting" });
   }
   for (const event of steps) {
@@ -261,7 +262,10 @@ export function install(): void {
           return { exists, applied: status === "finalized", has_transactions: exists, has_draft: Object.keys(draft).length > 0 };
         }
         case "get_review":
-          return reviewData();
+          return {
+            ...reviewData(),
+            statements: [{ file: "extrato-2030-03.pdf", bank: "cgd", transactions: 6, added_at: "2030-04-01T09:00:00Z" }],
+          };
         case "get_draft":
           return draft;
         case "save_draft":
@@ -290,7 +294,7 @@ export function install(): void {
         case "scan_receipts":
           cancelRequested = false;
           return (async () => {
-            await replay(a.onEvent as Channel<RunEvent>, cmd === "scan_receipts", () => cancelRequested);
+            await replay(a.onEvent as Channel<RunEvent>, cmd === "scan_receipts" ? "scan" : "reconcile", () => cancelRequested);
             if (scenario === "run-error") {
               throw { kind: "unauthorized", message: "token exchange failed (400)" };
             }
@@ -307,6 +311,23 @@ export function install(): void {
                 }
               : SUMMARY;
           })();
+        case "add_statements":
+          cancelRequested = false;
+          return (async (): Promise<AddStatementsResult> => {
+            await replay(a.onEvent as Channel<RunEvent>, "add", () => cancelRequested);
+            setPeriod(a, { transactions: SUMMARY.totalTransactions + 3, pending: pendingWith(draft) + 1 });
+            return {
+              summary: { ...SUMMARY, totalTransactions: SUMMARY.totalTransactions + 3, matched: SUMMARY.matched + 2, unmatched: SUMMARY.unmatched + 1 },
+              added: 3,
+              duplicates_skipped: 1,
+              newly_matched: 2,
+              statements: [{ file: "extrato-2030-03-b.pdf", bank: "cgd", added: 3, skipped: 1 }],
+              dropped_decisions: [],
+            };
+          })();
+        case "create_period":
+          setPeriod(a, {});
+          return delay(150, periods.get(`${String(a.year)}-${String(a.month)}`));
         case "cancel_run":
           cancelRequested = true;
           return true;
