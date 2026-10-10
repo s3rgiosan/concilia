@@ -16,10 +16,13 @@ function renderRow(props: Partial<Parameters<typeof ReceiptRow>[0]> = {}) {
   return { container, ...handlers };
 }
 
+function menuButton(): HTMLButtonElement {
+  return screen.getByRole("button", { name: /^Actions for / }) as HTMLButtonElement;
+}
+
 function pick(item: string) {
-  const menu = screen.getByRole("combobox") as HTMLSelectElement;
-  const option = Array.from(menu.options).find((o) => o.textContent === item)!;
-  fireEvent.change(menu, { target: { value: option.value } });
+  fireEvent.click(menuButton());
+  fireEvent.click(screen.getByRole("menuitem", { name: item }));
 }
 
 describe("ReceiptRow", () => {
@@ -56,25 +59,49 @@ describe("ReceiptRow", () => {
     expect(container.querySelector(".receipt-row--focused")).toBeTruthy();
   });
 
+  it("marks the receipt in the preview with an eye, not a fill", () => {
+    const { container } = renderRow({ focused: true });
+    expect(container.querySelector(".receipt-row__marker .symbol--eye")).toBeTruthy();
+    cleanup();
+    const other = renderRow();
+    expect(other.container.querySelector(".receipt-row__marker .symbol--eye")).toBeNull();
+  });
+
   it("rescans and opens from its menu", () => {
     const { onRescan, onOpen } = renderRow();
-    expect(screen.getByRole("combobox", { name: "Actions for ACME" })).toBeTruthy();
+    expect(menuButton().getAttribute("aria-label")).toBe("Actions for ACME");
+    expect(menuButton().getAttribute("aria-haspopup")).toBe("menu");
     pick("Read Again");
     pick("Open in Preview");
     expect(onRescan).toHaveBeenCalledTimes(1);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("disables the menu items a receipt without a path cannot run", () => {
+  it("offers the same commands on a right click, showing the receipt first", () => {
+    const { container, onFocus, onOpen } = renderRow();
+    fireEvent.contextMenu(container.querySelector("li")!, { clientX: 10, clientY: 10 });
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in Preview" }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the menu a receipt without a path cannot use", () => {
     renderRow({ receipt: makeReceipt("acme.pdf", { rel_path: null }) });
-    expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(true);
+    expect(menuButton().disabled).toBe(true);
   });
 
   it("shows a spinner and disables Read Again while rescanning", () => {
     renderRow({ rescanning: true });
     expect(screen.getByRole("status", { name: "Reading…" })).toBeTruthy();
-    const menu = screen.getByRole("combobox") as HTMLSelectElement;
-    expect(Array.from(menu.options).find((o) => o.textContent === "Read Again")?.disabled).toBe(true);
+    fireEvent.click(menuButton());
+    expect((screen.getByRole("menuitem", { name: "Read Again" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("cannot be read again when read-only", () => {
+    renderRow({ readOnly: true });
+    fireEvent.click(menuButton());
+    expect((screen.getByRole("menuitem", { name: "Read Again" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("menuitem", { name: "Open in Preview" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("runs its decision button", () => {

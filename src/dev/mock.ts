@@ -2,7 +2,7 @@
 // designed and checked in a plain browser. All names and data here are fabricated.
 //
 // Pick a scenario with `?mock=<name>`: first-run (default), configured, resume, applied, busy,
-// update, read-only, load-error, run-error.
+// update, read-only, load-error, run-error. `?lang=en|pt` saves that language in the settings.
 
 import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
@@ -94,6 +94,11 @@ function reviewData(): ReviewData {
   };
 }
 
+/** Transactions still needing a decision once `draft` applies, as the backend counts them. */
+function pendingWith(draft: Draft): number {
+  return reviewData().transactions.filter((t) => (draft[t.id]?.status ?? t.status) !== "MATCHED").length;
+}
+
 /** An SVG page standing in for a receipt file, titled with its file name. */
 function placeholderPage(path: string): string {
   const name = path.split("/").pop() ?? path;
@@ -116,7 +121,7 @@ function monthKey(now: Date, offset: number): string {
 function initialPeriods(scenario: string, now: Date): Map<string, PeriodSummary> {
   const first: Record<string, PeriodState> = { resume: "in_review", applied: "finalized" };
   const rows: [number, PeriodState, number, number, number][] = [
-    [1, first[scenario] ?? "ready", 38, first[scenario] ? 42 : 0, scenario === "resume" ? 6 : 0],
+    [1, first[scenario] ?? "ready", 38, first[scenario] ? 42 : 0, scenario === "resume" ? pendingWith({}) : 0],
     [2, "in_review", 31, 40, 4],
     [3, "finalized", 27, 35, 0],
     [4, "finalized", 22, 30, 0],
@@ -160,8 +165,9 @@ export function install(): void {
   (window as unknown as Record<string, unknown>).__CONCILIA_PREVIEW__ = true;
 
   const configured = scenario !== "first-run" && scenario !== "load-error";
+  const lang = params.get("lang");
   let settings: Settings = {
-    language: null,
+    language: lang === "en" || lang === "pt" ? lang : null,
     receipts_root: configured ? "/Users/example/Documents/Receipts" : null,
     gemini: { project: null, location: "europe-west1", model: "gemini-2.5-flash" },
     check_for_updates: true,
@@ -260,6 +266,7 @@ export function install(): void {
           return draft;
         case "save_draft":
           draft = a.draft as Draft;
+          setPeriod(a, { pending: pendingWith(draft) });
           return delay(150, null);
         case "delete_draft":
           draft = {};
@@ -291,7 +298,7 @@ export function install(): void {
               status: "in_review",
               receipts: SUMMARY.totalReceipts,
               transactions: SUMMARY.totalTransactions,
-              pending: SUMMARY.review + SUMMARY.unmatched,
+              pending: pendingWith(draft),
             });
             return cmd === "scan_receipts"
               ? {

@@ -28,9 +28,11 @@ export function initialSelection(rows: ListRow[]): ListRow | null {
 
 /**
  * The selected row while it is listed. Otherwise the row now at `fallbackIndex`, kept within the
- * list, so a decided row that leaves the list hands the selection to the one after it.
+ * list, so a decided row that leaves the list hands the selection to the one after it. With
+ * `preferPending`, the selection goes to the first row at or after that index that needs a
+ * decision, or else the nearest such row before it.
  */
-export function resolveSelection(rows: ListRow[], selectedId: string | null, fallbackIndex = 0): ListRow | null {
+export function resolveSelection(rows: ListRow[], selectedId: string | null, fallbackIndex = 0, preferPending = false): ListRow | null {
   const kept = selectedId === null ? undefined : rows.find((row) => row.id === selectedId);
   if (kept) {
     return kept;
@@ -38,7 +40,15 @@ export function resolveSelection(rows: ListRow[], selectedId: string | null, fal
   if (rows.length === 0) {
     return null;
   }
-  return rows[Math.min(Math.max(fallbackIndex, 0), rows.length - 1)];
+  const index = Math.min(Math.max(fallbackIndex, 0), rows.length - 1);
+  if (preferPending) {
+    const after = findPending(rows, index - 1, 1);
+    const pending = after >= 0 ? after : findPending(rows, index, -1);
+    if (pending >= 0) {
+      return rows[pending];
+    }
+  }
+  return rows[index];
 }
 
 /** The index of the nearest row after (1) or before (-1) `from` that needs a decision, or -1. */

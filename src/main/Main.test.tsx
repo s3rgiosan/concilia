@@ -15,6 +15,7 @@ import {
   onUpdateCheckResult,
   onUpdateProgress,
   openReport,
+  openSettings,
   pendingUpdate,
   pickStatements,
   requestAttention,
@@ -246,19 +247,18 @@ function selectMonth(name: RegExp) {
 
 /** Picks an item from the toolbar's More Actions menu. */
 function moreAction(label: string) {
-  const select = within(toolbar()).getByLabelText("More Actions") as HTMLSelectElement;
-  const option = within(select)
-    .getAllByRole("option")
-    .find((o) => o.textContent === label) as HTMLOptionElement;
-  fireEvent.change(select, { target: { value: option.value } });
+  fireEvent.click(within(toolbar()).getByRole("button", { name: "More Actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: label }));
 }
 
+/** The items of the toolbar's More Actions menu, which it opens and closes again. */
 function moreActions(): string[] {
-  const select = within(toolbar()).getByLabelText("More Actions");
-  return within(select)
-    .getAllByRole("option")
-    .filter((o) => !(o as HTMLOptionElement).hidden)
-    .map((o) => `${o.textContent}${(o as HTMLOptionElement).disabled ? " (disabled)" : ""}`);
+  fireEvent.click(within(toolbar()).getByRole("button", { name: "More Actions" }));
+  const items = within(screen.getByRole("menu"))
+    .getAllByRole("menuitem")
+    .map((o) => `${o.textContent}${(o as HTMLButtonElement).disabled ? " (disabled)" : ""}`);
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  return items;
 }
 
 function steps(): string[] {
@@ -317,6 +317,10 @@ describe("load error", () => {
     render(<Main />);
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Details: denied");
+    expect(within(alert).getByRole("heading", { name: "Couldn't Load Settings" })).toBeTruthy();
+    vi.mocked(openSettings).mockResolvedValue(undefined);
+    fireEvent.click(button("Open Settings…", alert));
+    expect(openSettings).toHaveBeenCalledTimes(1);
 
     vi.mocked(getAppState).mockResolvedValueOnce(UNCONFIGURED);
     fireEvent.click(button("Try Again"));
@@ -339,6 +343,19 @@ describe("update banner", () => {
     expect(screen.queryByRole("status")).toBeNull();
     act(() => pushCheckResult({ update: { version: "9.9.10", notes: "Fixes." }, error: null }));
     expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.10 is available.");
+  });
+
+  it("puts the update off with Later until the app runs again", async () => {
+    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.11", notes: null });
+    await renderMain();
+    fireEvent.click(await screen.findByRole("button", { name: "Later" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    cleanup();
+    await renderMain();
+    await act(async () => undefined);
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => pushCheckResult({ update: { version: "9.9.12", notes: null }, error: null }));
+    expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.12 is available.");
   });
 
   it("shows the install progress and reports a failed install", async () => {
@@ -422,8 +439,44 @@ describe("sidebar", () => {
     expect(months()).toHaveLength(4);
   });
 
+  it("shows no month statuses until the months have loaded", async () => {
+    const listing = deferred<PeriodSummary[]>();
+    vi.mocked(listPeriods).mockReturnValueOnce(listing.promise);
+    await renderMain();
+    expect(months()).toEqual(["* March\u00a0"]);
+    await act(async () => listing.resolve(LISTED));
+    expect(months()[0]).toBe("* MarchNo receipts");
+  });
+
+  it("resizes from its divider within 180 to 280 pixels and remembers the width", async () => {
+    await renderMain();
+    const divider = screen.getByRole("separator", { name: "Resize Sidebar" });
+    const nav = screen.getByRole("navigation", { name: "Months" });
+    expect(nav.style.width).toBe("220px");
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(nav.style.width).toBe("230px");
+    expect((toolbar().querySelector(".titlebar__leading") as HTMLElement).style.width).toBe("230px");
+    fireEvent.keyDown(divider, { key: "Home" });
+    expect(nav.style.width).toBe("180px");
+    expect(localStorage.getItem("main.sidebarWidth")).toBe("180");
+  });
+
+  it("offers a month's commands on a right click", async () => {
+    vi.mocked(revealPeriod).mockResolvedValue(undefined);
+    await renderMain();
+    const february = within(screen.getByRole("listbox", { name: "Months" })).getByRole("option", { name: /February/ });
+    fireEvent.contextMenu(february);
+    expect(title()).toBe("February 2030");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Show in Finder" }));
+    expect(revealPeriod).toHaveBeenCalledWith("2030", "02");
+    fireEvent.contextMenu(february);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reconcile Again…" }));
+    expect(screen.getByRole("alertdialog", { name: "Reconcile February 2030 again?" })).toBeTruthy();
+  });
+
   it("hides and shows the sidebar, and remembers it", async () => {
     await renderMain();
+    expect(button("Hide Sidebar").getAttribute("aria-expanded")).toBeNull();
     fireEvent.click(button("Hide Sidebar"));
     expect(screen.queryByRole("navigation", { name: "Months" })).toBeNull();
     expect(localStorage.getItem("main.sidebar")).toBe("hidden");
@@ -450,6 +503,16 @@ describe("sidebar", () => {
 
     selectMonth(/March/);
     expect(months()).toContain("JulyNo receipts");
+  });
+
+  it("starts the New Month sheet on the month after the newest one", async () => {
+    await renderMain();
+    fireEvent.click(button("New Month…"));
+    const sheet = screen.getByRole("dialog", { name: "New Month" });
+    expect((within(sheet).getByLabelText("Month") as HTMLSelectElement).value).toBe("04");
+    expect((within(sheet).getByLabelText("Year") as HTMLSelectElement).value).toBe("2030");
+    fireEvent.change(within(sheet).getByLabelText("Month"), { target: { value: "01" } });
+    expect(button("Create", sheet).disabled).toBe(true);
   });
 
   it("closes the New Month sheet on Cancel", async () => {
@@ -594,10 +657,12 @@ describe("reconcile", () => {
     expect(steps().slice(0, 3)).toEqual([
       "done: Reading statements · 1 file",
       "done: Scanning receipts · 40 found",
-      "running: Extracting receipt data · 10 / 40",
+      "running: Extracting receipt data · 10 of 40",
     ]);
-    expect(subtitle()).toBe("10 / 40");
-    expect(months()[0]).toBe("* March10 / 40");
+    expect(subtitle()).toBe("Reading receipts: 10 of 40");
+    expect(months()[0]).toBe("* MarchReading receipts: 10 of 40");
+    expect(within(screen.getByRole("listbox", { name: "Months" })).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("10");
+    expect(document.querySelectorAll(".run button")).toHaveLength(0);
 
     run.push({ step: "matching" });
     expect(subtitle()).toBe("Reconciling…");
@@ -646,20 +711,41 @@ describe("reconcile", () => {
     expect(screen.getByText("Review 2030-03")).toBeTruthy();
   });
 
-  it("explains a failed run and returns to the statements on Try Again", async () => {
+  it("explains a failed run and returns to the statements", async () => {
     const run = await startReconciling();
     run.push({ step: "parsing", count: 1 });
     await act(async () => run.result.reject({ kind: "parse", message: "no transactions found" }));
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("Details: no transactions found");
     expect(alert.className).toContain("banner--error");
+    expect(subtitle()).toBe("Failed");
     expect(steps()[0]).toBe("failed: Reading statements · 1 file");
     expect(within(toolbar()).queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open Settings…" })).toBeNull();
     expect(months()[0]).toBe("* MarchNo receipts");
 
-    fireEvent.click(button("Try Again", alert));
+    fireEvent.click(button("Back to Statements"));
     expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
     expect(button("Reconcile", toolbar()).disabled).toBe(false);
+  });
+
+  it("runs again the same way on Try Again", async () => {
+    const run = await startReconciling();
+    await act(async () => run.result.reject({ kind: "network", message: "offline" }));
+    const again = reconcileRun();
+    fireEvent.click(button("Try Again"));
+    expect(startReconcile).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(startReconcile).mock.calls[1].slice(0, 4)).toEqual(["2030", "03", [{ path: STATEMENT_PATH, bank: "cgd" }], false]);
+    expect(subtitle()).toBe("Reconciling…");
+    again.push({ step: "parsing", count: 1 });
+  });
+
+  it("offers Settings when the failure is fixed there", async () => {
+    const run = await startReconciling();
+    await act(async () => run.result.reject({ kind: "unauthorized", message: "token exchange failed" }));
+    vi.mocked(openSettings).mockResolvedValue(undefined);
+    fireEvent.click(button("Open Settings…"));
+    expect(openSettings).toHaveBeenCalledTimes(1);
   });
 
   it("says the run was stopped", async () => {
@@ -667,8 +753,10 @@ describe("reconcile", () => {
     fireEvent.click(button("Cancel", toolbar()));
     await act(async () => run.result.reject({ kind: "cancelled", message: "cancelled" }));
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toBe("Reconciliation stopped.Try Again");
+    expect(alert.textContent).toBe("Reconciliation stopped.");
     expect(alert.className).toContain("banner--info");
+    expect(subtitle()).toBe("Stopped");
+    expect(button("Try Again")).toBeTruthy();
   });
 
   it("cancels a running run when the window closes", async () => {

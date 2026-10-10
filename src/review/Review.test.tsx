@@ -200,13 +200,13 @@ function key(name: string, init: KeyboardEventInit = {}) {
 }
 
 function filterButton(label: string): HTMLButtonElement {
-  return within(screen.getByRole("group", { name: "Filter" })).getByRole("button", { name: new RegExp(`^${label}`) }) as HTMLButtonElement;
+  return within(screen.getByRole("radiogroup", { name: "Filter" })).getByRole("radio", { name: new RegExp(`^${label}`) }) as HTMLButtonElement;
 }
 
 function counts(): Record<string, string> {
   return Object.fromEntries(
-    within(screen.getByRole("group", { name: "Filter" }))
-      .getAllByRole("button")
+    within(screen.getByRole("radiogroup", { name: "Filter" }))
+      .getAllByRole("radio")
       .map((b) => [b.firstChild?.textContent ?? "", b.querySelector(".segmented__count")?.textContent ?? ""]),
   );
 }
@@ -228,11 +228,18 @@ function receiptItem(title: string): HTMLElement {
   return within(inspector()).getByText(title, { selector: ".receipt-row__title" }).closest<HTMLElement>("li")!;
 }
 
-/** Picks an item from a native menu labelled `label`. */
-function pick(label: string, item: string, scope: HTMLElement = document.body) {
-  const menu = within(scope).getByRole("combobox", { name: label }) as HTMLSelectElement;
-  const option = Array.from(menu.options).find((o) => o.textContent === item)!;
-  fireEvent.change(menu, { target: { value: option.value } });
+/** Opens the menu of the button labelled `label` and picks `item`, inside a submenu when `submenu` names one. */
+function pick(label: string, item: string, scope: HTMLElement = document.body, submenu?: string) {
+  fireEvent.click(within(scope).getByRole("button", { name: label }));
+  if (submenu) {
+    fireEvent.click(screen.getByRole("menuitem", { name: submenu }));
+  }
+  fireEvent.click(screen.getByRole("menuitem", { name: item }));
+}
+
+/** Makes a decision on the selected row: the inspector's first decision button. */
+function decideFirst() {
+  fireEvent.click(inspector().querySelector<HTMLButtonElement>("button[data-inspector-action]")!);
 }
 
 function previewSource(): string | null {
@@ -272,13 +279,16 @@ describe("loading", () => {
     render(<Window onError={vi.fn()} />);
     expect(subtitle()).toBe("In review · 9 to decide");
     expect(screen.queryByRole("region")).toBeNull();
-    expect(screen.queryByRole("group", { name: "Filter" })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Filter" })).toBeNull();
   });
 
   it("shows a load error and loads again on Try Again", async () => {
     vi.mocked(getReview).mockRejectedValueOnce({ kind: "not_found", message: "No reconciliation for March 2030." });
     await renderReview();
-    expect(screen.getByRole("alert").textContent).toBe("Concilia can't find that item. It may have been moved or deleted.Details: No reconciliation for March 2030.Try Again");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Couldn't Open This MonthConcilia can't find that item. It may have been moved or deleted.Details: No reconciliation for March 2030.Try Again",
+    );
+    expect(screen.getByRole("heading", { name: "Couldn't Open This Month" })).toBeTruthy();
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.click(button("Try Again"));
     await settle();
@@ -310,7 +320,7 @@ describe("list", () => {
       "* Needs Review2 MarGLOBEX SHOP-€20.00",
       "Unmatched3 MarINITECH SERVICES-€30.00",
       "Matched4 MarHOOLI PAYROLL+€5,000.00",
-      "7 MarACME TRAVEL€5.00",
+      "Reimbursement7 MarACME TRAVEL€5.00",
     ]);
     expect(within(list()).getByRole("group", { name: "Reimbursements · €5.00 total" })).toBeTruthy();
   });
@@ -393,14 +403,14 @@ describe("filters and search", () => {
   it("counts transactions by status", async () => {
     await renderReview();
     expect(counts()).toEqual({ All: "4", "Needs Review": "1", Unmatched: "1", Matched: "2" });
-    expect(filterButton("All").getAttribute("aria-pressed")).toBe("true");
+    expect(filterButton("All").getAttribute("aria-checked")).toBe("true");
   });
 
   it("shows one status without the reimbursements", async () => {
     await renderReview();
     fireEvent.click(filterButton("Matched"));
     expect(options()).toEqual(["* Matched1 MarACME CORP-€10.00", "Matched4 MarHOOLI PAYROLL+€5,000.00"]);
-    expect(filterButton("Matched").getAttribute("aria-pressed")).toBe("true");
+    expect(filterButton("Matched").getAttribute("aria-checked")).toBe("true");
     fireEvent.click(filterButton("Unmatched"));
     expect(options()).toEqual(["* Unmatched3 MarINITECH SERVICES-€30.00"]);
   });
@@ -417,7 +427,7 @@ describe("filters and search", () => {
   it("searches descriptions and reimbursements", async () => {
     await renderReview();
     search("acme");
-    expect(options()).toEqual(["* Matched1 MarACME CORP-€10.00", "7 MarACME TRAVEL€5.00"]);
+    expect(options()).toEqual(["* Matched1 MarACME CORP-€10.00", "Reimbursement7 MarACME TRAVEL€5.00"]);
   });
 
   it("clears the search with Escape, then returns to the list", async () => {
@@ -447,7 +457,7 @@ describe("inspector", () => {
     expect(receiptTitles()).toEqual(["GLOBEX", "HOOLI"]);
     expect(button("Assign GLOBEX", receiptItem("GLOBEX"))).toBeTruthy();
     expect(button("None of These", panel)).toBeTruthy();
-    expect(within(panel).getByRole("combobox", { name: "No Receipt Needed" })).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "No Receipt Needed" })).toBeTruthy();
     expect(previewSource()).toBe("receipt://localhost/2030/03/receipts/globex.pdf#navpanes=0");
   });
 
@@ -477,7 +487,7 @@ describe("inspector", () => {
     fireEvent.click(button("Remove Match", inspector()));
     expect(receiptTitles()).toEqual([]);
     expect(within(inspector()).getByText("No receipts to assign.")).toBeTruthy();
-    expect(within(inspector()).getByRole("combobox", { name: "No Receipt Needed" })).toBeTruthy();
+    expect(within(inspector()).getByRole("button", { name: "No Receipt Needed" })).toBeTruthy();
     expect(within(inspector()).queryByRole("region", { name: /^Preview of/ })).toBeNull();
   });
 
@@ -487,7 +497,7 @@ describe("inspector", () => {
     expect(within(inspector()).getByRole("region", { name: "Receipt" })).toBeTruthy();
     expect(receiptTitles()).toEqual(["ACME"]);
     expect(button("Remove Match", inspector())).toBeTruthy();
-    expect(within(inspector()).queryByRole("combobox", { name: "No Receipt Needed" })).toBeNull();
+    expect(within(inspector()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
     select("HOOLI PAYROLL");
     expect(within(inspector()).getByText("No receipt needed: Salary")).toBeTruthy();
   });
@@ -533,16 +543,28 @@ describe("decisions", () => {
     expect(receiptTitles()).toEqual(["INITECH", "HOOLI"]);
   });
 
-  it("accepts the focused candidate with Return", async () => {
-    await renderReview();
-    fireEvent.click(within(receiptItem("HOOLI")).getByRole("button", { pressed: false }));
+  it("moves focus to the inspector's first decision with Return, and commits the focused candidate with the Accept command", async () => {
+    const { commands } = await renderReview();
+    list().focus();
     key("Enter");
+    expect(document.activeElement).toBe(button("Assign GLOBEX", receiptItem("GLOBEX")));
+    expect(receiptTitles()).toEqual(["GLOBEX", "HOOLI"]);
+    fireEvent.click(within(receiptItem("HOOLI")).getByRole("button", { pressed: false }));
+    act(() => commands().accept());
     expect(receiptTitles()).toEqual(["HOOLI"]);
+  });
+
+  it("returns focus to the list after a decision in the inspector", async () => {
+    await renderReview();
+    const assign = button("Assign GLOBEX", receiptItem("GLOBEX"));
+    assign.focus();
+    fireEvent.click(assign);
+    expect(document.activeElement).toBe(list());
   });
 
   it("autosaves the decision 500 ms later without preview paths", async () => {
     await renderReview();
-    key("Enter");
+    decideFirst();
     await advance(499);
     expect(saveDraft).not.toHaveBeenCalled();
     await advance(1);
@@ -597,6 +619,59 @@ describe("decisions", () => {
     expect(selected()).toBe("GLOBEX SHOP");
     fireEvent.click(button("Assign GLOBEX", receiptItem("GLOBEX")));
     expect(options()).toEqual(["* Unmatched3 MarINITECH SERVICES-€30.00"]);
+  });
+});
+
+describe("context menu", () => {
+  it("selects a right-clicked row and decides from its menu", async () => {
+    await renderReview();
+    fireEvent.contextMenu(within(list()).getByText("INITECH SERVICES"), { clientX: 40, clientY: 80 });
+    expect(selected()).toBe("INITECH SERVICES");
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
+    expect(items.map((i) => `${(i as HTMLButtonElement).disabled ? "-" : ""}${i.textContent}`)).toEqual([
+      "Assign Receipt",
+      "-Remove Match",
+      "No Receipt Needed",
+      "Quick Look",
+      "Open in Preview",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "No Receipt Needed" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Refund" }));
+    expect(within(inspector()).getByText("No receipt needed: Refund")).toBeTruthy();
+  });
+
+  it("names Reject by the row's status and assigns its focused receipt", async () => {
+    await renderReview();
+    fireEvent.contextMenu(within(list()).getByText("GLOBEX SHOP"));
+    expect(screen.getByRole("menuitem", { name: "None of These" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Assign Receipt" }));
+    expect(options()[1]).toBe("* Matched2 MarGLOBEX SHOP-€20.00");
+  });
+
+  it("offers a reimbursement Read Again and the previews", async () => {
+    vi.mocked(rescanReimbursement).mockResolvedValue(stripped(TRAVEL));
+    await renderReview();
+    fireEvent.contextMenu(within(list()).getByText("ACME TRAVEL"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Read Receipt Again" }));
+    expect(rescanReimbursement).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/acme-travel.pdf");
+  });
+});
+
+describe("inspector width", () => {
+  it("resizes from its divider within 260 to 400 pixels and remembers the width", async () => {
+    await renderReview();
+    const divider = screen.getByRole("separator", { name: "Resize Inspector" });
+    expect(divider.getAttribute("aria-valuenow")).toBe("300");
+    expect(inspector().style.width).toBe("300px");
+    fireEvent.keyDown(divider, { key: "ArrowLeft" });
+    expect(inspector().style.width).toBe("310px");
+    fireEvent.keyDown(divider, { key: "End" });
+    expect(divider.getAttribute("aria-valuenow")).toBe("400");
+    fireEvent.keyDown(divider, { key: "ArrowLeft" });
+    expect(divider.getAttribute("aria-valuenow")).toBe("400");
+    expect(localStorage.getItem("review.inspectorWidth")).toBe("400");
+    fireEvent.keyDown(divider, { key: "Home" });
+    expect(inspector().style.width).toBe("260px");
   });
 });
 
@@ -707,7 +782,7 @@ describe("commands", () => {
     act(() => commands().previousPending());
     expect(selected()).toBe("GLOBEX SHOP");
     act(() => commands().setFilter("matched"));
-    expect(filterButton("Matched").getAttribute("aria-pressed")).toBe("true");
+    expect(filterButton("Matched").getAttribute("aria-checked")).toBe("true");
     act(() => commands().toggleInspector());
     expect(screen.queryByRole("complementary", { name: "Inspector" })).toBeNull();
     act(() => commands().focusSearch());
@@ -744,8 +819,9 @@ describe("receipt actions", () => {
     pick("Actions for GLOBEX", "Read Again");
     expect(rescanReceipt).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/globex.pdf");
     expect(within(receiptItem("GLOBEX")).getByRole("status", { name: "Reading…" })).toBeTruthy();
-    const menu = within(receiptItem("GLOBEX")).getByRole("combobox") as HTMLSelectElement;
-    expect(Array.from(menu.options).find((o) => o.textContent === "Read Again")?.disabled).toBe(true);
+    fireEvent.click(button("Actions for GLOBEX", receiptItem("GLOBEX")));
+    expect((screen.getByRole("menuitem", { name: "Read Again" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     await act(async () => pending.resolve({ ...stripped(GLOBEX), vendor: "GLOBEX LTD", amount_cents: 2100 }));
     expect(receiptTitles()).toEqual(["GLOBEX LTD", "HOOLI"]);
     expect(within(receiptItem("GLOBEX LTD")).getByText("€21.00")).toBeTruthy();
@@ -812,6 +888,26 @@ describe("Quick Look", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("moves the selection with the arrow keys and previews each row's receipt, keeping Tab inside", async () => {
+    await renderReview();
+    list().focus();
+    key(" ");
+    const dialog = screen.getByRole("dialog", { name: "Quick Look of globex.pdf" });
+    fireEvent.keyDown(dialog, { key: "ArrowUp" });
+    expect(selected()).toBe("ACME CORP");
+    expect(screen.getByRole("dialog", { name: "Quick Look of acme.pdf" })).toBeTruthy();
+    fireEvent.keyDown(dialog, { key: "ArrowDown" });
+    fireEvent.keyDown(dialog, { key: "ArrowDown" });
+    expect(selected()).toBe("INITECH SERVICES");
+    expect(screen.getByRole("dialog", { name: "Quick Look of initech.pdf" })).toBeTruthy();
+    const close = button("Close", dialog);
+    const open = button("Open in Preview", dialog);
+    open.focus();
+    fireEvent.keyDown(open, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
+    expect(list().closest("[inert]")).toBeTruthy();
+  });
+
   it("opens on a double click and closes from the backdrop", async () => {
     await renderReview();
     fireEvent.doubleClick(within(list()).getByText("ACME CORP"));
@@ -828,7 +924,7 @@ describe("toolbar", () => {
     vi.mocked(saveDraft).mockReturnValue(save.promise);
     const { onChanged } = await renderReview();
     expect(subtitle()).toBe("In review · 2 to decide");
-    key("Enter");
+    decideFirst();
     await advance(500);
     expect(subtitle()).toBe("In review · 1 to decide · Saving…");
     await act(async () => save.resolve());
@@ -839,7 +935,7 @@ describe("toolbar", () => {
   it("reports a failed save", async () => {
     vi.mocked(saveDraft).mockRejectedValue({ kind: "io", message: "disk full" });
     await renderReview();
-    key("Enter");
+    decideFirst();
     await advance(500);
     const alert = within(toolbar()).getByRole("alert");
     expect(alert.textContent).toBe(" ·  Couldn't save changes: Concilia couldn't read or write a file. Check that the folder is available, then try again. Details: disk full");
@@ -848,7 +944,7 @@ describe("toolbar", () => {
   it("shows the run's figures until the first change", async () => {
     await renderReview({ runSummary: "4 transactions · 4 receipts · 50% matched" });
     expect(subtitle()).toBe("4 transactions · 4 receipts · 50% matched");
-    key("Enter");
+    decideFirst();
     expect(subtitle()).toBe("In review · 1 to decide");
   });
 
@@ -875,13 +971,25 @@ describe("toolbar", () => {
     expect(button("Export Report…", toolbar()).disabled).toBe(false);
     expect(commands().can).toMatchObject({ scan: false, finalize: false, exportReport: true });
   });
+
+  it("shows a finalized month read-only", async () => {
+    vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus({ applied: true }));
+    const { commands } = await renderReview();
+    expect(within(inspector()).getByText("This month is finalized. Reconcile it again to change decisions.")).toBeTruthy();
+    expect(within(inspector()).queryByRole("button", { name: /^Assign / })).toBeNull();
+    expect(within(inspector()).queryByRole("button", { name: "None of These" })).toBeNull();
+    expect(within(inspector()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
+    expect(commands().can).toMatchObject({ accept: false, reject: false, noReceipt: false, rescan: false, quickLook: true, openInPreview: true });
+    fireEvent.click(button("Actions for GLOBEX", receiptItem("GLOBEX")));
+    expect((screen.getByRole("menuitem", { name: "Read Again" }) as HTMLButtonElement).disabled).toBe(true);
+  });
 });
 
 describe("scan for new receipts", () => {
   it("saves pending changes, then scans with progress", async () => {
     const run = scanRun();
     await renderReview();
-    key("Enter");
+    decideFirst();
     fireEvent.click(button("Scan for New Receipts", toolbar()));
     expect(startScan).not.toHaveBeenCalled();
     await settle();
@@ -908,6 +1016,21 @@ describe("scan for new receipts", () => {
     fireEvent.click(button("Cancel", screen.getByRole("dialog")));
     expect(run.cancel).toHaveBeenCalledTimes(1);
     expect(button("Cancelling…", screen.getByRole("dialog")).disabled).toBe(true);
+  });
+
+  it("shows the scan in a sheet that Esc cancels", async () => {
+    const run = scanRun();
+    await renderReview();
+    fireEvent.click(button("Scan for New Receipts", toolbar()));
+    await settle();
+    const sheet = screen.getByRole("dialog", { name: "Scan for New Receipts" });
+    expect(sheet.querySelector(".sheet__title")?.textContent).toBe("Scan for New Receipts");
+    expect(document.activeElement).toBe(button("Cancel", sheet));
+    expect(list().closest("[inert]")).toBeTruthy();
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    expect(run.cancel).toHaveBeenCalledTimes(1);
+    await act(async () => run.result.reject({ kind: "cancelled", message: "cancelled" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("reloads and reports dropped decisions in one dismissible warning", async () => {
@@ -965,7 +1088,7 @@ describe("scan for new receipts", () => {
     vi.mocked(saveDraft).mockRejectedValue(error);
     scanRun();
     const { onError } = await renderReview();
-    key("Enter");
+    decideFirst();
     fireEvent.click(button("Scan for New Receipts", toolbar()));
     await settle();
     expect(onError).toHaveBeenCalledWith(error);
@@ -976,7 +1099,7 @@ describe("scan for new receipts", () => {
 describe("export report", () => {
   it("saves pending changes, then exports without a notice", async () => {
     await renderReview();
-    key("Enter");
+    decideFirst();
     fireEvent.click(button("Export Report…", toolbar()));
     await settle();
     expect(exportReport).toHaveBeenCalledWith("2030", "03");
@@ -1024,7 +1147,7 @@ describe("finalize", () => {
     const done = deferred<void>();
     vi.mocked(finalize).mockReturnValue(done.promise);
     const { onChanged } = await renderReview();
-    key("Enter");
+    decideFirst();
     fireEvent.click(button("Finalize…", toolbar()));
     const sheet = screen.getByRole("alertdialog");
     fireEvent.click(button("Finalize", sheet));

@@ -72,7 +72,7 @@ export function buildSteps(kind: RunKind, events: RunEvent[], outcome: RunOutcom
         reach("extract");
         const extract = steps.get("extract");
         if (extract) {
-          extract.detail = `${event.current} / ${event.total}`;
+          extract.detail = t("progress.count", { current: event.current, total: event.total });
           extract.progress = { current: event.current, total: event.total };
         }
         break;
@@ -92,7 +92,7 @@ export function buildSteps(kind: RunKind, events: RunEvent[], outcome: RunOutcom
         reach("reimbursements");
         const reimbursements = steps.get("reimbursements");
         if (reimbursements) {
-          reimbursements.detail = `${event.current} / ${event.total}`;
+          reimbursements.detail = t("progress.count", { current: event.current, total: event.total });
           reimbursements.progress = { current: event.current, total: event.total };
         }
         break;

@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptySummary, type Period } from "../lib/period";
+import type { MenuEntry } from "../lib/popUpMenu";
 import type { PeriodSummary } from "../lib/tauri";
 import { Sidebar, type RunningMonth } from "./Sidebar";
 
@@ -25,23 +26,16 @@ function renderSidebar({
   selected = "2030-03",
   running = null,
   error = null,
-}: { selected?: string; running?: RunningMonth | null; error?: unknown } = {}) {
+  loading = false,
+}: { selected?: string; running?: RunningMonth | null; error?: unknown; loading?: boolean } = {}) {
   const onSelect = vi.fn<(period: Period) => void>();
   const onRetry = vi.fn();
   const onNewMonth = vi.fn();
-  const result = render(
-    <Sidebar
-      periods={PERIODS}
-      selected={selected}
-      onSelect={onSelect}
-      running={running}
-      error={error}
-      onRetry={onRetry}
-      onNewMonth={onNewMonth}
-      width={220}
-    />,
-  );
-  return { ...result, onSelect, onRetry, onNewMonth };
+  const reveal = vi.fn<(month: PeriodSummary) => void>();
+  const menu = (month: PeriodSummary): MenuEntry[] => [{ label: "Show in Finder", onSelect: () => reveal(month) }];
+  const props = { periods: PERIODS, selected, onSelect, running, loading, error, onRetry, onNewMonth, menu, width: 220 };
+  const result = render(<Sidebar {...props} />);
+  return { ...result, props, onSelect, onRetry, onNewMonth, reveal };
 }
 
 function rows(): string[] {
@@ -68,7 +62,7 @@ describe("Sidebar", () => {
   it("marks each status with a coloured dot", () => {
     const { container } = renderSidebar();
     const dots = [...container.querySelectorAll(".sidebar__status .dot")].map((dot) => dot.className);
-    expect(dots).toEqual(["dot dot--yellow", "dot dot--orange", "dot dot--green", "dot dot--gray"]);
+    expect(dots).toEqual(["dot dot--blue", "dot dot--orange", "dot dot--green", "dot dot--gray"]);
   });
 
   it("selects the current month", () => {
@@ -108,23 +102,33 @@ describe("Sidebar", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("shows the month being reconciled with a spinner and its progress", () => {
-    const { container, rerender } = renderSidebar({ running: { key: "2030-03", progress: "4 / 38" } });
-    expect(rows()[0]).toBe("March4 / 38");
+  it("shows the month being reconciled with a spinner and its progress as a progress bar", () => {
+    const { container, rerender, props } = renderSidebar({ running: { key: "2030-03", progress: { current: 4, total: 38 } } });
+    expect(rows()[0]).toBe("MarchReading receipts: 4 of 38");
     expect(container.querySelectorAll(".sidebar__spinner")).toHaveLength(1);
-    rerender(
-      <Sidebar
-        periods={PERIODS}
-        selected="2030-03"
-        onSelect={vi.fn()}
-        running={{ key: "2030-03", progress: null }}
-        error={null}
-        onRetry={vi.fn()}
-        onNewMonth={vi.fn()}
-        width={220}
-      />,
-    );
+    const bar = screen.getByRole("progressbar");
+    expect([bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax"), bar.getAttribute("aria-valuetext")]).toEqual([
+      "4",
+      "38",
+      "Reading receipts: 4 of 38",
+    ]);
+    rerender(<Sidebar {...props} running={{ key: "2030-03", progress: null }} />);
     expect(rows()[0]).toBe("MarchReconciling…");
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("shows no statuses while the months load", () => {
+    const { container } = renderSidebar({ loading: true });
+    expect(rows()[0]).toBe("March\u00a0");
+    expect(container.querySelectorAll(".dot")).toHaveLength(0);
+  });
+
+  it("selects a month on a right click and shows its menu", () => {
+    const { onSelect, reveal } = renderSidebar();
+    fireEvent.contextMenu(screen.getAllByRole("option")[1], { clientX: 20, clientY: 40 });
+    expect(onSelect).toHaveBeenCalledWith({ year: "2030", month: "02" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Show in Finder" }));
+    expect(reveal).toHaveBeenCalledWith(PERIODS[1]);
   });
 
   it("explains a listing that failed and lists again on Try Again", () => {

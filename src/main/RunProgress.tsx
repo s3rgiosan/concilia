@@ -1,4 +1,4 @@
-import { useTranslation } from "react-i18next";
+import { useId } from "react";
 import { Icon } from "../components/Icon";
 import type { Step } from "../lib/steps";
 
@@ -16,26 +16,16 @@ function StepIcon({ status }: { status: Step["status"] }) {
   }
 }
 
-/** The steps of a running reconcile or scan, with a Cancel button while it runs. */
-export function RunProgress({
-  title,
-  steps,
-  running,
-  cancelling,
-  onCancel,
-}: {
-  title: string;
-  steps: Step[];
-  running: boolean;
-  cancelling: boolean;
-  onCancel: () => void;
-}) {
-  const { t } = useTranslation();
+/** The steps of a running reconcile or scan, under an optional title. */
+export function RunProgress({ title, steps }: { title?: string; steps: Step[] }) {
+  const titleId = useId();
   return (
-    <section className="run" aria-labelledby="run-title">
-      <h2 id="run-title" className="run__title">
-        {title}
-      </h2>
+    <section className="run" aria-labelledby={title ? titleId : undefined}>
+      {title ? (
+        <h2 id={titleId} className="run__title">
+          {title}
+        </h2>
+      ) : null}
       <ol className="steps-list form-group">
         {steps.map((step) => (
           <li key={step.id} className={`step step--${step.status}`}>
@@ -56,20 +46,13 @@ export function RunProgress({
                   value={step.progress.current}
                   max={step.progress.total}
                   aria-label={step.label}
+                  aria-valuetext={step.detail}
                 />
               ) : null}
             </div>
           </li>
         ))}
       </ol>
-      {running ? (
-        <footer className="run__actions">
-          <span className="grow" />
-          <button type="button" onClick={onCancel} disabled={cancelling}>
-            {cancelling ? t("progress.cancelling") : t("common.cancel")}
-          </button>
-        </footer>
-      ) : null}
     </section>
   );
 }

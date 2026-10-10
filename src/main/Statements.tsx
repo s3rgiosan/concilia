@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { PopUpButton } from "../components/PopUpButton";
 import { useFileDrop } from "../lib/hooks/useFileDrop";
 import type { Period } from "../lib/period";
+import { popUpMenu } from "../lib/popUpMenu";
 import { pickStatements, type PeriodSummary, type StatementInput } from "../lib/tauri";
 
 /** Banks Concilia can parse, as the backend's `Bank` keys. */
@@ -98,30 +99,37 @@ export function Statements({
         ) : (
           <>
             <ul className="statements__list" aria-label={t("month.statements")}>
-              {statements.map((statement) => (
-                <li key={statement.id} className="statements__row">
+              {statements.map((statement) => {
+                const name = fileName(statement.path);
+                const removeLabel = t("month.removeStatement", { name });
+                const remove = () => onStatements(statements.filter((s) => s.id !== statement.id));
+                return (
+                <li
+                  key={statement.id}
+                  className="statements__row"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    void popUpMenu([{ label: t("month.remove"), onSelect: remove }], { x: e.clientX, y: e.clientY });
+                  }}
+                >
                   <Icon name="doc" size={14} />
                   <span className="grow statements__name" title={statement.path}>
-                    {fileName(statement.path)}
+                    {name}
                   </span>
                   {BANKS.length > 1 ? (
                     <PopUpButton
-                      label={t("month.bankFor", { name: fileName(statement.path) })}
+                      label={t("month.bankFor", { name })}
                       value={statement.bank}
                       options={BANKS}
                       onChange={(bank) => onStatements(statements.map((s) => (s.id === statement.id ? { ...s, bank } : s)))}
                     />
                   ) : null}
-                  <button
-                    type="button"
-                    className="icon"
-                    aria-label={t("month.removeStatement", { name: fileName(statement.path) })}
-                    onClick={() => onStatements(statements.filter((s) => s.id !== statement.id))}
-                  >
+                  <button type="button" className="icon" aria-label={removeLabel} title={removeLabel} onClick={remove}>
                     <Icon name="xmark" size={12} />
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
             <div className="dropzone__footer">
               <span className="muted grow">{hint}</span>

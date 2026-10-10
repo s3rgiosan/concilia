@@ -28,6 +28,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  container: review-list / inline-size;
 }
 
 .review__empty {
@@ -57,10 +58,6 @@
   padding: 0 9px;
 }
 
-.review-filter--compact .segmented__item {
-  padding: 0 6px;
-}
-
 .segmented__count {
   min-width: 10px;
   color: var(--label-secondary);
@@ -68,9 +65,9 @@
 }
 
 .review-search {
-  flex: 0 1 140px;
-  min-width: 80px;
-  max-width: 140px;
+  flex: 0 1 160px;
+  min-width: 110px;
+  max-width: 160px;
 }
 
 .review-save--failed {
@@ -99,20 +96,34 @@
 }
 
 .list-row--selected {
-  background: var(--fill-strong);
+  background: var(--selected-bg-inactive);
 }
 
-.review-list:focus-visible .list-row--selected,
 .review-list:focus .list-row--selected {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--selected-bg);
+  color: var(--selected-text);
 }
 
 .list-row__status,
 .list-row__date {
   min-width: 0;
   color: var(--label-secondary);
-  font-size: 12px;
+}
+
+/* In a narrow list the status shows as its dot; the label stays for assistive technology. */
+@container review-list (max-width: 600px) {
+  .list-row {
+    grid-template-columns: 8px 48px minmax(0, 1fr) auto;
+  }
+
+  .list-row__status .status-label__text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .list-row__description {
@@ -129,6 +140,10 @@
 .review-list:focus .list-row--selected .list-row__status,
 .review-list:focus .list-row--selected .list-row__date {
   color: rgb(255 255 255 / 85%);
+}
+
+.inspector__note--finalized {
+  margin-top: 10px;
 }
 
 .status-label {
@@ -175,7 +190,7 @@
   flex: none;
   flex-direction: column;
   box-sizing: border-box;
-  width: 360px;
+  width: 300px;
   min-height: 0;
   border-left: 0.5px solid var(--separator);
 }
@@ -190,7 +205,7 @@
 .inspector__details {
   flex: 0 1 auto;
   max-height: 60%;
-  padding: 16px;
+  padding: 16px 14px;
   overflow-y: auto;
 }
 
@@ -261,7 +276,7 @@
 .inspector__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-top: 10px;
 }
 
@@ -317,10 +332,10 @@
   appearance: none;
   display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
-  padding: 5px 7px;
+  padding: 5px 7px 5px 3px;
   border: 0;
   border-radius: var(--radius-control);
   background: none;
@@ -328,8 +343,21 @@
   text-align: left;
 }
 
-.receipt-row--focused .receipt-row__main {
-  background: var(--selection);
+.receipt-row__marker {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 12px;
+  padding-top: 2px;
+  color: var(--accent);
+}
+
+.receipt-row__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .receipt-row__line {
@@ -352,10 +380,15 @@
 
 .receipt-row__meta {
   display: flex;
-  flex-wrap: wrap;
   gap: 0 6px;
+  min-width: 0;
   color: var(--label-secondary);
   font-size: 11px;
+}
+
+.receipt-row__meta > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 .receipt-row__meta > * + *::before {
@@ -364,11 +397,11 @@
   margin-right: 6px;
 }
 
-.receipt-row__file {
-  max-width: 160px;
+.receipt-row__meta > .receipt-row__file {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .receipt-row__mismatch {
@@ -485,4 +518,14 @@
   .quicklook-backdrop {
     animation: none;
   }
+}
+
+/* Narrower padding so the decisions fit on one line in the inspector's default width. */
+.inspector__actions button:not([class]) {
+  padding: 0 10px;
+}
+
+.inspector__actions button.pull-down {
+  gap: 6px;
+  padding: 0 7px 0 10px;
 }

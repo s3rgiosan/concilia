@@ -27,13 +27,17 @@ export interface InspectorHandlers {
 
 /**
  * Details of the selected row: the transaction, the receipts it can take or holds and the
- * decisions available, then the focused receipt's preview.
+ * decisions available, then the focused receipt's preview. Decision controls carry
+ * `data-inspector-action`, so Return in the list can move focus to the first one. A finalized
+ * month shows no decisions.
  */
 export function Inspector({
   row,
   receipts,
   focused,
   rescanning,
+  readOnly,
+  width,
   handlers,
 }: {
   row: ListRow | null;
@@ -41,6 +45,10 @@ export function Inspector({
   receipts: ReceiptMeta[];
   focused: ReceiptMeta | null;
   rescanning: Set<string>;
+  /** The month is finalized: decisions and new readings are unavailable. */
+  readOnly: boolean;
+  /** The inspector's width, in pixels. */
+  width: number;
   handlers: InspectorHandlers;
 }) {
   const { t, i18n } = useTranslation();
@@ -49,17 +57,19 @@ export function Inspector({
 
   if (!row) {
     return (
-      <aside className="inspector inspector--empty" aria-label={t("review.inspector")}>
+      <aside className="inspector inspector--empty" style={{ width }} aria-label={t("review.inspector")}>
         <p>{t("review.noSelection")}</p>
       </aside>
     );
   }
 
   const noReceiptMenu = (
-    <PullDownButton
-      label={t("review.noReceiptMenu")}
-      actions={NO_RECEIPT_CATEGORIES.map((category) => ({ label: noReceiptLabel(category, t), onSelect: () => handlers.onNoReceipt(category) }))}
-    />
+    <span data-inspector-action>
+      <PullDownButton
+        label={t("review.noReceiptMenu")}
+        actions={NO_RECEIPT_CATEGORIES.map((category) => ({ label: noReceiptLabel(category, t), onSelect: () => handlers.onNoReceipt(category) }))}
+      />
+    </span>
   );
 
   const receiptRow = (receipt: ReceiptMeta, txAbsCents: number | null, action?: { label: string; accessibleName: string; onClick: () => void }) => (
@@ -69,7 +79,8 @@ export function Inspector({
       focused={focused?.file === receipt.file}
       mismatch={txAbsCents === null ? null : mismatch(receipt, txAbsCents)}
       rescanning={rescanning.has(receipt.file)}
-      action={action}
+      readOnly={readOnly}
+      action={readOnly ? undefined : action}
       onFocus={() => handlers.onFocusReceipt(receipt)}
       onRescan={() => handlers.onRescan(receipt)}
       onOpen={() => handlers.onOpen(receipt)}
@@ -124,7 +135,7 @@ export function Inspector({
           );
         actions = (
           <>
-            <button type="button" onClick={handlers.onReject}>
+            <button type="button" data-inspector-action onClick={handlers.onReject}>
               {t("review.actions.noneOfThese")}
             </button>
             {noReceiptMenu}
@@ -154,7 +165,7 @@ export function Inspector({
           body = <ul className="receipt-list">{receipts.map((r) => receiptRow(r, tx.abs_cents))}</ul>;
         }
         actions = (
-          <button type="button" onClick={handlers.onReject}>
+          <button type="button" data-inspector-action onClick={handlers.onReject}>
             {t("review.actions.removeMatch")}
           </button>
         );
@@ -163,7 +174,7 @@ export function Inspector({
   }
 
   return (
-    <aside className="inspector" aria-label={t("review.inspector")}>
+    <aside className="inspector" style={{ width }} aria-label={t("review.inspector")}>
       <div className="inspector__details">
         <header className="inspector__header">{header}</header>
         <section className="inspector__section" aria-labelledby={headingId}>
@@ -171,7 +182,8 @@ export function Inspector({
             {heading}
           </h3>
           {body}
-          {actions ? <div className="inspector__actions">{actions}</div> : null}
+          {readOnly && row.kind === "transaction" ? <p className="inspector__note inspector__note--finalized">{t("review.finalizedNote")}</p> : null}
+          {actions && !readOnly ? <div className="inspector__actions">{actions}</div> : null}
         </section>
       </div>
       {focused ? (

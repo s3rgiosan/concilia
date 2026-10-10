@@ -2,10 +2,20 @@
 import "./App.css";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { isTextField } from "./lib/popUpMenu";
 import { viewFromSearch } from "./lib/view";
 
 const Main = lazy(() => import("./main/Main").then((m) => ({ default: m.Main })));
 const Settings = lazy(() => import("./settings/Settings").then((m) => ({ default: m.Settings })));
+
+// The web view's own context menu (Reload, Inspect Element) stays out of the app; text fields keep
+// theirs for Cut, Copy and Paste. Elements with their own menu show it from their handler first.
+// Holding Option keeps it in development builds, for the web inspector.
+document.addEventListener("contextmenu", (e) => {
+  if (!isTextField(e.target) && !(import.meta.env.DEV && e.altKey)) {
+    e.preventDefault();
+  }
+});
 
 function App() {
   const view = viewFromSearch(window.location.search);

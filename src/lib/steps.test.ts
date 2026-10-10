@@ -67,7 +67,7 @@ describe("buildSteps", () => {
       { step: "receipts_found", count: 38 },
       { step: "extracting", current: 4, total: 38 },
     ]);
-    expect(step(steps, "extract")).toMatchObject({ status: "running", detail: "4 / 38", progress: { current: 4, total: 38 } });
+    expect(step(steps, "extract")).toMatchObject({ status: "running", detail: "4 of 38", progress: { current: 4, total: 38 } });
   });
 
   it("drops the extraction progress once matching starts", () => {
@@ -79,7 +79,7 @@ describe("buildSteps", () => {
     ]);
     expect(statuses(steps)).toMatchObject({ extract: "done", match: "running", reimbursements: "pending" });
     expect(step(steps, "extract").progress).toBeUndefined();
-    expect(step(steps, "extract").detail).toBe("10 / 10");
+    expect(step(steps, "extract").detail).toBe("10 of 10");
   });
 
   it("follows the reimbursements", () => {
@@ -91,7 +91,7 @@ describe("buildSteps", () => {
       { step: "reimbursements_found", count: 5 },
       { step: "extracting_reimbursements", current: 2, total: 5 },
     ]);
-    expect(step(reading, "reimbursements")).toMatchObject({ detail: "2 / 5", progress: { current: 2, total: 5 } });
+    expect(step(reading, "reimbursements")).toMatchObject({ detail: "2 of 5", progress: { current: 2, total: 5 } });
   });
 
   it("reaches the export last", () => {

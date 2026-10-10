@@ -8,7 +8,8 @@
     "close": "Close",
     "choose": "Choose…",
     "working": "Working…",
-    "tryAgain": "Try Again"
+    "tryAgain": "Try Again",
+    "openSettings": "Open Settings…"
   },
   "progress": {
     "title": "Reconciling {{period}}",
@@ -23,7 +24,9 @@
     "savedTransactions": "using the saved transactions",
     "cancelling": "Cancelling…",
     "filesFound_one": "{{count}} file",
-    "filesFound_other": "{{count}} files"
+    "filesFound_other": "{{count}} files",
+    "readingCount": "Reading receipts: {{current}} of {{total}}",
+    "count": "{{current}} of {{total}}"
   },
   "toolbar": {
     "showSidebar": "Show Sidebar",
@@ -32,7 +35,11 @@
   },
   "sidebar": {
     "months": "Months",
-    "newMonth": "New Month…"
+    "newMonth": "New Month…",
+    "resize": "Resize Sidebar"
+  },
+  "main": {
+    "loadFailed": "Couldn't Load Settings"
   },
   "month": {
     "status": {
@@ -44,7 +51,9 @@
       "inReviewPending_one": "In review · {{count}} to decide",
       "inReviewPending_other": "In review · {{count}} to decide",
       "finalized": "Finalized",
-      "reconciling": "Reconciling…"
+      "reconciling": "Reconciling…",
+      "failed": "Failed",
+      "stopped": "Stopped"
     },
     "dropHint": "Drop {{month}}'s bank statements here",
     "statements": "Bank statements",
@@ -63,11 +72,14 @@
       "receipts_one": "{{count}} receipt",
       "receipts_other": "{{count}} receipts",
       "matched": "{{percent}} matched"
-    }
+    },
+    "backToStatements": "Back to Statements",
+    "remove": "Remove"
   },
   "newMonth": {
     "title": "New Month",
-    "create": "Create"
+    "create": "Create",
+    "exists": "{{month}} is already in the sidebar."
   },
   "rerun": {
     "title": "Reconcile {{period}} again?",
@@ -216,7 +228,11 @@
       "pending_one": "{{count}} transaction still needs a decision. It will be sorted as it is now.",
       "pending_other": "{{count}} transactions still need a decision. They will be sorted as they are now.",
       "confirm": "Finalize"
-    }
+    },
+    "resizeInspector": "Resize Inspector",
+    "clearSearch": "Clear Search",
+    "finalizedNote": "This month is finalized. Reconcile it again to change decisions.",
+    "loadFailed": "Couldn't Open This Month"
   },
   "lang": {
     "en": "English",
@@ -300,7 +316,8 @@
     "install": "Install and Relaunch",
     "downloading": "Downloading…",
     "downloadingPercent": "Downloading… {{percent}}%",
-    "installing": "Installing…"
+    "installing": "Installing…",
+    "later": "Later"
   },
   "errors": {
     "invalid_input": "Concilia can't use that value. Check it and try again.",

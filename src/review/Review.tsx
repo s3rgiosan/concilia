@@ -1,17 +1,19 @@
 import "./Review.css";
-import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { ErrorText } from "../components/ErrorText";
+import { ErrorState, needsSettings } from "../components/ErrorState";
 import { Icon } from "../components/Icon";
 import type { PopUpAction } from "../components/PopUpButton";
+import { ResizeHandle, useStoredWidth } from "../components/ResizeHandle";
 import { ToolbarPortal, type ToolbarSlots } from "../components/Toolbar";
-import { errorDetail, friendlyError } from "../lib/errors";
+import { errorDetail, errorKind, friendlyError } from "../lib/errors";
 import { useLatest } from "../lib/hooks/useLatest";
 import { useDockProgress } from "../lib/hooks/useDockProgress";
 import { useRun } from "../lib/hooks/useRun";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
-import { useToolbarRoom } from "../lib/hooks/useToolbarRoom";
+import { useToolbarOverflow } from "../lib/hooks/useToolbarOverflow";
 import { periodLabel, type Period } from "../lib/period";
+import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import { buildSteps } from "../lib/steps";
 import {
   exportReport,
@@ -19,6 +21,7 @@ import {
   getDraft,
   getReview,
   openReceipt,
+  openSettings,
   periodStatus,
   rescanReceipt,
   rescanReimbursement,
@@ -30,7 +33,6 @@ import {
   type ReviewData,
   type Transaction,
 } from "../lib/tauri";
-import { RunProgress } from "../main/RunProgress";
 import type { RejectKind, ReviewAvailability, ReviewCommands } from "./commands";
 import { assign, changedIds, confirm, forDraft, noReceipt, patchDraftReceipt, unmatch, type Decision } from "./decisions";
 import {
@@ -44,6 +46,8 @@ import {
   unmatchedPool,
   visibleReimbursements,
   visibleTransactions,
+  FILTERS,
+  NO_RECEIPT_CATEGORIES,
   type Filter,
   type NoReceiptCategory,
 } from "./effective";
@@ -51,18 +55,23 @@ import { FinalizeSheet } from "./FinalizeSheet";
 import { useHistory } from "./history";
 import { Inspector, type InspectorHandlers } from "./Inspector";
 import { QuickLook } from "./QuickLook";
-import { ReviewToolbar } from "./ReviewToolbar";
+import { receiptTitle } from "./receipts";
+import { ReviewToolbar, TOOLBAR_LEVELS, type ToolbarLevel } from "./ReviewToolbar";
 import { buildRows, findPending, initialSelection, resolveSelection, rowReceipts, type ListRow } from "./rows";
+import { ScanSheet } from "./ScanSheet";
 import { TransactionList } from "./TransactionList";
 import { useDraftAutosave, type SaveState } from "./useDraftAutosave";
 
 type Loaded = { data: ReviewData; applied: boolean };
 
-/** Toolbar width, without the leading area, below which the review's controls go compact. */
-const COMPACT_TOOLBAR = 970;
+/** The inspector's width range and default, in pixels. */
+export const INSPECTOR_WIDTH = { min: 260, max: 400, initial: 300 };
 
-/** The selected row, and where it was in the list, so the row after it takes over if it leaves. */
-type Selection = { id: string | null; index: number };
+/**
+ * The selected row, and where it was in the list, so the row after it takes over if it leaves.
+ * A decision on the row sets `advance`, which hands the selection to the next undecided row.
+ */
+type Selection = { id: string | null; index: number; advance?: boolean };
 
 /** The receipt focused in the inspector, for the row it was focused in. */
 type Focus = { rowId: string; file: string } | null;
@@ -94,10 +103,11 @@ export interface ReviewProps {
  * one. Decisions save as a draft until Finalize applies them, and each can be undone.
  */
 export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, onRejectKindChange, onInspectorChange, ref }: ReviewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { year, month } = period;
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -113,9 +123,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [inspectorSetting, setInspectorSetting] = useSafeStorage("review.inspector", "shown");
+  const [inspectorWidth, setInspectorWidth] = useStoredWidth("review.inspectorWidth", INSPECTOR_WIDTH.initial, INSPECTOR_WIDTH.min, INSPECTOR_WIDTH.max);
   const scan = useRun<{ dropped: DroppedDecision[] }>();
   useDockProgress(scan.state);
-  const toolbarRoom = useToolbarRoom(toolbar.trailing);
 
   const draft = history.present;
   const latestDraft = useLatest(draft);
@@ -161,7 +171,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const rows = useMemo(() => buildRows(visible, shownReimbursements), [visible, shownReimbursements]);
   const reimbursementTotal = data ? data.reimbursements.reduce((sum, r) => sum + (r.amount_cents ?? 0), 0) : 0;
 
-  const selected = selection.id === null ? initialSelection(rows) : resolveSelection(rows, selection.id, selection.index);
+  const selected = selection.id === null ? initialSelection(rows) : resolveSelection(rows, selection.id, selection.index, selection.advance);
   const selectedIndex = selected ? rows.indexOf(selected) : -1;
   const selectedTx = selected?.kind === "transaction" ? selected.tx : null;
 
@@ -180,20 +190,25 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const busy = finalizing || scanning;
   const ready = loaded !== null;
   const inspectorShown = inspectorSetting !== "hidden";
+  /** Decisions can change: the month is not finalized and nothing else runs. */
+  const decidable = !busy && !applied;
+
+  const contentKey = `${i18n.language}|${applied}|${FILTERS.map((f) => counts[f]).join(",")}`;
+  const toolbarLevel = useToolbarOverflow(toolbar.trailing, TOOLBAR_LEVELS, contentKey) as ToolbarLevel;
 
   const nextPendingIndex = findPending(rows, selectedIndex, 1);
   const previousPendingIndex = findPending(rows, selectedIndex < 0 ? rows.length : selectedIndex, -1);
   const can: ReviewAvailability = {
-    accept: selectedTx !== null && selectedTx.status !== "MATCHED" && focused !== null && !busy,
-    reject: selectedTx !== null && selectedTx.status !== "UNMATCHED" && !busy,
-    noReceipt: selectedTx !== null && selectedTx.status !== "MATCHED" && !busy,
-    rescan: Boolean(focused?.rel_path) && !rescanning.has(focused?.file ?? ""),
-    quickLook: Boolean(focused?.rel_path),
+    accept: selectedTx !== null && selectedTx.status !== "MATCHED" && focused !== null && decidable,
+    reject: selectedTx !== null && selectedTx.status !== "UNMATCHED" && decidable,
+    noReceipt: selectedTx !== null && selectedTx.status !== "MATCHED" && decidable,
+    rescan: Boolean(focused?.rel_path) && !rescanning.has(focused?.file ?? "") && !applied,
+    quickLook: quickLook || Boolean(focused?.rel_path),
     openInPreview: Boolean(focused?.rel_path),
     nextPending: nextPendingIndex >= 0,
     previousPending: previousPendingIndex >= 0,
-    undo: history.canUndo && !busy,
-    redo: history.canRedo && !busy,
+    undo: history.canUndo && decidable,
+    redo: history.canRedo && decidable,
     setFilter: ready,
     focusSearch: ready,
     toggleInspector: ready,
@@ -206,9 +221,11 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     setSelection({ id: row.id, index: rows.indexOf(row) });
   }
 
+  /** Records a decision. If the row then leaves the list, the next undecided row is selected. */
   function decide(tx: Transaction, decision: Decision) {
     history.record((prev) => ({ ...prev, [tx.id]: forDraft(decision) }));
     setDirty(true);
+    setSelection((prev) => (prev.id === tx.id ? { ...prev, advance: true } : prev));
   }
 
   /** Accepts a REVIEW candidate, or assigns a pool receipt to an UNMATCHED transaction. */
@@ -219,7 +236,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   /** Steps through the history and selects the transaction whose decision changed. */
   function step(direction: "undo" | "redo") {
     const other = direction === "undo" ? history.previous : history.next;
-    if (other === undefined || busy) {
+    if (other === undefined || !decidable) {
       return;
     }
     const target = changedIds(history.present, other)[0];
@@ -235,7 +252,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   }
 
   async function rescan(receipt: ReceiptMeta, reimbursement: boolean) {
-    if (!receipt.rel_path || rescanning.has(receipt.file)) {
+    if (!receipt.rel_path || rescanning.has(receipt.file) || applied) {
       return;
     }
     const relPath = receipt.rel_path;
@@ -285,6 +302,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       resetScan();
       load();
       onChanged?.();
+    } else if (scanState.phase === "failed" && errorKind(scanState.error) === "cancelled") {
+      // A scan the user stopped closes its sheet; there is nothing to report.
+      resetScan();
     }
   }, [scanState, resetScan, load, onChanged]);
 
@@ -311,12 +331,31 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
 
   function setFilter(next: Filter) {
     setFilterState(next);
-    setSelection((prev) => ({ ...prev, index: 0 }));
+    setSelection((prev) => ({ id: prev.id, index: 0 }));
   }
 
   function setSearch(next: string) {
     setSearchState(next);
-    setSelection((prev) => ({ ...prev, index: 0 }));
+    setSelection((prev) => ({ id: prev.id, index: 0 }));
+  }
+
+  function focusList() {
+    listRef.current?.focus();
+  }
+
+  /** Moves focus to the inspector's first decision control, so Return there commits it. */
+  function focusInspectorAction() {
+    const first = sectionRef.current?.querySelector(".inspector [data-inspector-action]");
+    const target = first instanceof HTMLButtonElement ? first : first?.querySelector("button");
+    target?.focus();
+  }
+
+  /** Moves the selection one row, keeping it within the list. */
+  function moveSelection(direction: 1 | -1) {
+    const target = rows[Math.min(Math.max(selectedIndex + direction, 0), rows.length - 1)];
+    if (target) {
+      selectRow(target);
+    }
   }
 
   function jumpPending(direction: 1 | -1) {
@@ -432,7 +471,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         return;
       case "Enter":
         e.preventDefault();
-        commands.accept();
+        focusInspectorAction();
         return;
       default:
         return;
@@ -485,20 +524,27 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     return (
       <section className="review review--message">
         {subtitle}
-        <div className="banner banner--error" role="alert">
-          <Icon name="warning" size={14} />
-          <span className="grow">
-            <ErrorText error={loadError} />
-          </span>
-          <button type="button" className="banner__action" onClick={load}>
+        <ErrorState title={t("review.loadFailed")} error={loadError}>
+          {needsSettings(loadError) ? (
+            <button type="button" onClick={() => openSettings().catch(onError)}>
+              {t("common.openSettings")}
+            </button>
+          ) : null}
+          <button type="button" className="default" onClick={load}>
             {t("common.tryAgain")}
           </button>
-        </div>
+        </ErrorState>
       </section>
     );
   }
   if (!loaded || !data) {
     return subtitle;
+  }
+
+  /** Runs a decision made in the inspector, then returns focus to the list. */
+  function fromInspector(run: () => void) {
+    run();
+    focusList();
   }
 
   const handlers: InspectorHandlers = {
@@ -507,13 +553,14 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         setFocus({ rowId: selected.id, file: receipt.file });
       }
     },
-    onAccept: (receipt) => {
-      if (selectedTx && !busy) {
-        acceptReceipt(selectedTx, receipt);
-      }
-    },
-    onReject: commands.reject,
-    onNoReceipt: commands.noReceipt,
+    onAccept: (receipt) =>
+      fromInspector(() => {
+        if (selectedTx && decidable) {
+          acceptReceipt(selectedTx, receipt);
+        }
+      }),
+    onReject: () => fromInspector(commands.reject),
+    onNoReceipt: (category) => fromInspector(() => commands.noReceipt(category)),
     onRescan: (receipt) => {
       void rescan(receipt, selected?.kind === "reimbursement");
     },
@@ -521,8 +568,55 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     onQuickLook: () => setQuickLook(true),
   };
 
+  /** The commands of a row's context menu, for that row and the receipt it shows. */
+  function rowMenu(row: ListRow): MenuEntry[] {
+    const isSelected = row.id === selected?.id;
+    const shown = isSelected ? focused : (rowReceipts(row, pool, claimed)[0] ?? null);
+    const look: MenuEntry[] = [
+      {
+        label: t("menu.quick_look"),
+        onSelect: () => {
+          selectRow(row);
+          setQuickLook(true);
+        },
+        disabled: !shown?.rel_path,
+      },
+      { label: t("menu.open_in_preview"), onSelect: () => shown && open(shown), disabled: !shown?.rel_path },
+    ];
+    if (row.kind === "reimbursement") {
+      return [
+        { label: t("menu.rescan"), onSelect: () => void rescan(row.receipt, true), disabled: applied || !row.receipt.rel_path || rescanning.has(row.receipt.file) },
+        "separator",
+        ...look,
+      ];
+    }
+    const { tx } = row;
+    return [
+      { label: t("menu.accept"), onSelect: () => shown && acceptReceipt(tx, shown), disabled: !decidable || tx.status === "MATCHED" || !shown },
+      {
+        label: t(tx.status === "REVIEW" ? "menu.reject_review" : "menu.reject"),
+        onSelect: () => decide(tx, unmatch()),
+        disabled: !decidable || tx.status === "UNMATCHED",
+      },
+      {
+        label: t("menu.no_receipt"),
+        disabled: !decidable || tx.status === "MATCHED",
+        submenu: NO_RECEIPT_CATEGORIES.map((category) => ({ label: t(`menu.no_receipt_${category}`), onSelect: () => decide(tx, noReceipt(category)) })),
+      },
+      "separator",
+      ...look,
+    ];
+  }
+
+  function showRowMenu(row: ListRow, e: MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    selectRow(row);
+    focusList();
+    void popUpMenu(rowMenu(row), { x: e.clientX, y: e.clientY });
+  }
+
   return (
-    <section className="review" aria-label={t("review.title", { period: periodLabel(period, t) })}>
+    <section ref={sectionRef} className="review" aria-label={t("review.title", { period: periodLabel(period, t) })}>
       {subtitle}
       <ToolbarPortal target={toolbar.trailing}>
         <ReviewToolbar
@@ -533,6 +627,10 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
           searchRef={searchRef}
           onSearch={setSearch}
           onSearchKeyDown={onSearchKeyDown}
+          onClearSearch={() => {
+            setSearch("");
+            searchRef.current?.focus();
+          }}
           busy={busy}
           finalized={applied}
           moreActions={moreActions}
@@ -541,7 +639,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
           onExport={commands.exportReport}
           onFinalize={commands.finalize}
           onToggleInspector={commands.toggleInspector}
-          compact={toolbarRoom !== null && toolbarRoom < COMPACT_TOOLBAR}
+          level={toolbarLevel}
         />
       </ToolbarPortal>
 
@@ -569,6 +667,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
               selectRow(row);
               setQuickLook(true);
             }}
+            onContextMenu={showRowMenu}
             onKeyDown={onListKeyDown}
           />
           {rows.length === 0 ? (
@@ -577,37 +676,47 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         </div>
       </div>
 
-      {inspectorShown ? <Inspector row={selected} receipts={receipts} focused={focused} rescanning={rescanning} handlers={handlers} /> : null}
+      {inspectorShown ? (
+        <>
+          <ResizeHandle
+            label={t("review.resizeInspector")}
+            width={inspectorWidth}
+            min={INSPECTOR_WIDTH.min}
+            max={INSPECTOR_WIDTH.max}
+            grows="left"
+            onResize={setInspectorWidth}
+          />
+          <Inspector
+            row={selected}
+            receipts={receipts}
+            focused={focused}
+            rescanning={rescanning}
+            readOnly={applied}
+            width={inspectorWidth}
+            handlers={handlers}
+          />
+        </>
+      ) : null}
 
-      {quickLook && focused?.rel_path ? <QuickLook receipt={focused} onClose={() => setQuickLook(false)} onOpen={open} /> : null}
+      {quickLook && selected ? (
+        <QuickLook
+          receipt={focused}
+          name={selected.kind === "transaction" ? selected.tx.description : receiptTitle(selected.receipt)}
+          onClose={() => setQuickLook(false)}
+          onOpen={open}
+          onMove={moveSelection}
+        />
+      ) : null}
 
       {scanState.phase === "running" || scanState.phase === "failed" ? (
-        <div className="sheet-backdrop">
-          <div className="sheet sheet--wide" role="dialog" aria-modal="true" aria-label={t("review.scan")}>
-            <RunProgress
-              title={t("review.scan")}
-              steps={buildSteps("scan", scanState.events, scanState.phase === "failed" ? "failed" : null, t)}
-              running={scanState.phase === "running"}
-              cancelling={scanState.phase === "running" && scanState.cancelling}
-              onCancel={scan.cancel}
-            />
-            {scanState.phase === "failed" ? (
-              <>
-                <div className="banner banner--error" role="alert">
-                  <Icon name="warning" size={14} />
-                  <span>
-                    <ErrorText error={scanState.error} />
-                  </span>
-                </div>
-                <div className="sheet__actions">
-                  <button type="button" className="default" onClick={scan.reset}>
-                    {t("common.close")}
-                  </button>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </div>
+        <ScanSheet
+          steps={buildSteps("scan", scanState.events, scanState.phase === "failed" ? "failed" : null, t)}
+          running={scanState.phase === "running"}
+          cancelling={scanState.phase === "running" && scanState.cancelling}
+          error={scanState.phase === "failed" ? scanState.error : null}
+          onCancel={scan.cancel}
+          onClose={scan.reset}
+        />
       ) : null}
 
       {confirmFinalize ? (

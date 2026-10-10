@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Step } from "../lib/steps";
 import { RunProgress } from "./RunProgress";
 
@@ -15,11 +15,7 @@ const STEPS: Step[] = [
 ];
 
 function renderProgress(patch: Partial<Parameters<typeof RunProgress>[0]> = {}) {
-  const onCancel = vi.fn();
-  const result = render(
-    <RunProgress title="Reconciling March 2030" steps={STEPS} running={true} cancelling={false} onCancel={onCancel} {...patch} />,
-  );
-  return { ...result, onCancel };
+  return render(<RunProgress title="Reconciling March 2030" steps={STEPS} {...patch} />);
 }
 
 describe("RunProgress", () => {
@@ -66,22 +62,20 @@ describe("RunProgress", () => {
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
-  it("cancels a running run", () => {
-    const { onCancel } = renderProgress();
-    const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
-    expect(cancel.disabled).toBe(false);
-    fireEvent.click(cancel);
-    expect(onCancel).toHaveBeenCalledTimes(1);
+  it("names the steps after the title, and leaves the title out when there is none", () => {
+    const { rerender } = renderProgress();
+    expect(screen.getByRole("region", { name: "Reconciling March 2030" })).toBeTruthy();
+    rerender(<RunProgress steps={STEPS} />);
+    expect(screen.queryByRole("heading")).toBeNull();
   });
 
-  it("disables Cancel while stopping", () => {
-    renderProgress({ cancelling: true });
-    expect((screen.getByRole("button", { name: "Cancelling…" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-  });
-
-  it("offers no Cancel once the run is over", () => {
-    renderProgress({ running: false });
+  it("has no Cancel button: the toolbar or the sheet around it stops the run", () => {
+    renderProgress();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("describes the progress bar with the step's detail", () => {
+    renderProgress();
+    expect(screen.getByRole("progressbar", { name: "Extracting receipt data" }).getAttribute("aria-valuetext")).toBe("10 / 40");
   });
 });

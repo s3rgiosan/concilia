@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { useLatest } from "../lib/hooks/useLatest";
 import { Icon } from "./Icon";
@@ -29,6 +29,74 @@ function makeOthersInert(keep: HTMLElement): () => void {
       el.removeAttribute("inert");
     }
   };
+}
+
+/**
+ * Window-modal behaviour shared by sheets and Quick Look: while `panel` shows, everything outside
+ * `backdrop` is inert, focus starts on `initialFocus` (or the panel) and Tab cycles within the
+ * panel. Esc runs `onEscape` unless busy. Focus returns to where it was when the panel closes.
+ */
+export function useModal(
+  backdrop: RefObject<HTMLElement | null>,
+  panel: RefObject<HTMLElement | null>,
+  onEscape: () => void,
+  { busy = false, initialFocus }: { busy?: boolean; initialFocus?: string } = {},
+) {
+  const latest = useLatest({ onEscape, busy, initialFocus });
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const restoreOthers = backdrop.current ? makeOthersInert(backdrop.current) : () => undefined;
+    const selector = latest.current.initialFocus;
+    const first = selector ? panel.current?.querySelector<HTMLElement>(selector) : null;
+    (first ?? panel.current)?.focus();
+    return () => {
+      restoreOthers();
+      if (previous?.isConnected) {
+        previous.focus();
+      }
+    };
+  }, [backdrop, panel, latest]);
+
+  useEffect(() => {
+    function focusable(): HTMLElement[] {
+      const found = panel.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [];
+      return Array.from(found).filter((el) => !el.hasAttribute("disabled"));
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (!latest.current.busy) {
+          latest.current.onEscape();
+        }
+        return;
+      }
+      if (e.key !== "Tab") {
+        return;
+      }
+      const items = focusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof HTMLElement && panel.current?.contains(active);
+      if (!inside) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panel, latest]);
 }
 
 /** A note under a sheet's fields: label-coloured text after a red (error) or orange (warning) symbol. */
@@ -85,60 +153,8 @@ export function Sheet({
   const { t } = useTranslation();
   const ref = useRef<HTMLFormElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
-  const latest = useLatest({ onCancel, busy });
   const messageId = useId();
-
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const restoreOthers = backdrop.current ? makeOthersInert(backdrop.current) : () => undefined;
-    ref.current?.querySelector<HTMLElement>("input, select, textarea, button.default")?.focus();
-    return () => {
-      restoreOthers();
-      if (previous?.isConnected) {
-        previous.focus();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    function focusable(): HTMLElement[] {
-      const found = ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [];
-      return Array.from(found).filter((el) => !el.hasAttribute("disabled"));
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        if (!latest.current.busy) {
-          latest.current.onCancel();
-        }
-        return;
-      }
-      if (e.key !== "Tab") {
-        return;
-      }
-      const items = focusable();
-      if (items.length === 0) {
-        e.preventDefault();
-        return;
-      }
-      const first = items[0];
-      const last = items[items.length - 1];
-      const active = document.activeElement;
-      const inside = active instanceof HTMLElement && ref.current?.contains(active);
-      if (!inside) {
-        e.preventDefault();
-        (e.shiftKey ? last : first).focus();
-      } else if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [latest]);
+  useModal(backdrop, ref, onCancel, { busy, initialFocus: "input, select, textarea, button.default" });
 
   function confirm() {
     if (!submitDisabled && !busy) {

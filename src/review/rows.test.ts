@@ -49,6 +49,12 @@ describe("resolveSelection", () => {
   it("selects nothing in an empty list", () => {
     expect(resolveSelection([], "tx-1")).toBeNull();
   });
+
+  it("prefers the next row needing a decision, then the one before, when asked", () => {
+    expect(resolveSelection(ROWS, "tx-9", 0, true)?.id).toBe("tx-2");
+    expect(resolveSelection(ROWS, "tx-9", 3, true)?.id).toBe("tx-3");
+    expect(resolveSelection(buildRows([MATCHED], [TAXI]), "tx-9", 1, true)?.id).toBe(ROWS[3].id);
+  });
 });
 
 describe("findPending", () => {

@@ -66,34 +66,44 @@ describe("PopUpButton", () => {
 });
 
 describe("ActionPopUpButton", () => {
-  it("runs the chosen action and stays on its placeholder", () => {
+  it("opens a menu under itself and runs the chosen action", () => {
     const removeAll = vi.fn();
     render(<ActionPopUpButton actions={[{ label: "Remove All…", onSelect: removeAll }]} />);
-    const menu = screen.getByRole("combobox", { name: "More Actions" }) as HTMLSelectElement;
-    fireEvent.change(menu, { target: { value: "0" } });
+    const button = screen.getByRole("button", { name: "More Actions" });
+    expect(button.getAttribute("aria-haspopup")).toBe("menu");
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove All…" }));
     expect(removeAll).toHaveBeenCalledTimes(1);
-    expect(menu.value).toBe("");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(button);
   });
 
   it("is disabled when asked or when every action is unavailable", () => {
     const { rerender } = render(<ActionPopUpButton label="Actions" disabled actions={[{ label: "Go", onSelect: vi.fn() }]} />);
-    expect((screen.getByLabelText("Actions") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Actions" }) as HTMLButtonElement).disabled).toBe(true);
     rerender(<ActionPopUpButton label="Actions" actions={[{ label: "Go", onSelect: vi.fn(), disabled: true }]} />);
-    expect((screen.getByLabelText("Actions") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Actions" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("ignores a value that names no action", () => {
+  it("shows unavailable actions disabled", () => {
     const go = vi.fn();
-    render(<ActionPopUpButton actions={[{ label: "Go", onSelect: go }]} />);
-    fireEvent.change(screen.getByLabelText("More Actions"), { target: { value: "" } });
-    expect(go).not.toHaveBeenCalled();
+    render(
+      <ActionPopUpButton
+        actions={[
+          { label: "Go", onSelect: go, disabled: true },
+          { label: "Stay", onSelect: vi.fn() },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More Actions" }));
+    expect((screen.getByRole("menuitem", { name: "Go" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
 describe("PullDownButton", () => {
   it("shows its label and runs the chosen action", () => {
     const refund = vi.fn();
-    const { container } = render(
+    render(
       <PullDownButton
         label="No Receipt Needed"
         actions={[
@@ -102,17 +112,16 @@ describe("PullDownButton", () => {
         ]}
       />,
     );
-    expect(container.querySelector(".popup-button__label")?.textContent).toBe("No Receipt Needed");
-    const menu = screen.getByRole("combobox", { name: "No Receipt Needed" }) as HTMLSelectElement;
-    fireEvent.change(menu, { target: { value: "1" } });
+    const button = screen.getByRole("button", { name: "No Receipt Needed" });
+    expect(button.getAttribute("aria-haspopup")).toBe("menu");
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Refund" }));
     expect(refund).toHaveBeenCalledTimes(1);
-    expect(menu.value).toBe("");
   });
 
   it("is disabled when asked", () => {
-    const { container } = render(<PullDownButton label="Pick" disabled actions={[{ label: "Go", onSelect: vi.fn() }]} />);
-    expect((screen.getByLabelText("Pick") as HTMLSelectElement).disabled).toBe(true);
-    expect(container.querySelector(".popup-button--disabled")).toBeTruthy();
+    render(<PullDownButton label="Pick" disabled actions={[{ label: "Go", onSelect: vi.fn() }]} />);
+    expect((screen.getByRole("button", { name: "Pick" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
@@ -122,4 +131,3 @@ describe("ActionPopUpButton borderless", () => {
     expect(container.querySelector(".action-popup--borderless")).toBeTruthy();
   });
 });
-

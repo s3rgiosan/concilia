@@ -18,6 +18,13 @@
   --accent: #0a84ff;
   --accent-text: #fff;
   --selection: rgb(10 132 255 / 18%);
+  /* Selected rows: the accent with white text in a focused list, a grey fill otherwise. */
+  --selected-bg: var(--accent);
+  --selected-text: #fff;
+  --selected-bg-inactive: rgb(0 0 0 / 9%);
+  /* Toolbar items share one translucent fill. */
+  --toolbar-glass: rgb(0 0 0 / 6%);
+  --toolbar-glass-strong: rgb(0 0 0 / 12%);
   /*
    * Solid surface for sheets. The system window background color renders as clear inside the
    * webview, so sheets need an explicit color or the pane behind shows through.
@@ -45,6 +52,7 @@
   --orange: #ff9500;
   --yellow: #ffcc00;
   --green: #34c759;
+  --blue: #007aff;
   --gray: #8e8e93;
 
   /* Reconciliation statuses, also used as the report's cell fills. */
@@ -73,6 +81,9 @@
     --window-bg: #232325;
     --group-bg: rgb(255 255 255 / 5%);
     --selection: rgb(10 132 255 / 30%);
+    --selected-bg-inactive: rgb(255 255 255 / 12%);
+    --toolbar-glass: rgb(255 255 255 / 9%);
+    --toolbar-glass-strong: rgb(255 255 255 / 16%);
     --surface: #2b2b2e;
     --sidebar-bg: rgb(255 255 255 / 4%);
     --content-bg: #1e1e1e;
@@ -86,6 +97,7 @@
     --orange: #ff9f0a;
     --yellow: #ffd60a;
     --green: #30d158;
+    --blue: #0a84ff;
     --gray: #98989d;
   }
 }
@@ -103,7 +115,15 @@
     --orange: -apple-system-orange;
     --yellow: -apple-system-yellow;
     --green: -apple-system-green;
+    --blue: -apple-system-blue;
     --gray: -apple-system-gray;
+  }
+}
+
+@supports (color: -apple-system-selected-content-background) {
+  :root {
+    --selected-bg: -apple-system-selected-content-background;
+    --selected-bg-inactive: -apple-system-unemphasized-selected-content-background;
   }
 }
 
@@ -562,7 +582,13 @@ button.link:hover {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 22%);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 22%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .dot {
+    box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 22%);
+  }
 }
 
 .dot--red {
@@ -579,6 +605,10 @@ button.link:hover {
 
 .dot--green {
   background: var(--green);
+}
+
+.dot--blue {
+  background: var(--blue);
 }
 
 .dot--gray {
@@ -598,7 +628,7 @@ button.link:hover {
 .banner {
   display: flex;
   gap: 6px;
-  align-items: flex-start;
+  align-items: center;
   padding: 7px 10px;
   border-radius: var(--radius-row);
   font-size: 12px;
@@ -844,7 +874,7 @@ code {
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  min-width: 166px;
+  min-width: 220px;
   padding: 0 8px 0 16px;
 }
 
@@ -894,9 +924,142 @@ code {
   display: contents;
 }
 
-button.icon.titlebar__button {
-  width: 32px;
+/*
+ * Toolbar items: 28 pt tall capsules. Icon buttons and the group of secondary actions sit on the
+ * same translucent fill; the items inside a group are borderless and show a fill on hover.
+ */
+.titlebar__trailing button:not([class]),
+.titlebar__trailing button.default,
+.titlebar__trailing .segmented,
+.titlebar__trailing .search,
+.titlebar__trailing .popup-button {
   height: 28px;
+  border-radius: 14px;
+}
+
+.titlebar__trailing .segmented__item {
+  border-radius: 14px;
+}
+
+.titlebar__trailing button:not([class]),
+.titlebar__trailing button.default {
+  padding: 0 14px;
+}
+
+.titlebar__trailing .search {
+  padding: 0 8px 0 9px;
+}
+
+button.icon.titlebar__button {
+  width: 34px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--toolbar-glass);
+  color: var(--label);
+}
+
+button.icon.titlebar__button:hover:not(:disabled) {
+  background: var(--toolbar-glass-strong);
+}
+
+.toolbar-group {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 28px;
+  padding: 0 2px;
+  border-radius: 14px;
+  background: var(--toolbar-glass);
+}
+
+.toolbar-group .toolbar-group__item {
+  height: 24px;
+  border-radius: 12px;
+  color: var(--label);
+}
+
+button.icon.toolbar-group__item {
+  width: 32px;
+}
+
+button.toolbar-group__item--text {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+button.toolbar-group__item--text:hover:not(:disabled),
+.toolbar-group .action-popup:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+button.toolbar-group__item--text:active:not(:disabled) {
+  background: var(--fill-strong);
+}
+
+button.toolbar-group__item--text:disabled {
+  opacity: 0.45;
+}
+
+/* Divider between a pane and the next; dragging it or ←/→ resizes the pane. */
+.resize-handle {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 0;
+  outline: none;
+  cursor: col-resize;
+}
+
+.resize-handle::before {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.resize-handle:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 0 -1px;
+  background: var(--accent);
+}
+
+/* A failure that leaves a pane empty, centred in it. */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+}
+
+.error-state__icon {
+  color: var(--label-tertiary);
+}
+
+.error-state__title {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.error-state__message {
+  margin: 0;
+  color: var(--label-secondary);
+  line-height: 1.4;
+}
+
+.error-state__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 /* Sheets ------------------------------------------------------------------ */
@@ -1057,51 +1220,155 @@ button.icon.titlebar__button {
   }
 }
 
-.action-popup {
-  position: relative;
+button.action-popup {
+  -webkit-appearance: none;
+  appearance: none;
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 24px;
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-control);
   background: var(--control-fill);
   color: var(--label);
 }
 
-.action-popup select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
+button.action-popup:disabled {
+  opacity: 0.45;
 }
 
-.action-popup:has(select:focus-visible) {
-  outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  outline-offset: 1px;
-}
-
-.action-popup--disabled {
-  opacity: 0.6;
-}
-
-.action-popup--borderless {
+button.action-popup--borderless {
   background: transparent;
   color: var(--label-secondary);
 }
 
-.action-popup--borderless:hover:not(.action-popup--disabled) {
+button.action-popup--borderless:hover:not(:disabled) {
   background: var(--fill);
 }
 
-/* Pull-down button: a pop-up button that runs a command, with a single ⌄ chevron. */
-.pull-down {
-  min-width: 0;
+.toolbar-group button.action-popup {
+  width: 32px;
+  color: var(--label);
+}
+
+/* Pull-down button: a push button that opens a menu of commands, with a single ⌄ chevron. */
+button.pull-down {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 8px 0 11px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+  color: var(--label);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+button.pull-down:active:not(:disabled) {
+  background: var(--control-fill-strong);
+}
+
+button.pull-down:disabled {
+  opacity: 0.45;
+}
+
+.pull-down__chevron {
+  flex: none;
+  color: var(--label-secondary);
+}
+
+/* Search field's clear button: a filled circle with an ×, inside the field's trailing edge. */
+.search__clear {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: -3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--label-tertiary);
+}
+
+.search__clear:hover {
+  color: var(--label-secondary);
+}
+
+/* The HTML menu the browser preview and the tests show in place of a native menu. */
+.html-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 25%),
+    0 10px 30px rgb(0 0 0 / 25%);
+  font-size: 13px;
+}
+
+.html-menu__item {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--label);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.html-menu__item[aria-haspopup="menu"]::after {
+  content: "›";
+  content: "›" / "";
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--label-secondary);
+}
+
+.html-menu__item:focus {
+  outline: none;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.html-menu__item:focus::after {
+  color: inherit;
+}
+
+.html-menu__item:disabled {
+  color: var(--label-tertiary);
+}
+
+.html-menu__separator {
+  height: 1px;
+  margin: 5px 10px;
+  background: var(--separator);
 }
 
 @media (prefers-contrast: more) {
-  .action-popup {
+  button.action-popup:not(.action-popup--borderless),
+  button.pull-down,
+  .toolbar-group,
+  button.icon.titlebar__button {
     border: 1px solid var(--field-border);
   }
 }

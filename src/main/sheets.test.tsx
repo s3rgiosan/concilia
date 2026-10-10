@@ -16,10 +16,10 @@ afterEach(() => {
 });
 
 describe("NewMonthSheet", () => {
-  function renderSheet() {
+  function renderSheet(existing: string[] = []) {
     const onCancel = vi.fn();
     const onCreate = vi.fn();
-    render(<NewMonthSheet initial={{ year: "2030", month: "03" }} onCancel={onCancel} onCreate={onCreate} />);
+    render(<NewMonthSheet initial={{ year: "2030", month: "03" }} existing={new Set(existing)} onCancel={onCancel} onCreate={onCreate} />);
     return { onCancel, onCreate };
   }
 
@@ -51,6 +51,17 @@ describe("NewMonthSheet", () => {
     fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2004" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(onCreate).toHaveBeenCalledWith({ year: "2004", month: "11" });
+  });
+
+  it("cannot create a month the sidebar already lists, and says so", () => {
+    const { onCreate } = renderSheet(["2030-02"]);
+    expect(screen.queryByText("February 2030 is already in the sidebar.")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Month"), { target: { value: "02" } });
+    expect(screen.getByText("February 2030 is already in the sidebar.")).toBeTruthy();
+    const create = screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.click(create);
+    expect(onCreate).not.toHaveBeenCalled();
   });
 
   it("cancels", () => {

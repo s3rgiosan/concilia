@@ -1,4 +1,4 @@
-import { useEffect, type KeyboardEvent, type Ref } from "react";
+import { useEffect, type KeyboardEvent, type MouseEvent, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { formatMoney } from "../lib/money";
 import type { ListRow } from "./rows";
@@ -21,6 +21,7 @@ export function TransactionList({
   listRef,
   onSelect,
   onOpen,
+  onContextMenu,
   onKeyDown,
 }: {
   listId: string;
@@ -31,6 +32,8 @@ export function TransactionList({
   listRef: Ref<HTMLDivElement>;
   onSelect: (row: ListRow) => void;
   onOpen: (row: ListRow) => void;
+  /** Runs on a right click on a row, to show its menu. */
+  onContextMenu: (row: ListRow, e: MouseEvent<HTMLDivElement>) => void;
   onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -51,6 +54,7 @@ export function TransactionList({
       selected={index === selectedIndex}
       onSelect={() => onSelect(row)}
       onOpen={() => onOpen(row)}
+      onContextMenu={(e) => onContextMenu(row, e)}
     />
   );
   const firstReimbursement = rows.findIndex((row) => row.kind === "reimbursement");

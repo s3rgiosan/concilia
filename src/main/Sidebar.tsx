@@ -1,14 +1,15 @@
-import { useRef, type KeyboardEvent } from "react";
+import { useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorText } from "../components/ErrorText";
 import { Icon } from "../components/Icon";
 import { groupByYear, periodKey, statusLine, type Period } from "../lib/period";
+import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import type { PeriodSummary } from "../lib/tauri";
 
-/** The month being reconciled, with its progress ("4 / 38") once receipts are being read. */
+/** The month being reconciled, with how many receipts have been read once reading starts. */
 export interface RunningMonth {
   key: string;
-  progress: string | null;
+  progress: { current: number; total: number } | null;
 }
 
 function optionId(key: string): string {
@@ -17,25 +18,32 @@ function optionId(key: string): string {
 
 /**
  * The months, newest first under year headers, as a single-selection list. Each row names the
- * month and says where it stands; ↑/↓, Home and End move the selection.
+ * month and says where it stands, once the months have loaded; ↑/↓, Home and End move the
+ * selection, and a right click offers the month's commands from `menu`.
  */
 export function Sidebar({
   periods,
   selected,
   onSelect,
   running,
+  loading,
   error,
   onRetry,
   onNewMonth,
+  menu,
   width,
 }: {
   periods: PeriodSummary[];
   selected: string;
   onSelect: (period: Period) => void;
   running: RunningMonth | null;
+  /** The months are still loading, so their statuses are not known yet. */
+  loading: boolean;
   error: unknown;
   onRetry: () => void;
   onNewMonth: () => void;
+  /** The commands for a month's context menu. */
+  menu: (summary: PeriodSummary) => MenuEntry[];
   width: number;
 }) {
   const { t } = useTranslation();
@@ -45,6 +53,13 @@ export function Sidebar({
 
   function select(summary: PeriodSummary) {
     onSelect({ year: summary.year, month: summary.month });
+  }
+
+  function showMenu(summary: PeriodSummary, e: MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    select(summary);
+    list.current?.focus();
+    void popUpMenu(menu(summary), { x: e.clientX, y: e.clientY });
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -105,16 +120,17 @@ export function Sidebar({
                     select(summary);
                     list.current?.focus();
                   }}
+                  onContextMenu={(e) => showMenu(summary, e)}
                 >
                   <span className="sidebar__month">{t(`form.months.${summary.month}`)}</span>
-                  <span className="sidebar__status">
-                    {run ? (
-                      <span className="spinner sidebar__spinner" aria-hidden="true" />
-                    ) : (
-                      <span className={`dot dot--${line.tone}`} aria-hidden="true" />
-                    )}
-                    <span className="sidebar__label">{run ? (run.progress ?? t("month.status.reconciling")) : line.label}</span>
-                  </span>
+                  {run ? (
+                    <RunStatus progress={run.progress} />
+                  ) : (
+                    <span className="sidebar__status">
+                      {loading ? null : <span className={`dot dot--${line.tone}`} aria-hidden="true" />}
+                      <span className="sidebar__label">{loading ? "\u00a0" : line.label}</span>
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -137,5 +153,24 @@ export function Sidebar({
         </button>
       </footer>
     </nav>
+  );
+}
+
+/** A running month's status: a spinner and the reading progress, exposed as a progress bar once it is known. */
+function RunStatus({ progress }: { progress: RunningMonth["progress"] }) {
+  const { t } = useTranslation();
+  const label = progress ? t("progress.readingCount", progress) : t("month.status.reconciling");
+  return (
+    <span
+      className="sidebar__status"
+      role={progress ? "progressbar" : undefined}
+      aria-valuemin={progress ? 0 : undefined}
+      aria-valuemax={progress?.total}
+      aria-valuenow={progress?.current}
+      aria-valuetext={progress ? label : undefined}
+    >
+      <span className="spinner sidebar__spinner" aria-hidden="true" />
+      <span className="sidebar__label">{label}</span>
+    </span>
   );
 }

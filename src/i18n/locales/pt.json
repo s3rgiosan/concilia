@@ -8,7 +8,8 @@
     "close": "Fechar",
     "choose": "Escolher…",
     "working": "A trabalhar…",
-    "tryAgain": "Tentar novamente"
+    "tryAgain": "Tentar novamente",
+    "openSettings": "Abrir definições…"
   },
   "progress": {
     "title": "A reconciliar {{period}}",
@@ -23,7 +24,9 @@
     "savedTransactions": "a usar as transações guardadas",
     "cancelling": "A cancelar…",
     "filesFound_one": "{{count}} ficheiro",
-    "filesFound_other": "{{count}} ficheiros"
+    "filesFound_other": "{{count}} ficheiros",
+    "readingCount": "A ler recibos: {{current}} de {{total}}",
+    "count": "{{current}} de {{total}}"
   },
   "toolbar": {
     "showSidebar": "Mostrar barra lateral",
@@ -32,7 +35,11 @@
   },
   "sidebar": {
     "months": "Meses",
-    "newMonth": "Novo mês…"
+    "newMonth": "Novo mês…",
+    "resize": "Redimensionar barra lateral"
+  },
+  "main": {
+    "loadFailed": "Não foi possível carregar as definições"
   },
   "month": {
     "status": {
@@ -44,7 +51,9 @@
       "inReviewPending_one": "Em revisão · {{count}} por decidir",
       "inReviewPending_other": "Em revisão · {{count}} por decidir",
       "finalized": "Finalizado",
-      "reconciling": "A reconciliar…"
+      "reconciling": "A reconciliar…",
+      "failed": "Falhou",
+      "stopped": "Interrompido"
     },
     "dropHint": "Largue aqui os extratos bancários de {{month}}",
     "statements": "Extratos bancários",
@@ -63,11 +72,14 @@
       "receipts_one": "{{count}} recibo",
       "receipts_other": "{{count}} recibos",
       "matched": "{{percent}} associadas"
-    }
+    },
+    "backToStatements": "Voltar aos extratos",
+    "remove": "Remover"
   },
   "newMonth": {
     "title": "Novo mês",
-    "create": "Criar"
+    "create": "Criar",
+    "exists": "{{month}} já está na barra lateral."
   },
   "rerun": {
     "title": "Reconciliar {{period}} novamente?",
@@ -216,7 +228,11 @@
       "pending_one": "{{count}} transação ainda precisa de uma decisão. Será ordenada como está agora.",
       "pending_other": "{{count}} transações ainda precisam de uma decisão. Serão ordenadas como estão agora.",
       "confirm": "Finalizar"
-    }
+    },
+    "resizeInspector": "Redimensionar inspetor",
+    "clearSearch": "Limpar pesquisa",
+    "finalizedNote": "Este mês está finalizado. Reconcilie-o novamente para alterar as decisões.",
+    "loadFailed": "Não foi possível abrir este mês"
   },
   "lang": {
     "en": "English",
@@ -300,7 +316,8 @@
     "install": "Instalar e reiniciar",
     "downloading": "A transferir…",
     "downloadingPercent": "A transferir… {{percent}}%",
-    "installing": "A instalar…"
+    "installing": "A instalar…",
+    "later": "Mais tarde"
   },
   "errors": {
     "invalid_input": "O Concilia não consegue usar esse valor. Verifique-o e tente novamente.",

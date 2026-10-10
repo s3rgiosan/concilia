@@ -11,6 +11,16 @@
   min-height: 0;
 }
 
+/* Sheets in the main window drop from under the toolbar over a light dim. */
+.main .sheet-backdrop {
+  padding-top: 52px;
+  background: rgb(0 0 0 / 10%);
+}
+
+.main .sheet {
+  max-height: calc(100vh - 64px);
+}
+
 /* Sidebar ----------------------------------------------------------------- */
 
 .sidebar {
@@ -37,7 +47,7 @@
 
 .sidebar__year {
   padding: 4px 8px;
-  color: var(--label-tertiary);
+  color: var(--label-secondary);
   font-size: 11px;
   font-weight: 600;
 }
@@ -51,12 +61,12 @@
 }
 
 .sidebar__row--selected {
-  background: var(--fill-strong);
+  background: var(--selected-bg-inactive);
 }
 
 .sidebar__list:focus .sidebar__row--selected {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--selected-bg);
+  color: var(--selected-text);
 }
 
 .sidebar__month {
@@ -247,6 +257,10 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.run-panel > .banner {
+  margin-top: -4px;
 }
 
 .steps-list {

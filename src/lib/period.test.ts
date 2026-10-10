@@ -9,6 +9,8 @@ import {
   mergePeriods,
   MONTHS,
   monthOptions,
+  newMonthDefault,
+  nextPeriod,
   parsePeriodKey,
   periodKey,
   periodLabel,
@@ -34,6 +36,29 @@ describe("defaultPeriod", () => {
 
   it("handles a day the previous month lacks", () => {
     expect(defaultPeriod(new Date(2030, 2, 31))).toEqual({ year: "2030", month: "02" });
+  });
+});
+
+describe("nextPeriod", () => {
+  it("steps one month, into the next year after December", () => {
+    expect(nextPeriod({ year: "2030", month: "03" })).toEqual({ year: "2030", month: "04" });
+    expect(nextPeriod({ year: "2030", month: "12" })).toEqual({ year: "2031", month: "01" });
+  });
+});
+
+describe("newMonthDefault", () => {
+  const now = new Date(2030, 3, 15);
+
+  it("starts after the newest month listed", () => {
+    expect(newMonthDefault([{ year: "2029", month: "11" }, { year: "2030", month: "03" }], now)).toEqual({ year: "2030", month: "04" });
+  });
+
+  it("starts on the current month when none is listed", () => {
+    expect(newMonthDefault([], now)).toEqual({ year: "2030", month: "04" });
+  });
+
+  it("starts on the current month when the next one is past next year", () => {
+    expect(newMonthDefault([{ year: "2031", month: "12" }], now)).toEqual({ year: "2030", month: "04" });
   });
 });
 
@@ -114,7 +139,7 @@ describe("groupByYear", () => {
 describe("statusLine", () => {
   it("describes each status with a dot", () => {
     expect(statusLine(summary("2030", "03"), i18n.t)).toEqual({ tone: "gray", label: "No receipts" });
-    expect(statusLine(summary("2030", "03", { status: "ready" }), i18n.t)).toEqual({ tone: "yellow", label: "Ready" });
+    expect(statusLine(summary("2030", "03", { status: "ready" }), i18n.t)).toEqual({ tone: "blue", label: "Ready" });
     expect(statusLine(summary("2030", "03", { status: "ready", receipts: 1 }), i18n.t).label).toBe("Ready · 1 receipt");
     expect(statusLine(summary("2030", "03", { status: "ready", receipts: 38 }), i18n.t).label).toBe("Ready · 38 receipts");
     expect(statusLine(summary("2030", "03", { status: "in_review", pending: 6 }), i18n.t)).toEqual({ tone: "orange", label: "In review · 6 to decide" });

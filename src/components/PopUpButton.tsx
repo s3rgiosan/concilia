@@ -1,3 +1,4 @@
+import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import { useFormDescription } from "./Form";
 
 function Chevron() {
@@ -63,71 +64,57 @@ export interface PopUpAction {
   disabled?: boolean;
 }
 
-/** A native menu over a button: picking an item runs it, and the select returns to its placeholder. */
-function ActionMenu({ actions, label, disabled }: { actions: PopUpAction[]; label: string; disabled: boolean }) {
-  return (
-    <select
-      aria-label={label}
-      title={label}
-      value=""
-      disabled={disabled}
-      onChange={(e) => {
-        const picked = e.target.value;
-        actions.find((_, index) => String(index) === picked)?.onSelect();
-      }}
-    >
-      <option value="" disabled hidden>
-        {label}
-      </option>
-      {actions.map((a, index) => (
-        <option key={a.label} value={index} disabled={a.disabled}>
-          {a.label}
-        </option>
-      ))}
-    </select>
-  );
+function allDisabled(actions: MenuEntry[]): boolean {
+  return actions.every((a) => a === "separator" || a.disabled);
 }
 
 /**
- * An action pop-up button: a small "…" button whose native menu runs a command instead of
- * holding a value. The select stays on its hidden placeholder, so any item can be chosen again.
- * A borderless one shows its fill only on hover, for use inside rows.
+ * An action pop-up button: a small `•••` button that opens a menu of commands under it. A
+ * borderless one shows its fill only on hover, for use inside rows.
  */
 export function ActionPopUpButton({
   actions,
   label = "More Actions",
   disabled,
   borderless,
+  className,
 }: {
-  actions: PopUpAction[];
+  actions: MenuEntry[];
   label?: string;
   disabled?: boolean;
   borderless?: boolean;
+  className?: string;
 }) {
-  const unavailable = disabled || actions.every((a) => a.disabled);
-  const classes = ["action-popup", borderless ? "action-popup--borderless" : null, unavailable ? "action-popup--disabled" : null];
+  const unavailable = disabled || allDisabled(actions);
+  const classes = ["action-popup", borderless ? "action-popup--borderless" : null, className ?? null];
   return (
-    <span className={classes.filter(Boolean).join(" ")}>
+    <button
+      type="button"
+      className={classes.filter(Boolean).join(" ")}
+      aria-label={label}
+      aria-haspopup="menu"
+      title={label}
+      disabled={unavailable}
+      onClick={(e) => void popUpMenu(actions, e.currentTarget)}
+    >
       <svg className="action-popup__glyph" width="13" height="3" viewBox="0 0 13 3" aria-hidden="true">
         <circle cx="1.5" cy="1.5" r="1.4" fill="currentColor" />
         <circle cx="6.5" cy="1.5" r="1.4" fill="currentColor" />
         <circle cx="11.5" cy="1.5" r="1.4" fill="currentColor" />
       </svg>
-      <ActionMenu actions={actions} label={label} disabled={unavailable} />
-    </span>
+    </button>
   );
 }
 
-/** A pull-down button: a labelled button with a ⌄ chevron whose native menu runs a command. */
-export function PullDownButton({ label, actions, disabled }: { label: string; actions: PopUpAction[]; disabled?: boolean }) {
-  const unavailable = disabled || actions.every((a) => a.disabled);
+/** A pull-down button: a labelled button with a ⌄ chevron that opens a menu of commands under it. */
+export function PullDownButton({ label, actions, disabled }: { label: string; actions: MenuEntry[]; disabled?: boolean }) {
+  const unavailable = disabled || allDisabled(actions);
   return (
-    <span className={`popup-button pull-down ${unavailable ? "popup-button--disabled" : ""}`}>
-      <span className="popup-button__label">{label}</span>
-      <svg className="popup-button__chevron" width="9" height="6" viewBox="0 0 9 6" aria-hidden="true">
+    <button type="button" className="pull-down" aria-haspopup="menu" disabled={unavailable} onClick={(e) => void popUpMenu(actions, e.currentTarget)}>
+      <span className="pull-down__label">{label}</span>
+      <svg className="pull-down__chevron" width="9" height="6" viewBox="0 0 9 6" aria-hidden="true">
         <path d="M1 1.2 4.5 4.6 8 1.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <ActionMenu actions={actions} label={label} disabled={unavailable} />
-    </span>
+    </button>
   );
 }

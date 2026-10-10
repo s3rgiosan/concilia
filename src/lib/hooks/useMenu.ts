@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { menuState, runMenuCommand, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../../review/commands";
+import { isTextField } from "../popUpMenu";
 import { isPreview } from "../preview";
 import { onMenu, setMenu, setMenuState, subscribe } from "../tauri";
 import { useLatest } from "./useLatest";
@@ -143,18 +144,6 @@ export function menuEnabled(model: MenuModel): Record<string, boolean> {
   };
 }
 
-/** True when keyboard focus is in a field that edits text. */
-function inTextField(): boolean {
-  const element = document.activeElement;
-  if (element instanceof HTMLTextAreaElement) {
-    return true;
-  }
-  if (element instanceof HTMLInputElement) {
-    return !["button", "checkbox", "radio", "submit", "reset", "file", "range", "color", "image"].includes(element.type);
-  }
-  return element instanceof HTMLElement && element.isContentEditable;
-}
-
 /**
  * Keeps the native menu bar in step with the main window: sends the localized labels when the
  * language or the sidebar and inspector state change, sends which items are enabled, and runs
@@ -209,7 +198,7 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
         const current = latestModel.current;
         const monthActions = latestActions.current;
 
-        if ((id === "undo" || id === "redo") && inTextField()) {
+        if ((id === "undo" || id === "redo") && isTextField(document.activeElement)) {
           document.execCommand(id);
           return;
         }

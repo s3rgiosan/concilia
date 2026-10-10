@@ -29,6 +29,8 @@ let symbols: [(name: String, symbol: String)] = [
     ("sparkles", "sparkles"),
     ("sidebar", "sidebar.left"),
     ("inspector", "sidebar.right"),
+    ("scan", "doc.badge.plus"),
+    ("clear", "xmark.circle.fill"),
 ]
 
 let pointSize: CGFloat = 16

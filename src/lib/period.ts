@@ -18,6 +18,26 @@ export function defaultPeriod(now: Date): Period {
   return { year: String(previous.getFullYear()), month: String(previous.getMonth() + 1).padStart(2, "0") };
 }
 
+/** The month after `period`. */
+export function nextPeriod(period: Period): Period {
+  const date = new Date(Number(period.year), Number(period.month), 1);
+  return { year: String(date.getFullYear()), month: String(date.getMonth() + 1).padStart(2, "0") };
+}
+
+/**
+ * The month the New Month sheet starts on: the one after the newest month listed, or the current
+ * month when none is listed or the next one is past the years the sheet offers.
+ */
+export function newMonthDefault(periods: Period[], now: Date): Period {
+  const current = { year: String(now.getFullYear()), month: String(now.getMonth() + 1).padStart(2, "0") };
+  const newest = [...periods].sort((a, b) => periodKey(b).localeCompare(periodKey(a)))[0];
+  if (!newest) {
+    return current;
+  }
+  const next = nextPeriod(newest);
+  return Number(next.year) > now.getFullYear() + 1 ? current : next;
+}
+
 /** Next year down to 2000, newest first. */
 export function yearOptions(now: Date): string[] {
   const years: string[] = [];
@@ -84,14 +104,14 @@ export function groupByYear(periods: PeriodSummary[]): { year: string; periods: 
   return groups;
 }
 
-export type DotTone = "gray" | "yellow" | "orange" | "green";
+export type DotTone = "gray" | "blue" | "orange" | "green";
 
 /** The dot colour and label that describe where a month stands. */
 export function statusLine(summary: PeriodSummary, t: TFunction): { tone: DotTone; label: string } {
   switch (summary.status) {
     case "ready":
       return {
-        tone: "yellow",
+        tone: "blue",
         label: summary.receipts > 0 ? t("month.status.readyReceipts", { count: summary.receipts }) : t("month.status.ready"),
       };
     case "in_review":
