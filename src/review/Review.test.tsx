@@ -589,25 +589,20 @@ describe("details", () => {
     expect(within(details()).queryByRole("button", { name: "None of These" })).toBeNull();
   });
 
-  it("offers income no receipts, and its likely categories as buttons", async () => {
+  it("offers income no receipts, its likely categories first", async () => {
     await renderReview();
     fireEvent.click(button("None of These", details()));
     select("HOOLI PAYROLL");
     fireEvent.click(button("Needs a Receipt", details()));
     expect(receiptTitles()).toEqual([]);
     expect(within(details()).getByText("No receipts to assign.")).toBeTruthy();
-    const choices = within(details()).getByRole("group", { name: "No Receipt Needed" });
-    expect(within(choices).getAllByRole("button").map((b) => b.textContent || b.getAttribute("aria-label"))).toEqual([
-      "Transfer",
-      "Salary",
-      "Refund",
-      "Other Categories",
-    ]);
     expect(within(details()).queryByRole("region", { name: /^Preview of/ })).toBeNull();
-    pick("Other Categories", "Bank Fee", choices);
+    fireEvent.click(button("No Receipt Needed", details()));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Transfer", "Salary", "Refund", "Bank Fee", "Other"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Bank Fee" }));
     expect(options()[3]).toBe("* No Receipt · Bank Fee4 MarHOOLI PAYROLLEdited+€5,000.00");
     fireEvent.click(button("Needs a Receipt", details()));
-    fireEvent.click(button("Transfer", details()));
+    pick("No Receipt Needed", "Transfer", details());
     expect(within(details()).getByText("No receipt needed: Transfer")).toBeTruthy();
   });
 

@@ -1,11 +1,12 @@
 import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
-import { ActionPopUpButton, PullDownButton } from "../components/PopUpButton";
+import { PullDownButton } from "../components/PopUpButton";
+import type { MenuEntry } from "../lib/popUpMenu";
 import { longDate } from "../lib/dates";
 import { formatMoney, formatSignedMoney } from "../lib/money";
 import type { ReceiptMeta, Transaction } from "../lib/tauri";
-import { isNoReceipt, mismatch, NO_RECEIPT_CATEGORIES, type NoReceiptCategory } from "./effective";
+import { isNoReceipt, mismatch, noReceiptChoices, type NoReceiptCategory } from "./effective";
 import { matchReason, noReceiptLabel, noReceiptTitle } from "./notes";
 import { ReceiptPreview } from "./ReceiptPreview";
 import { fileName, receiptTitle } from "./receipts";
@@ -25,42 +26,16 @@ export interface DetailsHandlers {
   onQuickLook: () => void;
 }
 
-/** The categories a credit most likely needs no receipt for, offered as buttons. */
-const CREDIT_CATEGORIES: NoReceiptCategory[] = ["transfer", "salary", "refund"];
-
-/**
- * The No Receipt Needed choices for a transaction. Money coming in shows its likely categories
- * as buttons, with the rest under a `•••` menu; money going out shows every category in one
- * pull-down.
- */
+/** The No Receipt Needed pull-down, its categories in the order `noReceiptChoices` gives. */
 function NoReceiptChoices({ tx, onNoReceipt }: { tx: Transaction; onNoReceipt: (category: NoReceiptCategory) => void }) {
   const { t } = useTranslation();
-  const labelId = useId();
-  if (tx.amount_cents <= 0) {
-    return (
-      <span data-details-action>
-        <PullDownButton
-          label={t("review.noReceiptMenu")}
-          actions={NO_RECEIPT_CATEGORIES.map((category) => ({ label: noReceiptLabel(category, t), onSelect: () => onNoReceipt(category) }))}
-        />
-      </span>
-    );
-  }
-  const others = NO_RECEIPT_CATEGORIES.filter((category) => !CREDIT_CATEGORIES.includes(category));
+  const actions: MenuEntry[] = noReceiptChoices(tx).map((choice) =>
+    choice === "separator" ? choice : { label: noReceiptTitle(choice, t), onSelect: () => onNoReceipt(choice) },
+  );
   return (
-    <div className="details__choices" role="group" aria-labelledby={labelId}>
-      <span id={labelId} className="details__choices-label">
-        {t("review.noReceiptMenu")}
-      </span>
-      <div className="details__actions">
-        {CREDIT_CATEGORIES.map((category) => (
-          <button key={category} type="button" data-details-action onClick={() => onNoReceipt(category)}>
-            {noReceiptTitle(category, t)}
-          </button>
-        ))}
-        <ActionPopUpButton label={t("review.noReceiptMore")} actions={others.map((category) => ({ label: noReceiptTitle(category, t), onSelect: () => onNoReceipt(category) }))} />
-      </div>
-    </div>
+    <span data-details-action>
+      <PullDownButton label={t("review.noReceiptMenu")} actions={actions} />
+    </span>
   );
 }
 

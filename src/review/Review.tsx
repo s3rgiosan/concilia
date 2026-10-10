@@ -62,7 +62,7 @@ import {
   visibleReimbursements,
   visibleTransactions,
   FILTERS,
-  NO_RECEIPT_CATEGORIES,
+  noReceiptChoices,
   type Filter,
   type NoReceiptCategory,
 } from "./effective";
@@ -743,7 +743,9 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       {
         label: t("menu.no_receipt"),
         disabled: !decidable || tx.status === "MATCHED",
-        submenu: NO_RECEIPT_CATEGORIES.map((category) => ({ label: t(`menu.no_receipt_${category}`), onSelect: () => decide(tx, noReceipt(category)) })),
+        submenu: noReceiptChoices(tx).map((choice) =>
+          choice === "separator" ? choice : { label: t(`menu.no_receipt_${choice}`), onSelect: () => decide(tx, noReceipt(choice)) },
+        ),
       },
       ...(rule ? (["separator", rule] as MenuEntry[]) : []),
       "separator",

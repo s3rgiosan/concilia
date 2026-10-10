@@ -6,6 +6,21 @@ import type { Draft, ReceiptMeta, ReviewData, Status, Transaction } from "../lib
 export const NO_RECEIPT_CATEGORIES = ["bank_fee", "salary", "transfer", "refund", "no_receipt"] as const;
 export type NoReceiptCategory = (typeof NO_RECEIPT_CATEGORIES)[number];
 
+/** The categories money coming in most likely needs no receipt for. */
+const CREDIT_CATEGORIES: readonly NoReceiptCategory[] = ["transfer", "salary", "refund"];
+
+/**
+ * The No Receipt Needed choices for a transaction, in menu order: money coming in lists its likely
+ * categories first and the rest after a separator; money going out lists every category.
+ */
+export function noReceiptChoices(tx: Transaction): (NoReceiptCategory | "separator")[] {
+  if (tx.amount_cents <= 0) {
+    return [...NO_RECEIPT_CATEGORIES];
+  }
+  const others = NO_RECEIPT_CATEGORIES.filter((category) => !CREDIT_CATEGORIES.includes(category));
+  return [...CREDIT_CATEGORIES, "separator", ...others];
+}
+
 export function isNoReceipt(notes: string): notes is NoReceiptCategory {
   return (NO_RECEIPT_CATEGORIES as readonly string[]).includes(notes);
 }

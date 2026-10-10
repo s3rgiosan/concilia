@@ -226,7 +226,6 @@
       "fx": "Difere em mais de 10% (recibo em {{currency}})"
     },
     "noReceiptMenu": "Recibo dispensado",
-    "noReceiptMore": "Outras categorias",
     "noReceiptNeeded": "Recibo dispensado: {{category}}",
     "noReceiptCategories": {
       "bankFee": "Comissão bancária",

@@ -334,24 +334,6 @@
   margin-top: 10px;
 }
 
-/* No Receipt Needed for a credit: a caption over its category buttons, on a line of its own. */
-.details__choices {
-  display: flex;
-  flex-basis: 100%;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.details__choices-label {
-  margin-left: 2px;
-  color: var(--label-secondary);
-  font-size: 11px;
-}
-
-.details__choices .details__actions {
-  margin-top: 0;
-}
-
 .details__edited {
   margin-right: 4px;
   vertical-align: -1px;

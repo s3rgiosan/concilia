@@ -9,6 +9,7 @@ import {
   filterCounts,
   finalizeCounts,
   isNoReceipt,
+  noReceiptChoices,
   mergeDraft,
   mismatch,
   needsDecision,
@@ -397,3 +398,13 @@ describe("finalizeCounts", () => {
   });
 });
 
+
+describe("noReceiptChoices", () => {
+  it("lists every category for money going out", () => {
+    expect(noReceiptChoices(makeTransaction("tx-1", { amount_cents: -1000 }))).toEqual(["bank_fee", "salary", "transfer", "refund", "no_receipt"]);
+  });
+
+  it("lists the likely categories first for money coming in", () => {
+    expect(noReceiptChoices(makeTransaction("tx-1", { amount_cents: 1000 }))).toEqual(["transfer", "salary", "refund", "separator", "bank_fee", "no_receipt"]);
+  });
+});

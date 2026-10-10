@@ -226,7 +226,6 @@
       "fx": "Differs by more than 10% ({{currency}} receipt)"
     },
     "noReceiptMenu": "No Receipt Needed",
-    "noReceiptMore": "Other Categories",
     "noReceiptNeeded": "No receipt needed: {{category}}",
     "noReceiptCategories": {
       "bankFee": "Bank fee",
