@@ -1,9 +1,10 @@
 import "./Main.css";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { ErrorState, needsSettings } from "../components/ErrorState";
 import { ActionPopUpButton, type PopUpAction } from "../components/PopUpButton";
+import { Presence } from "../components/Presence";
 import { ResizeHandle, useStoredWidth } from "../components/ResizeHandle";
 import { Toolbar, ToolbarPortal } from "../components/Toolbar";
 import { errorKind } from "../lib/errors";
@@ -106,6 +107,21 @@ export function Main() {
   const configured = state?.configured === true;
   const root = state?.settings.receipts_root ?? null;
   const sidebarShown = sidebarSetting !== "hidden";
+  const mainRef = useRef<HTMLDivElement>(null);
+  /** Whether the detail area is scrolled, so the toolbar shows its edge over the content. */
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    setScrolled(false);
+  }, [key]);
+
+  /** Tracks the scroll position of the detail area's own scroller: the detail pane or the review list. */
+  function onDetailScroll(e: UIEvent<HTMLDivElement>) {
+    const target = e.target;
+    if (target instanceof HTMLElement && target.matches(".detail, .review-list")) {
+      setScrolled(target.scrollTop > 0);
+    }
+  }
 
   /** Counts listings, so only the latest one lands. */
   const listing = useRef(0);
@@ -378,40 +394,45 @@ export function Main() {
   ) : null;
 
   return (
-    <div className="main">
+    <div className="main" ref={mainRef} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
       <Toolbar
         leading={toggle}
-        leadingWidth={showSidebar ? sidebarWidth : undefined}
+        leadingWidth={configured ? (showSidebar ? "var(--sidebar-width)" : 0) : undefined}
         title={configured ? label : undefined}
         subtitle={subtitle}
         trailing={trailing}
         separator={configured}
+        scrolled={scrolled}
       />
-      <div className="main__body">
-        {showSidebar ? (
-          <>
-            <Sidebar
-              periods={periods}
-              selected={key}
-              onSelect={select}
-              running={runningMonth}
-              loading={!listReady}
-              error={listError}
-              onRetry={refresh}
-              onNewMonth={() => setSheet("new-month")}
-              menu={monthMenu}
-              width={sidebarWidth}
-            />
-            <ResizeHandle
-              label={t("sidebar.resize")}
-              width={sidebarWidth}
-              min={SIDEBAR_WIDTH.min}
-              max={SIDEBAR_WIDTH.max}
-              grows="right"
-              onResize={setSidebarWidth}
-            />
-          </>
-        ) : null}
+      <div className="main__body" onScrollCapture={onDetailScroll}>
+        <Presence>
+          {showSidebar ? (
+            <>
+              <Sidebar
+                periods={periods}
+                selected={key}
+                onSelect={select}
+                running={runningMonth}
+                loading={!listReady}
+                error={listError}
+                onRetry={refresh}
+                onNewMonth={() => setSheet("new-month")}
+                menu={monthMenu}
+              />
+              <ResizeHandle
+                label={t("sidebar.resize")}
+                width={sidebarWidth}
+                min={SIDEBAR_WIDTH.min}
+                max={SIDEBAR_WIDTH.max}
+                grows="right"
+                scope={mainRef}
+                variable="--sidebar-width"
+                onResize={setSidebarWidth}
+                onCollapse={() => setSidebarSetting("hidden")}
+              />
+            </>
+          ) : null}
+        </Presence>
         <main className={`detail ${configured && reviewable && !runHere ? "detail--review" : ""}`}>
           <UpdateBanner onError={setMessage} />
           {loadError ? (
@@ -440,19 +461,21 @@ export function Main() {
           {detail}
         </main>
       </div>
-      {sheet === "new-month" ? (
-        <NewMonthSheet
-          initial={newMonthDefault(periods, new Date())}
-          existing={existingKeys}
-          onCancel={() => setSheet(null)}
-          onCreate={(period) => {
-            setCreated((prev) => [...prev, period]);
-            select(period);
-            setSheet(null);
-          }}
-        />
-      ) : null}
-      {sheet === "rerun" ? <RerunSheet period={label} onCancel={() => setSheet(null)} onConfirm={() => reconcile(true)} /> : null}
+      <Presence>
+        {sheet === "new-month" ? (
+          <NewMonthSheet
+            initial={newMonthDefault(periods, new Date())}
+            existing={existingKeys}
+            onCancel={() => setSheet(null)}
+            onCreate={(period) => {
+              setCreated((prev) => [...prev, period]);
+              select(period);
+              setSheet(null);
+            }}
+          />
+        ) : null}
+      </Presence>
+      <Presence>{sheet === "rerun" ? <RerunSheet period={label} onCancel={() => setSheet(null)} onConfirm={() => reconcile(true)} /> : null}</Presence>
     </div>
   );
 }

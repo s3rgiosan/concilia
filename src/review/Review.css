@@ -99,6 +99,20 @@
   background: var(--selected-bg-inactive);
 }
 
+/* A row that just left the list collapses where it was, so the rows below close the gap. */
+.list-row--leaving {
+  overflow: hidden;
+  pointer-events: none;
+  animation: row-leave 180ms var(--ease-leave) forwards;
+}
+
+@keyframes row-leave {
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
 .review-list:focus .list-row--selected {
   background: var(--selected-bg);
   color: var(--selected-text);
@@ -185,21 +199,48 @@
 
 /* Inspector ----------------------------------------------------------------- */
 
+/*
+ * The inspector's width is the --inspector-width custom property. Showing and hiding it animates
+ * that width; its content keeps the full width and slides out past the trailing edge, so the
+ * receipt preview never reflows mid-animation.
+ */
 .inspector {
   display: flex;
   flex: none;
   flex-direction: column;
+  align-items: flex-start;
   box-sizing: border-box;
-  width: 300px;
+  width: var(--inspector-width, 300px);
   min-height: 0;
+  overflow: hidden;
   border-left: 0.5px solid var(--separator);
+  transition: width var(--pane-duration) var(--ease-settle);
+}
+
+.inspector > * {
+  box-sizing: border-box;
+  width: var(--inspector-width, 300px);
+}
+
+@starting-style {
+  .presence[data-presence="enter"] .inspector {
+    width: 0;
+  }
+}
+
+.presence[data-presence="exit"] .inspector {
+  width: 0;
+}
+
+:root.is-resizing .inspector {
+  transition: none;
 }
 
 .inspector--empty {
-  align-items: center;
   justify-content: center;
   color: var(--label-tertiary);
   font-size: 15px;
+  text-align: center;
 }
 
 .inspector__details {
@@ -231,6 +272,7 @@
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .inspector__meta {
@@ -343,6 +385,10 @@
   text-align: left;
 }
 
+.receipt-row__main:active {
+  background: var(--fill-strong);
+}
+
 .receipt-row__marker {
   display: inline-flex;
   flex: none;
@@ -428,11 +474,19 @@
 
 /* Previews -------------------------------------------------------------------- */
 
+/* The receipt sits on a recessed well, and an image shows as a page with its own shadow. */
 .receipt-preview {
   display: flex;
   flex: 1;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
-  background: #fff;
+  background: var(--fill);
+}
+
+.receipt-preview:has(.receipt-preview__image) {
+  box-sizing: border-box;
+  padding: 12px;
 }
 
 .receipt-preview--empty {
@@ -445,15 +499,19 @@
 
 .receipt-preview__frame {
   flex: 1;
+  align-self: stretch;
   width: 100%;
   border: 0;
 }
 
 .receipt-preview__image {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  object-fit: contain;
+  flex: none;
+  max-width: 100%;
+  max-height: 100%;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 12%),
+    0 1px 4px rgb(0 0 0 / 25%);
 }
 
 .quicklook-backdrop {
@@ -464,7 +522,7 @@
   align-items: center;
   justify-content: center;
   background: rgb(0 0 0 / 28%);
-  animation: fade-in 140ms ease-out;
+  transition: opacity 160ms ease-out;
 }
 
 .quicklook {
@@ -479,7 +537,37 @@
     0 0 0 0.5px rgb(0 0 0 / 25%),
     0 20px 50px rgb(0 0 0 / 35%);
   outline: none;
-  animation: quicklook-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  transition:
+    transform 260ms var(--ease-settle),
+    opacity 140ms ease-out;
+}
+
+/*
+ * Quick Look grows out of the receipt it shows and shrinks back into it: --quicklook-origin is
+ * the transform that lays the panel over the inspector's preview (or the selected row).
+ */
+@starting-style {
+  .presence[data-presence="enter"] .quicklook-backdrop {
+    opacity: 0;
+  }
+
+  .presence[data-presence="enter"] .quicklook {
+    transform: var(--quicklook-origin, scale(0.96));
+    opacity: 0;
+  }
+}
+
+.presence[data-presence="exit"] .quicklook-backdrop {
+  opacity: 0;
+  transition: opacity 160ms ease-in;
+}
+
+.presence[data-presence="exit"] .quicklook {
+  transform: var(--quicklook-origin, scale(0.96));
+  opacity: 0;
+  transition:
+    transform 200ms var(--ease-leave),
+    opacity 160ms ease-in 40ms;
 }
 
 .quicklook__bar {
@@ -500,23 +588,52 @@
   white-space: nowrap;
 }
 
-@keyframes quicklook-in {
-  from {
-    transform: scale(0.96);
-    opacity: 0;
-  }
-}
-
 /* Scan progress sheet ----------------------------------------------------------- */
 
 .sheet--wide {
   width: min(560px, calc(100vw - 48px));
 }
 
+/* Reduce Motion: Quick Look fades in and out in place, and rows leave without collapsing. */
 @media (prefers-reduced-motion: reduce) {
-  .quicklook,
-  .quicklook-backdrop {
-    animation: none;
+  .presence[data-presence] .quicklook {
+    transform: none;
+  }
+
+  @starting-style {
+    .presence[data-presence="enter"] .quicklook {
+      transform: none;
+    }
+  }
+
+  .inspector {
+    transition: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .quicklook {
+    box-shadow:
+      inset 0 0.5px 0 rgb(255 255 255 / 12%),
+      0 0 0 0.5px rgb(255 255 255 / 10%),
+      0 20px 50px rgb(0 0 0 / 50%);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .quicklook {
+    box-shadow:
+      0 0 0 1px var(--field-border),
+      0 20px 50px rgb(0 0 0 / 35%);
+  }
+}
+
+/* Reduce Transparency: the sticky header is solid. */
+@media (prefers-reduced-transparency: reduce) {
+  .review-list__header {
+    background: var(--content-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 

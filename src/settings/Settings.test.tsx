@@ -893,9 +893,11 @@ describe("Rules pane", () => {
     expect(rows()[1].getAttribute("aria-selected")).toBe("false");
     fireEvent.click(button("Delete Rule"));
     expect(saveRules).toHaveBeenCalledWith([rules[1]]);
-    await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(rows()[0].getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(rows()[0]);
+    await waitFor(() => {
+      expect(rows()).toHaveLength(1);
+      expect(rows()[0].getAttribute("aria-selected")).toBe("true");
+      expect(document.activeElement).toBe(rows()[0]);
+    });
   });
 
   it("edits the selected rule with the Edit button", async () => {

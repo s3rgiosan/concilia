@@ -43,13 +43,18 @@ function nativeItems(entries: MenuEntry[]): NativeItem[] {
 /** The menu shown last. It stays alive while it shows, so its items can still run, and is released when the next one opens. */
 let shown: Menu | null = null;
 
-async function popUpNative(entries: MenuEntry[], anchor: MenuAnchor): Promise<void> {
+/** Shows a native menu. On macOS `popup` returns once the menu has closed, so `onClose` runs then. */
+async function popUpNative(entries: MenuEntry[], anchor: MenuAnchor, onClose?: () => void): Promise<void> {
   const { x, y } = anchorPoint(anchor);
-  const menu = await Menu.new({ items: nativeItems(entries) });
-  const previous = shown;
-  shown = menu;
-  previous?.close().catch(() => undefined);
-  await menu.popup(new LogicalPosition(x, y));
+  try {
+    const menu = await Menu.new({ items: nativeItems(entries) });
+    const previous = shown;
+    shown = menu;
+    previous?.close().catch(() => undefined);
+    await menu.popup(new LogicalPosition(x, y));
+  } finally {
+    onClose?.();
+  }
 }
 
 // HTML --------------------------------------------------------------------------------------------
@@ -58,6 +63,7 @@ async function popUpNative(entries: MenuEntry[], anchor: MenuAnchor): Promise<vo
 const open: HTMLElement[] = [];
 let returnFocus: HTMLElement | null = null;
 let stopListening: (() => void) | null = null;
+let notifyClosed: (() => void) | null = null;
 
 function enabledItems(menu: HTMLElement): HTMLButtonElement[] {
   return Array.from(menu.querySelectorAll<HTMLButtonElement>(":scope > [role=menuitem]:not(:disabled)"));
@@ -80,11 +86,14 @@ export function closeMenus(): void {
   closeFrom(0);
   stopListening?.();
   stopListening = null;
+  const closed = notifyClosed;
+  notifyClosed = null;
   const target = returnFocus;
   returnFocus = null;
   if (target?.isConnected) {
     target.focus();
   }
+  closed?.();
 }
 
 function place(menu: HTMLElement, x: number, y: number) {
@@ -200,8 +209,9 @@ function onMenuKey(e: KeyboardEvent, menu: HTMLElement, depth: number) {
   e.stopPropagation();
 }
 
-function popUpHtml(entries: MenuEntry[], anchor: MenuAnchor): void {
+function popUpHtml(entries: MenuEntry[], anchor: MenuAnchor, onClose?: () => void): void {
   closeMenus();
+  notifyClosed = onClose ?? null;
   returnFocus = anchor instanceof HTMLElement ? anchor : document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const { x, y } = anchorPoint(anchor);
   const menu = buildMenu(entries, 0, x, y);
@@ -230,13 +240,13 @@ function popUpHtml(entries: MenuEntry[], anchor: MenuAnchor): void {
 
 /**
  * Shows `entries` as a menu under a button or at a point. Each item runs its `onSelect` when
- * picked. Resolves once the menu shows.
+ * picked, and `onClose` runs when the menu goes away, picked or not.
  */
-export function popUpMenu(entries: MenuEntry[], anchor: MenuAnchor): Promise<void> {
+export function popUpMenu(entries: MenuEntry[], anchor: MenuAnchor, onClose?: () => void): Promise<void> {
   if (isTauri()) {
-    return popUpNative(entries, anchor).catch((e) => console.error("could not show the menu", e));
+    return popUpNative(entries, anchor, onClose).catch((e) => console.error("could not show the menu", e));
   }
-  popUpHtml(entries, anchor);
+  popUpHtml(entries, anchor, onClose);
   return Promise.resolve();
 }
 

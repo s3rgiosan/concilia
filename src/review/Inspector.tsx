@@ -37,7 +37,6 @@ export function Inspector({
   focused,
   rescanning,
   readOnly,
-  width,
   handlers,
 }: {
   row: ListRow | null;
@@ -47,8 +46,6 @@ export function Inspector({
   rescanning: Set<string>;
   /** The month is finalized: decisions and new readings are unavailable. */
   readOnly: boolean;
-  /** The inspector's width, in pixels. */
-  width: number;
   handlers: InspectorHandlers;
 }) {
   const { t, i18n } = useTranslation();
@@ -57,7 +54,7 @@ export function Inspector({
 
   if (!row) {
     return (
-      <aside className="inspector inspector--empty" style={{ width }} aria-label={t("review.inspector")}>
+      <aside className="inspector inspector--empty" aria-label={t("review.inspector")}>
         <p>{t("review.noSelection")}</p>
       </aside>
     );
@@ -174,7 +171,7 @@ export function Inspector({
   }
 
   return (
-    <aside className="inspector" style={{ width }} aria-label={t("review.inspector")}>
+    <aside className="inspector" aria-label={t("review.inspector")}>
       <div className="inspector__details">
         <header className="inspector__header">{header}</header>
         <section className="inspector__section" aria-labelledby={headingId}>

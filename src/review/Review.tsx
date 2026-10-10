@@ -1,9 +1,10 @@
 import "./Review.css";
-import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type Ref } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorState, needsSettings } from "../components/ErrorState";
 import { Icon } from "../components/Icon";
 import type { PopUpAction } from "../components/PopUpButton";
+import { Presence } from "../components/Presence";
 import { ResizeHandle, useStoredWidth } from "../components/ResizeHandle";
 import { ToolbarPortal, type ToolbarSlots } from "../components/Toolbar";
 import { errorDetail, errorKind, friendlyError } from "../lib/errors";
@@ -616,7 +617,11 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   }
 
   return (
-    <section ref={sectionRef} className="review" aria-label={t("review.title", { period: periodLabel(period, t) })}>
+    <section
+      ref={sectionRef}
+      className="review"
+      style={{ "--inspector-width": `${inspectorWidth}px` } as CSSProperties}
+      aria-label={t("review.title", { period: periodLabel(period, t) })}>
       {subtitle}
       <ToolbarPortal target={toolbar.trailing}>
         <ReviewToolbar
@@ -659,6 +664,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
           <TransactionList
             listId={listId}
             rows={rows}
+            viewKey={`${filter}|${search}`}
             selectedId={selected?.id ?? null}
             reimbursementTotal={reimbursementTotal}
             listRef={listRef}
@@ -676,59 +682,61 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         </div>
       </div>
 
-      {inspectorShown ? (
-        <>
-          <ResizeHandle
-            label={t("review.resizeInspector")}
-            width={inspectorWidth}
-            min={INSPECTOR_WIDTH.min}
-            max={INSPECTOR_WIDTH.max}
-            grows="left"
-            onResize={setInspectorWidth}
+      <Presence>
+        {inspectorShown ? (
+          <>
+            <ResizeHandle
+              label={t("review.resizeInspector")}
+              width={inspectorWidth}
+              min={INSPECTOR_WIDTH.min}
+              max={INSPECTOR_WIDTH.max}
+              grows="left"
+              scope={sectionRef}
+              variable="--inspector-width"
+              onResize={setInspectorWidth}
+            />
+            <Inspector row={selected} receipts={receipts} focused={focused} rescanning={rescanning} readOnly={applied} handlers={handlers} />
+          </>
+        ) : null}
+      </Presence>
+
+      <Presence>
+        {quickLook && selected ? (
+          <QuickLook
+            receipt={focused}
+            name={selected.kind === "transaction" ? selected.tx.description : receiptTitle(selected.receipt)}
+            onClose={() => setQuickLook(false)}
+            onOpen={open}
+            onMove={moveSelection}
           />
-          <Inspector
-            row={selected}
-            receipts={receipts}
-            focused={focused}
-            rescanning={rescanning}
-            readOnly={applied}
-            width={inspectorWidth}
-            handlers={handlers}
+        ) : null}
+      </Presence>
+
+      <Presence>
+        {scanState.phase === "running" || scanState.phase === "failed" ? (
+          <ScanSheet
+            steps={buildSteps("scan", scanState.events, scanState.phase === "failed" ? "failed" : null, t)}
+            running={scanState.phase === "running"}
+            cancelling={scanState.phase === "running" && scanState.cancelling}
+            error={scanState.phase === "failed" ? scanState.error : null}
+            onCancel={scan.cancel}
+            onClose={scan.reset}
           />
-        </>
-      ) : null}
+        ) : null}
+      </Presence>
 
-      {quickLook && selected ? (
-        <QuickLook
-          receipt={focused}
-          name={selected.kind === "transaction" ? selected.tx.description : receiptTitle(selected.receipt)}
-          onClose={() => setQuickLook(false)}
-          onOpen={open}
-          onMove={moveSelection}
-        />
-      ) : null}
-
-      {scanState.phase === "running" || scanState.phase === "failed" ? (
-        <ScanSheet
-          steps={buildSteps("scan", scanState.events, scanState.phase === "failed" ? "failed" : null, t)}
-          running={scanState.phase === "running"}
-          cancelling={scanState.phase === "running" && scanState.cancelling}
-          error={scanState.phase === "failed" ? scanState.error : null}
-          onCancel={scan.cancel}
-          onClose={scan.reset}
-        />
-      ) : null}
-
-      {confirmFinalize ? (
-        <FinalizeSheet
-          period={periodLabel(period, t)}
-          counts={finalizeCounts(data, merged)}
-          pending={pending}
-          busy={finalizing}
-          onCancel={() => setConfirmFinalize(false)}
-          onConfirm={runFinalize}
-        />
-      ) : null}
+      <Presence>
+        {confirmFinalize ? (
+          <FinalizeSheet
+            period={periodLabel(period, t)}
+            counts={finalizeCounts(data, merged)}
+            pending={pending}
+            busy={finalizing}
+            onCancel={() => setConfirmFinalize(false)}
+            onConfirm={runFinalize}
+          />
+        ) : null}
+      </Presence>
     </section>
   );
 }

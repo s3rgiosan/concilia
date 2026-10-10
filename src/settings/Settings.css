@@ -41,6 +41,10 @@
   font-size: 11px;
 }
 
+.toolbar__tab:active:not(.toolbar__tab--active) {
+  background: var(--fill);
+}
+
 .toolbar__tab--active {
   border-color: var(--separator);
   background: var(--control-fill);
@@ -54,10 +58,22 @@
   overflow-y: auto;
 }
 
-.pane__content {
+.pane__content,
+.pane__view {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+/* A pane the user switches to fades in while the window resizes around it. */
+.pane__view {
+  transition: opacity 180ms ease-out;
+}
+
+@starting-style {
+  .pane__view[data-switched] {
+    opacity: 0;
+  }
 }
 
 .path {

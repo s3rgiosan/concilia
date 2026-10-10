@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type CSSProperties } from "react";
 import { Icon } from "../components/Icon";
 import type { Step } from "../lib/steps";
 
@@ -14,6 +14,28 @@ function StepIcon({ status }: { status: Step["status"] }) {
     default:
       return <span className="step__dot" aria-hidden="true" />;
   }
+}
+
+/**
+ * A determinate progress bar whose fill glides to each new value, so steps of a few items read as
+ * one continuous movement.
+ */
+function ProgressBar({ label, detail, current, total }: { label: string; detail?: string; current: number; total: number }) {
+  const fraction = Math.min(1, Math.max(0, current / total));
+  return (
+    <span
+      className="step__progress"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={current}
+      aria-valuetext={detail}
+      style={{ "--progress": fraction } as CSSProperties}
+    >
+      <span className="step__progress-fill" />
+    </span>
+  );
 }
 
 /** The steps of a running reconcile or scan, under an optional title. */
@@ -40,15 +62,7 @@ export function RunProgress({ title, steps }: { title?: string; steps: Step[] })
                   {step.detail}
                 </span>
               ) : null}
-              {step.progress && step.progress.total > 0 ? (
-                <progress
-                  className="step__progress"
-                  value={step.progress.current}
-                  max={step.progress.total}
-                  aria-label={step.label}
-                  aria-valuetext={step.detail}
-                />
-              ) : null}
+              {step.progress && step.progress.total > 0 ? <ProgressBar label={step.label} detail={step.detail} {...step.progress} /> : null}
             </div>
           </li>
         ))}

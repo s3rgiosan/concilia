@@ -52,9 +52,10 @@ describe("RunProgress", () => {
 
   it("shows a progress bar for a step with a total", () => {
     renderProgress();
-    const bar = screen.getByRole("progressbar", { name: "Extracting receipt data" }) as HTMLProgressElement;
-    expect(bar.value).toBe(10);
-    expect(bar.max).toBe(40);
+    const bar = screen.getByRole("progressbar", { name: "Extracting receipt data" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("10");
+    expect(bar.getAttribute("aria-valuemax")).toBe("40");
+    expect(bar.style.getPropertyValue("--progress")).toBe("0.25");
   });
 
   it("shows no progress bar for an empty total", () => {

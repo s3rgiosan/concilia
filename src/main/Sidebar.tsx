@@ -18,8 +18,9 @@ function optionId(key: string): string {
 
 /**
  * The months, newest first under year headers, as a single-selection list. Each row names the
- * month and says where it stands, once the months have loaded; ↑/↓, Home and End move the
- * selection, and a right click offers the month's commands from `menu`.
+ * month and says where it stands, once the months have loaded. A press selects a month, ↑/↓,
+ * Home and End move the selection, and a right click offers the month's commands from `menu`.
+ * Its width is the `--sidebar-width` custom property.
  */
 export function Sidebar({
   periods,
@@ -31,7 +32,6 @@ export function Sidebar({
   onRetry,
   onNewMonth,
   menu,
-  width,
 }: {
   periods: PeriodSummary[];
   selected: string;
@@ -44,7 +44,6 @@ export function Sidebar({
   onNewMonth: () => void;
   /** The commands for a month's context menu. */
   menu: (summary: PeriodSummary) => MenuEntry[];
-  width: number;
 }) {
   const { t } = useTranslation();
   const list = useRef<HTMLDivElement>(null);
@@ -89,7 +88,7 @@ export function Sidebar({
   }
 
   return (
-    <nav className="sidebar" style={{ width }} aria-label={t("sidebar.months")}>
+    <nav className="sidebar" aria-label={t("sidebar.months")}>
       <div
         ref={list}
         className="sidebar__list"
@@ -116,9 +115,11 @@ export function Sidebar({
                   role="option"
                   aria-selected={isSelected}
                   className={`sidebar__row ${isSelected ? "sidebar__row--selected" : ""}`}
-                  onClick={() => {
-                    select(summary);
-                    list.current?.focus();
+                  onMouseDown={(e) => {
+                    if (e.button === 0) {
+                      select(summary);
+                      list.current?.focus();
+                    }
                   }}
                   onContextMenu={(e) => showMenu(summary, e)}
                 >

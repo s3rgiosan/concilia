@@ -22,7 +22,8 @@ export function StatusLabel({ status }: { status?: Status }) {
 
 /**
  * One option of the review list: a transaction's status, date, description and signed amount, or
- * a reimbursement's kind, date, name and amount.
+ * a reimbursement's kind, date, name and amount. A press selects it. With `onLeft` it is a row
+ * that just left the list: hidden from assistive technology, collapsing until `onLeft` runs.
  */
 export function TransactionRow({
   id,
@@ -31,6 +32,7 @@ export function TransactionRow({
   onSelect,
   onOpen,
   onContextMenu,
+  onLeft,
 }: {
   id: string;
   row: ListRow;
@@ -39,6 +41,7 @@ export function TransactionRow({
   /** Runs on a double click. */
   onOpen: () => void;
   onContextMenu: (e: MouseEvent<HTMLDivElement>) => void;
+  onLeft?: () => void;
 }) {
   const { i18n } = useTranslation();
   const language = i18n.language;
@@ -70,13 +73,24 @@ export function TransactionRow({
       </>
     );
   }
+  if (onLeft) {
+    return (
+      <div className="list-row list-row--leaving" aria-hidden="true" onAnimationEnd={onLeft}>
+        {cells}
+      </div>
+    );
+  }
   return (
     <div
       id={id}
       role="option"
       aria-selected={selected}
       className={`list-row ${selected ? "list-row--selected" : ""}`}
-      onClick={onSelect}
+      onMouseDown={(e) => {
+        if (e.button === 0) {
+          onSelect();
+        }
+      }}
       onDoubleClick={onOpen}
       onContextMenu={onContextMenu}
     >

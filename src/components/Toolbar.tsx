@@ -5,8 +5,10 @@ import { IS_MACOS } from "../lib/platform";
 /**
  * The window's 52 px toolbar, drawn under the transparent macOS title bar. On macOS the leading
  * area starts after the traffic lights. Every empty part drags the window, and a double click
- * zooms it. `leadingWidth` sizes the leading area to the sidebar below it, so the title lines up
- * with the detail pane. Without `separator` the toolbar blends into the content below.
+ * zooms it. `leadingWidth` (a CSS length) sizes the leading area to the sidebar below it, so the
+ * title lines up with the detail pane; 0 shrinks it to its controls. Without `separator` the
+ * toolbar blends into the content below; with it, the edge shows once `scrolled` content passes
+ * under the toolbar.
  */
 export function Toolbar({
   leading,
@@ -15,19 +17,23 @@ export function Toolbar({
   subtitle,
   trailing,
   separator = true,
+  scrolled = false,
 }: {
   leading?: ReactNode;
-  leadingWidth?: number;
+  leadingWidth?: number | string;
   title?: string;
   subtitle?: ReactNode;
   trailing?: ReactNode;
   separator?: boolean;
+  scrolled?: boolean;
 }) {
   const leadingClass = leadingWidth ? "titlebar__leading titlebar__leading--sidebar" : "titlebar__leading";
-  const classes = ["titlebar", IS_MACOS ? "titlebar--inset" : null, separator ? null : "titlebar--plain"].filter(Boolean).join(" ");
+  const classes = ["titlebar", IS_MACOS ? "titlebar--inset" : null, separator ? null : "titlebar--plain", separator && scrolled ? "titlebar--scrolled" : null]
+    .filter(Boolean)
+    .join(" ");
   return (
     <header className={classes} data-tauri-drag-region>
-      <div className={leadingClass} style={leadingWidth ? { width: leadingWidth } : undefined} data-tauri-drag-region>
+      <div className={leadingClass} style={leadingWidth === undefined ? undefined : { width: leadingWidth }} data-tauri-drag-region>
         {leading}
       </div>
       <div className="titlebar__heading" data-tauri-drag-region>

@@ -242,7 +242,7 @@ function months(): string[] {
 }
 
 function selectMonth(name: RegExp) {
-  fireEvent.click(within(screen.getByRole("listbox", { name: "Months" })).getByRole("option", { name }));
+  fireEvent.mouseDown(within(screen.getByRole("listbox", { name: "Months" })).getByRole("option", { name }));
 }
 
 /** Picks an item from the toolbar's More Actions menu. */
@@ -451,13 +451,13 @@ describe("sidebar", () => {
   it("resizes from its divider within 180 to 280 pixels and remembers the width", async () => {
     await renderMain();
     const divider = screen.getByRole("separator", { name: "Resize Sidebar" });
-    const nav = screen.getByRole("navigation", { name: "Months" });
-    expect(nav.style.width).toBe("220px");
+    const width = () => (document.querySelector(".main") as HTMLElement).style.getPropertyValue("--sidebar-width");
+    expect(width()).toBe("220px");
     fireEvent.keyDown(divider, { key: "ArrowRight" });
-    expect(nav.style.width).toBe("230px");
-    expect((toolbar().querySelector(".titlebar__leading") as HTMLElement).style.width).toBe("230px");
+    expect(width()).toBe("230px");
+    expect((toolbar().querySelector(".titlebar__leading") as HTMLElement).style.width).toBe("var(--sidebar-width)");
     fireEvent.keyDown(divider, { key: "Home" });
-    expect(nav.style.width).toBe("180px");
+    expect(width()).toBe("180px");
     expect(localStorage.getItem("main.sidebarWidth")).toBe("180");
   });
 

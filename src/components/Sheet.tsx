@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
+import { useContext, useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { useLatest } from "../lib/hooks/useLatest";
 import { Icon } from "./Icon";
+import { ExitingContext } from "./Presence";
 
 const FIT_STYLE = { width: "max-content", minWidth: 440, maxWidth: "calc(100vw - 48px)" };
 
@@ -34,7 +35,8 @@ function makeOthersInert(keep: HTMLElement): () => void {
 /**
  * Window-modal behaviour shared by sheets and Quick Look: while `panel` shows, everything outside
  * `backdrop` is inert, focus starts on `initialFocus` (or the panel) and Tab cycles within the
- * panel. Esc runs `onEscape` unless busy. Focus returns to where it was when the panel closes.
+ * panel. Esc runs `onEscape` unless busy. Focus returns to where it was when the panel closes, or
+ * as soon as it starts leaving inside a `Presence`, so the window answers input during the exit.
  */
 export function useModal(
   backdrop: RefObject<HTMLElement | null>,
@@ -43,8 +45,12 @@ export function useModal(
   { busy = false, initialFocus }: { busy?: boolean; initialFocus?: string } = {},
 ) {
   const latest = useLatest({ onEscape, busy, initialFocus });
+  const exiting = useContext(ExitingContext);
 
   useEffect(() => {
+    if (exiting) {
+      return;
+    }
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const restoreOthers = backdrop.current ? makeOthersInert(backdrop.current) : () => undefined;
     const selector = latest.current.initialFocus;
@@ -56,9 +62,12 @@ export function useModal(
         previous.focus();
       }
     };
-  }, [backdrop, panel, latest]);
+  }, [backdrop, panel, latest, exiting]);
 
   useEffect(() => {
+    if (exiting) {
+      return;
+    }
     function focusable(): HTMLElement[] {
       const found = panel.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [];
       return Array.from(found).filter((el) => !el.hasAttribute("disabled"));
@@ -96,7 +105,7 @@ export function useModal(
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panel, latest]);
+  }, [panel, latest, exiting]);
 }
 
 /** A note under a sheet's fields: label-coloured text after a red (error) or orange (warning) symbol. */

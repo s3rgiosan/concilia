@@ -23,14 +23,48 @@
 
 /* Sidebar ----------------------------------------------------------------- */
 
+/*
+ * The sidebar's width is the --sidebar-width custom property. Showing and hiding it animates that
+ * width; its content keeps the full width, pinned to the trailing edge, so it slides out to the
+ * left without reflowing.
+ */
 .sidebar {
   display: flex;
   flex: none;
   flex-direction: column;
+  align-items: flex-end;
   box-sizing: border-box;
+  width: var(--sidebar-width, 220px);
   min-height: 0;
+  overflow: hidden;
   border-right: 0.5px solid var(--separator);
   background: var(--sidebar-bg);
+  transition: width var(--pane-duration) var(--ease-settle);
+}
+
+.sidebar > * {
+  box-sizing: border-box;
+  width: var(--sidebar-width, 220px);
+}
+
+@starting-style {
+  .presence[data-presence="enter"] .sidebar {
+    width: 0;
+  }
+}
+
+.presence[data-presence="exit"] .sidebar {
+  width: 0;
+}
+
+:root.is-resizing .sidebar {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
 }
 
 .sidebar__list {
@@ -100,8 +134,9 @@
   margin: 0;
 }
 
-.sidebar__error {
+.sidebar > .sidebar__error {
   flex-direction: column;
+  width: calc(var(--sidebar-width, 220px) - 20px);
   margin: 0 10px 8px;
 }
 
@@ -312,12 +347,25 @@
   color: var(--red);
 }
 
+/* The fill scales to --progress (0 to 1) and glides between updates. */
 .step__progress {
+  position: relative;
   display: block;
   width: 100%;
   height: 4px;
   margin-top: 6px;
-  accent-color: var(--accent);
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--fill-strong);
+}
+
+.step__progress-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform: scaleX(var(--progress, 0));
+  transform-origin: left center;
+  transition: transform 300ms ease-out;
 }
 
 /* Welcome ----------------------------------------------------------------- */
@@ -336,6 +384,7 @@
   margin: 0;
   font-size: 22px;
   font-weight: 600;
+  line-height: 1.2;
   text-align: center;
 }
 

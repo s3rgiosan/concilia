@@ -192,7 +192,7 @@ function selected(): string {
 }
 
 function select(description: string) {
-  fireEvent.click(within(list()).getByText(description).closest<HTMLElement>("[role=option]")!);
+  fireEvent.mouseDown(within(list()).getByText(description).closest<HTMLElement>("[role=option]")!);
 }
 
 function key(name: string, init: KeyboardEventInit = {}) {
@@ -661,17 +661,18 @@ describe("inspector width", () => {
   it("resizes from its divider within 260 to 400 pixels and remembers the width", async () => {
     await renderReview();
     const divider = screen.getByRole("separator", { name: "Resize Inspector" });
+    const width = () => screen.getByRole("region", { name: /^Review / }).style.getPropertyValue("--inspector-width");
     expect(divider.getAttribute("aria-valuenow")).toBe("300");
-    expect(inspector().style.width).toBe("300px");
+    expect(width()).toBe("300px");
     fireEvent.keyDown(divider, { key: "ArrowLeft" });
-    expect(inspector().style.width).toBe("310px");
+    expect(width()).toBe("310px");
     fireEvent.keyDown(divider, { key: "End" });
     expect(divider.getAttribute("aria-valuenow")).toBe("400");
     fireEvent.keyDown(divider, { key: "ArrowLeft" });
     expect(divider.getAttribute("aria-valuenow")).toBe("400");
     expect(localStorage.getItem("review.inspectorWidth")).toBe("400");
     fireEvent.keyDown(divider, { key: "Home" });
-    expect(inspector().style.width).toBe("260px");
+    expect(width()).toBe("260px");
   });
 });
 

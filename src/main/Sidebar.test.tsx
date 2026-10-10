@@ -33,7 +33,7 @@ function renderSidebar({
   const onNewMonth = vi.fn();
   const reveal = vi.fn<(month: PeriodSummary) => void>();
   const menu = (month: PeriodSummary): MenuEntry[] => [{ label: "Show in Finder", onSelect: () => reveal(month) }];
-  const props = { periods: PERIODS, selected, onSelect, running, loading, error, onRetry, onNewMonth, menu, width: 220 };
+  const props = { periods: PERIODS, selected, onSelect, running, loading, error, onRetry, onNewMonth, menu };
   const result = render(<Sidebar {...props} />);
   return { ...result, props, onSelect, onRetry, onNewMonth, reveal };
 }
@@ -73,9 +73,9 @@ describe("Sidebar", () => {
     expect(selected.map((o) => o.id)).toEqual(["month-2030-02"]);
   });
 
-  it("selects a month on click", () => {
+  it("selects a month on press", () => {
     const { onSelect } = renderSidebar();
-    fireEvent.click(screen.getByRole("option", { name: /January/ }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: /January/ }));
     expect(onSelect).toHaveBeenCalledWith({ year: "2030", month: "01" });
     expect(document.activeElement).toBe(screen.getByRole("listbox"));
   });

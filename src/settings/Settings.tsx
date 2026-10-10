@@ -38,6 +38,13 @@ export function Settings() {
   const [error, setError] = useState<{ cause: unknown } | null>(null);
 
   const paneTitle = t(`settings.tabs.${pane}`);
+  /** The pane on screen, and whether the user has moved to another one since the window opened. */
+  const [shownPane, setShownPane] = useState(pane);
+  const [switched, setSwitched] = useState(false);
+  if (pane !== shownPane) {
+    setShownPane(pane);
+    setSwitched(true);
+  }
   useEffect(() => {
     document.title = paneTitle;
     if (!isPreview()) {
@@ -197,10 +204,12 @@ export function Settings() {
               </span>
             </div>
           ) : null}
-          {pane === "general" ? <GeneralTab state={state} save={save} onError={report} /> : null}
-          {pane === "folder" ? <FolderTab state={state} save={save} onError={report} /> : null}
-          {pane === "gemini" ? <GeminiTab state={state} save={save} replace={replace} onError={report} /> : null}
-          {pane === "rules" ? <RulesTab onError={report} readOnly={state.read_only} registerUndo={undoRule} /> : null}
+          <div key={pane} className="pane__view" data-switched={switched || undefined}>
+            {pane === "general" ? <GeneralTab state={state} save={save} onError={report} /> : null}
+            {pane === "folder" ? <FolderTab state={state} save={save} onError={report} /> : null}
+            {pane === "gemini" ? <GeminiTab state={state} save={save} replace={replace} onError={report} /> : null}
+            {pane === "rules" ? <RulesTab onError={report} readOnly={state.read_only} registerUndo={undoRule} /> : null}
+          </div>
         </div>
       </main>
     </div>

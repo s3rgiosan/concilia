@@ -22,9 +22,12 @@
         "dragDropEnabled": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 20, "y": 24 }
+        "trafficLightPosition": { "x": 20, "y": 24 },
+        "transparent": true,
+        "windowEffects": { "effects": ["sidebar"], "state": "followsWindowActiveState" }
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: receipt: http://receipt.localhost; frame-src receipt: http://receipt.localhost; connect-src ipc: http://ipc.localhost"
     }
