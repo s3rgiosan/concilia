@@ -37,7 +37,7 @@ const LUCIDE = {
   globe: "globe",
   sparkles: "sparkles",
   sidebar: "panel-left",
-  inspector: "panel-right",
+  inspector: "info",
   scan: "file-plus",
   clear: "circle-x",
 };
