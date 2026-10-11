@@ -61,6 +61,12 @@
   margin: 10px 12px 0;
 }
 
+/* Each refused file on its own line under the banner's lead sentence. */
+.review__refused-file {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 .review__list {
   position: relative;
   display: flex;

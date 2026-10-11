@@ -151,12 +151,22 @@ export interface StatementRecord {
   added_at: string;
 }
 
+/** A file in the month's folders that Concilia refused to read, with the reason's code. */
+export interface RefusedFile {
+  file: string;
+  rel_path: string | null;
+  /** `file_too_large` or `unrecognized_file`. */
+  code: string;
+}
+
 export interface ReviewData {
   transactions: Transaction[];
   unmatched_receipts: ReceiptMeta[];
   reimbursements: ReceiptMeta[];
   /** The statements the month holds; `get_review` always sends it. */
   statements?: StatementRecord[];
+  /** Files left out of the review because they can't be read. */
+  refused_files: RefusedFile[];
 }
 
 /** What one statement given to `add_statements` contributed. */

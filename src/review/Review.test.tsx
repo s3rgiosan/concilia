@@ -1372,6 +1372,59 @@ describe("scan for new receipts", () => {
     expect(screen.getByText("1 decision was discarded because its receipt is gone: GLOBEX SHOP.")).toBeTruthy();
   });
 
+  describe("files Concilia can't read", () => {
+    const REFUSED = [
+      { file: "/r/2030/03/receipts/scan-archive.pdf", rel_path: "2030/03/receipts/scan-archive.pdf", code: "file_too_large" },
+      { file: "/r/2030/03/receipts/notes.pdf", rel_path: "2030/03/receipts/notes.pdf", code: "unrecognized_file" },
+    ];
+
+    beforeEach(() => {
+      vi.mocked(getReview).mockResolvedValue({ ...DATA, refused_files: REFUSED });
+    });
+
+    it("lists them in a banner, never as receipt rows", async () => {
+      await renderReview();
+      const banner = screen.getByText(/Concilia can't read 2 files in this month's receipts folder:/).closest<HTMLElement>(".banner")!;
+      expect(banner.textContent).toContain("scan-archive.pdf: too large (over 50 MB)");
+      expect(banner.textContent).toContain("notes.pdf: not a PDF or image file");
+      expect(screen.queryAllByText(/scan-archive\.pdf/)).toHaveLength(1);
+      expect(document.querySelector(".receipt-row__title")?.textContent ?? "").not.toMatch(/scan-archive|notes/);
+      expect(screen.queryByRole("button", { name: /Read Again/ })).toBeNull();
+    });
+
+    it("shows the month's folder in Finder", async () => {
+      vi.mocked(revealPeriod).mockResolvedValue(undefined);
+      await renderReview();
+      const banner = screen.getByText(/Concilia can't read/).closest<HTMLElement>(".banner")!;
+      fireEvent.click(button("Show in Finder", banner));
+      expect(revealPeriod).toHaveBeenCalledWith("2030", "03");
+    });
+
+    it("hides after a dismiss and returns when the set of files changes", async () => {
+      const { commands } = await renderReview();
+      const banner = screen.getByText(/Concilia can't read/).closest<HTMLElement>(".banner")!;
+      fireEvent.click(button("Dismiss", banner));
+      expect(screen.queryByText(/Concilia can't read/)).toBeNull();
+
+      vi.mocked(getReview).mockResolvedValue({ ...DATA, refused_files: REFUSED.slice(0, 1) });
+      act(() => commands().scan());
+      await settle();
+      expect(screen.getByText(/Concilia can't read 1 file in this month's receipts folder:/)).toBeTruthy();
+    });
+
+    it("adds a line to the Finalize sheet", async () => {
+      await renderReview();
+      fireEvent.click(button("Finalize…", toolbar()));
+      expect(within(screen.getByRole("alertdialog")).getByText("2 files stay in the receipts folder because Concilia can't read them.")).toBeTruthy();
+    });
+
+    it("shows no banner when every file can be read", async () => {
+      vi.mocked(getReview).mockResolvedValue(DATA);
+      await renderReview();
+      expect(screen.queryByText(/Concilia can't read/)).toBeNull();
+    });
+  });
+
   it("shows a failed scan until closed", async () => {
     const run = scanRun();
     await renderReview();

@@ -108,6 +108,7 @@ pub fn receipt_meta(
         vendor: Some(vendor.to_string()),
         date: Some("2030-03-01".into()),
         provider_used: Some("gemini".into()),
+        refused: None,
         extra: Default::default(),
     }
 }

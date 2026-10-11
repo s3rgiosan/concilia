@@ -78,7 +78,7 @@ export function makeTransaction(id: string, patch: Partial<Transaction> = {}): T
 }
 
 export function makeReviewData(patch: Partial<ReviewData> = {}): ReviewData {
-  return { transactions: [], unmatched_receipts: [], reimbursements: [], ...patch };
+  return { transactions: [], unmatched_receipts: [], reimbursements: [], refused_files: [], ...patch };
 }
 
 export function makePeriodStatus(patch: Partial<PeriodStatus> = {}): PeriodStatus {

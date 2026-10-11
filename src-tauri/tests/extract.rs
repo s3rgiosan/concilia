@@ -222,7 +222,10 @@ async fn a_refused_file_is_not_retried() {
     )
     .await
     .unwrap();
-    assert_eq!(result, vec![unread(&list[0], "error")]);
+    assert_eq!(
+        result,
+        vec![ReceiptMeta::refused(&list[0], "unrecognized_file")]
+    );
     assert_eq!(extractor.0.load(Ordering::SeqCst), 1);
 }
 

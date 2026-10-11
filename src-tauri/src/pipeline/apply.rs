@@ -2,7 +2,7 @@
 
 use std::path::{Component, Path};
 
-use super::{create_dir, io, read_cache, PipelineError};
+use super::{create_dir, io, read_reimbursements, PipelineError};
 use crate::dates::time_now_iso;
 use crate::excel;
 use crate::finalize::{self, Move};
@@ -35,7 +35,7 @@ pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineE
     let merged =
         merge_draft(&result, &draft).map_err(|e| PipelineError::InvalidInput(e.to_string()))?;
     let unmatched = effective_unmatched(&result, &merged);
-    let reimbursements: Vec<ReceiptMeta> = read_cache(&paths.reimbursements_cache());
+    let reimbursements: Vec<ReceiptMeta> = read_reimbursements(paths);
 
     let plan = finalize::plan(
         &merged,

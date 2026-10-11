@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::periods::read_statements;
-use super::{io, read_cache, PipelineError};
+use super::{io, read_cache, read_reimbursements, PipelineError};
 use crate::excel;
 use crate::finalize::TRANSIENT_FIELDS;
 use crate::fsutil::{read_json_lenient, read_json_opt};
@@ -66,6 +66,15 @@ pub struct ReviewTransaction {
     pub extra: Map<String, Value>,
 }
 
+/// A file in the receipts or reimbursements folder that Concilia refused to read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RefusedFile {
+    pub file: String,
+    pub rel_path: Option<String>,
+    /// Why it was refused, such as `file_too_large`.
+    pub code: String,
+}
+
 /// What the review screen loads.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReviewData {
@@ -73,6 +82,7 @@ pub struct ReviewData {
     pub unmatched_receipts: Vec<ReceiptView>,
     pub reimbursements: Vec<ReceiptView>,
     pub statements: Vec<StatementRecord>,
+    pub refused_files: Vec<RefusedFile>,
 }
 
 /// Writes the report from the match result with pending review decisions applied, and
@@ -92,7 +102,7 @@ pub fn export_report(paths: &PeriodPaths, language: Language) -> Result<PathBuf,
             result
         }
     };
-    let reimbursements = read_cache(&paths.reimbursements_cache());
+    let reimbursements = read_reimbursements(paths);
     write_report(&shown, &reimbursements, language, &paths.report())?;
     Ok(paths.report())
 }
@@ -111,12 +121,28 @@ pub fn review_data(paths: &PeriodPaths) -> Result<ReviewData, PipelineError> {
     Ok(ReviewData {
         transactions,
         unmatched_receipts: result.unmatched_receipts.into_iter().map(&view).collect(),
-        reimbursements: read_cache(&paths.reimbursements_cache())
-            .into_iter()
-            .map(&view)
-            .collect(),
+        reimbursements: read_reimbursements(paths).into_iter().map(&view).collect(),
         statements: read_statements(paths),
+        refused_files: refused_files(paths),
     })
+}
+
+/// The files the last extraction refused that are still in the period, receipts first. A file
+/// the user has since removed is left out.
+fn refused_files(paths: &PeriodPaths) -> Vec<RefusedFile> {
+    [paths.receipts_cache(), paths.reimbursements_cache()]
+        .iter()
+        .flat_map(|cache| read_cache(cache))
+        .filter_map(|meta| {
+            let code = meta.refused.clone()?;
+            let exists = Path::new(&meta.file).is_file();
+            exists.then(|| RefusedFile {
+                rel_path: paths.relative(&meta.file),
+                file: meta.file,
+                code,
+            })
+        })
+        .collect()
 }
 
 fn review_transaction(

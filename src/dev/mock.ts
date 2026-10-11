@@ -2,7 +2,8 @@
 // designed and checked in a plain browser. All names and data here are fabricated.
 //
 // Pick a scenario with `?mock=<name>`: first-run (default), configured, resume, applied, busy,
-// update, read-only, load-error, run-error, slow. run-error fails every reconcile, scan and added
+// update, read-only, load-error, run-error, slow, refused (a month in review with two files Concilia
+// can't read). run-error fails every reconcile, scan and added
 // statement; slow reads one receipt every two seconds. `?lang=en|pt` saves that language in the
 // settings.
 
@@ -17,6 +18,7 @@ import type {
   PeriodState,
   PeriodSummary,
   ReceiptMeta,
+  RefusedFile,
   ReviewData,
   Rule,
   RunEvent,
@@ -74,6 +76,11 @@ function tx(index: number, date: string, description: string, cents: number, sta
   };
 }
 
+const REFUSED_FILES: RefusedFile[] = [
+  { file: `${ROOT}/2030/03/receipts/scan-archive.pdf`, rel_path: "2030/03/receipts/scan-archive.pdf", code: "file_too_large" },
+  { file: `${ROOT}/2030/03/receipts/notes.pdf`, rel_path: "2030/03/receipts/notes.pdf", code: "unrecognized_file" },
+];
+
 function reviewData(): ReviewData {
   const acme = receipt("acme-invoice.pdf", 1000, "ACME Corp", "2030-03-01");
   const globexA = receipt("globex-a.pdf", 2500, "Globex", "2030-03-03");
@@ -91,6 +98,7 @@ function reviewData(): ReviewData {
       tx(6, "2030-03-15", "TRANSFER FROM ACME", 50000, "UNMATCHED", [], ""),
     ],
     unmatched_receipts: [hooli, unreadable],
+    refused_files: [],
     reimbursements: [
       { ...receipt("taxi.pdf", 1250, "Taxi Co", "2030-03-07"), file: `${ROOT}/2030/03/reimbursements/taxi.pdf`, rel_path: "2030/03/reimbursements/taxi.pdf" },
     ],
@@ -122,7 +130,7 @@ function monthKey(now: Date, offset: number): string {
  * finalized; the other configured scenarios leave it with receipts waiting for statements.
  */
 function initialPeriods(scenario: string, now: Date): Map<string, PeriodSummary> {
-  const first: Record<string, PeriodState> = { resume: "in_review", applied: "finalized" };
+  const first: Record<string, PeriodState> = { resume: "in_review", refused: "in_review", applied: "finalized" };
   const rows: [number, PeriodState, number, number, number][] = [
     [1, first[scenario] ?? "ready", 38, first[scenario] ? 42 : 0, scenario === "resume" ? pendingWith({}) : 0],
     [2, "in_review", 31, 40, 4],
@@ -269,6 +277,7 @@ export function install(): void {
           return {
             ...reviewData(),
             statements: [{ file: "extrato-2030-03.pdf", bank: "cgd", transactions: 6, added_at: "2030-04-01T09:00:00Z" }],
+            refused_files: scenario === "refused" ? REFUSED_FILES : [],
           };
         case "get_draft":
           return draft;

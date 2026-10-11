@@ -84,6 +84,8 @@ struct FakeExtractor {
     calls: Mutex<Vec<String>>,
     behaviour: Mutex<Behaviour>,
     delay: Duration,
+    /// Refusal codes by file name, as a file check gives them.
+    refusals: Mutex<HashMap<String, &'static str>>,
 }
 
 impl FakeExtractor {
@@ -97,7 +99,17 @@ impl FakeExtractor {
             calls: Mutex::new(Vec::new()),
             behaviour: Mutex::new(Behaviour::Read),
             delay,
+            refusals: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Makes the named file come back refused with `code`.
+    fn refuses(&self, name: &str, code: &'static str) {
+        self.refusals.lock().unwrap().insert(name.to_string(), code);
+    }
+
+    fn accepts(&self, name: &str) {
+        self.refusals.lock().unwrap().remove(name);
     }
 
     fn knows(&self, name: &str, amount_cents: i64, vendor: &str) {
@@ -127,6 +139,13 @@ impl FakeExtractor {
 impl ReceiptExtractor for FakeExtractor {
     async fn extract(&self, file: &Path) -> Result<ReceiptMeta, ExtractError> {
         let name = file.file_name().unwrap().to_string_lossy().into_owned();
+        let refusal = self.refusals.lock().unwrap().get(&name).copied();
+        if let Some(code) = refusal {
+            return Err(ExtractError::Rejected {
+                code,
+                message: format!("{name} is refused"),
+            });
+        }
         self.calls.lock().unwrap().push(name.clone());
         let behaviour = *self.behaviour.lock().unwrap();
         match behaviour {
@@ -2082,7 +2101,8 @@ fn review_data_has_a_stable_json_shape() {
                 "bank": "cgd",
                 "transactions": 3,
                 "added_at": "2030-04-01T00:00:00Z"
-            }]
+            }],
+            "refused_files": []
         })
     );
 }
@@ -2131,4 +2151,161 @@ fn saves_reads_and_deletes_drafts() {
     pipeline::delete_draft(&paths).unwrap();
     assert!(!paths.draft().exists());
     assert!(pipeline::read_draft(&paths).unwrap().is_empty());
+}
+
+// Refused files.
+
+/// The standard period plus a receipt the extractor refuses.
+async fn reconciled_with_refused(h: &Harness, code: &'static str) -> String {
+    let statement = h.standard();
+    let refused = h.receipt("huge.pdf");
+    h.extractor.refuses("huge.pdf", code);
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    refused
+}
+
+#[tokio::test]
+async fn a_refused_file_takes_no_part_in_matching_or_counts() {
+    let h = Harness::new();
+    let refused = reconciled_with_refused(&h, "file_too_large").await;
+
+    let result = h.match_result();
+    assert!(!files(&result.unmatched_receipts).contains(&refused));
+    assert!(!result.receipts_by_status.unmatched.contains(&refused));
+    assert!(!result.receipts_by_status.review.contains(&refused));
+
+    let rows = report_rows(&h.paths.report(), "Unmatched");
+    let text = format!("{rows:?}");
+    assert!(!text.contains("huge.pdf"), "{text}");
+}
+
+#[tokio::test]
+async fn reconcile_reports_the_readable_receipts_only() {
+    let h = Harness::new();
+    let statement = h.standard();
+    h.receipt("huge.pdf");
+    h.extractor.refuses("huge.pdf", "file_too_large");
+
+    let summary = pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+
+    assert_eq!(summary, standard_summary());
+}
+
+#[tokio::test]
+async fn refused_files_are_listed_in_the_review_data_with_their_code() {
+    let h = Harness::new();
+    let refused = reconciled_with_refused(&h, "unrecognized_file").await;
+
+    let data = serde_json::to_value(pipeline::review_data(&h.paths).unwrap()).unwrap();
+
+    assert_eq!(
+        data["refused_files"],
+        json!([{
+            "file": refused,
+            "rel_path": "2030/03/receipts/huge.pdf",
+            "code": "unrecognized_file"
+        }])
+    );
+    let rows = data["unmatched_receipts"].to_string();
+    assert!(!rows.contains("huge.pdf"), "{rows}");
+}
+
+#[tokio::test]
+async fn a_refused_file_is_not_cached_as_a_read() {
+    let h = Harness::new();
+    let refused = reconciled_with_refused(&h, "file_too_large").await;
+
+    let cached = h.receipts_cache();
+    let entry = cached.iter().find(|r| r.file == refused).unwrap();
+    assert_eq!(entry.refused.as_deref(), Some("file_too_large"));
+    assert_ne!(entry.confidence.as_deref(), Some("high"));
+}
+
+#[tokio::test]
+async fn a_replaced_file_is_read_on_the_next_scan() {
+    let h = Harness::new();
+    let refused = reconciled_with_refused(&h, "file_too_large").await;
+    h.extractor.take_calls();
+
+    h.extractor.accepts("huge.pdf");
+    h.extractor.knows("huge.pdf", 2000, "GLOBEX");
+    let outcome = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert_eq!(h.extractor.take_calls(), ["huge.pdf"]);
+    assert_eq!(outcome.new_receipts, 0);
+    let data = pipeline::review_data(&h.paths).unwrap();
+    assert!(data.refused_files.is_empty());
+    let result = h.match_result();
+    let all: Vec<&str> = result
+        .transactions
+        .iter()
+        .flat_map(|tx| tx.receipt_meta.iter())
+        .chain(&result.unmatched_receipts)
+        .map(|r| r.file.as_str())
+        .collect();
+    assert!(all.contains(&refused.as_str()), "{all:?}");
+}
+
+#[tokio::test]
+async fn a_still_refused_file_is_checked_again_on_the_next_scan() {
+    let h = Harness::new();
+    reconciled_with_refused(&h, "file_too_large").await;
+
+    pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    let data = pipeline::review_data(&h.paths).unwrap();
+    assert_eq!(data.refused_files.len(), 1);
+    assert_eq!(data.refused_files[0].code, "file_too_large");
+}
+
+#[tokio::test]
+async fn a_refused_file_that_was_removed_is_no_longer_listed() {
+    let h = Harness::new();
+    let refused = reconciled_with_refused(&h, "file_too_large").await;
+
+    std::fs::remove_file(&refused).unwrap();
+
+    assert!(pipeline::review_data(&h.paths)
+        .unwrap()
+        .refused_files
+        .is_empty());
+}
+
+#[tokio::test]
+async fn finalizing_leaves_a_refused_file_in_place() {
+    let h = Harness::new();
+    let refused = reconciled_with_refused(&h, "file_too_large").await;
+
+    pipeline::finalize(&h.paths, Language::En).unwrap();
+
+    assert!(Path::new(&refused).is_file());
+    assert!(!h.paths.receipts.join("_unmatched/huge.pdf").exists());
+}
+
+#[tokio::test]
+async fn rescanning_a_refused_file_returns_its_code_without_calling_the_reader() {
+    let h = Harness::new();
+    reconciled_with_refused(&h, "unrecognized_file").await;
+    h.extractor.take_calls();
+    let file =
+        pipeline::resolve_period_file(&h.paths, RescanKind::Receipt, "2030/03/receipts/huge.pdf")
+            .unwrap();
+    let locks = PeriodLocks::new();
+
+    let error = pipeline::rescan(
+        &h.paths,
+        &h.extractor,
+        RescanKind::Receipt,
+        &file,
+        &locks.write_lock(&period()),
+    )
+    .await
+    .unwrap_err();
+
+    assert_code(&error, "unrecognized_file");
+    assert_eq!(h.extractor.call_count(), 0);
 }

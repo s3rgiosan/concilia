@@ -11,8 +11,8 @@ use serde::Serialize;
 use super::draft::{clean_saved_draft, match_keeping_draft};
 use super::report::write_report;
 use super::{
-    check_statement, create_dir, not_pdf, off_thread, read_cache, read_statements, reset_period,
-    PipelineError, RunContext, RunEvent, StatementFile,
+    check_statement, create_dir, not_pdf, off_thread, read_cache, read_statements, readable,
+    reset_period, PipelineError, RunContext, RunEvent, StatementFile,
 };
 use crate::bank::{append_statements, normalize_statements, Bank};
 use crate::dates::time_now_iso;
@@ -425,7 +425,8 @@ async fn extract_to_cache(
     }
 }
 
-/// Extracts the receipts in the period's `receipts/` folder, through the cache.
+/// Extracts the receipts in the period's `receipts/` folder, through the cache. Files refused
+/// before reading stay in the cache, where the review lists them, and are not returned.
 async fn extract_receipts(
     ctx: &RunContext<'_>,
     force: bool,
@@ -442,7 +443,7 @@ async fn extract_receipts(
     )
     .await?;
     ctx.check_cancelled()?;
-    Ok(receipts)
+    Ok(readable(receipts))
 }
 
 /// Matches the receipts against the transactions, keeping draft decisions, and writes
@@ -482,7 +483,8 @@ async fn extract_and_match(
     .map_err(PipelineError::from)
 }
 
-/// Extracts the receipts in `reimbursements/`, which no transaction matches.
+/// Extracts the receipts in `reimbursements/`, which no transaction matches. Refused files
+/// are not returned.
 async fn extract_reimbursements(
     ctx: &RunContext<'_>,
     force: bool,
@@ -502,10 +504,11 @@ async fn extract_reimbursements(
         .await??;
         return Ok(Vec::new());
     }
-    extract_to_cache(ctx, &files, &cache_path, force, |current, total| {
+    let reimbursements = extract_to_cache(ctx, &files, &cache_path, force, |current, total| {
         RunEvent::ExtractingReimbursements { current, total }
     })
-    .await
+    .await?;
+    Ok(readable(reimbursements))
 }
 
 fn no_bank_match() -> PipelineError {

@@ -211,6 +211,16 @@ fn read_cache(path: &Path) -> Vec<ReceiptMeta> {
     read_json_lenient(path).unwrap_or_default()
 }
 
+/// The receipts that were read or tried, without those refused before reading.
+fn readable(receipts: Vec<ReceiptMeta>) -> Vec<ReceiptMeta> {
+    receipts.into_iter().filter(|r| !r.is_refused()).collect()
+}
+
+/// The cached reimbursements that were read or tried.
+fn read_reimbursements(paths: &PeriodPaths) -> Vec<ReceiptMeta> {
+    readable(read_cache(&paths.reimbursements_cache()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

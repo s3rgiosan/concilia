@@ -59,8 +59,27 @@ pub struct ReceiptMeta {
     pub date: Option<String>,
     #[serde(default)]
     pub provider_used: Option<String>,
+    /// Why the file was not sent to Gemini, such as `file_too_large`; absent for a file that
+    /// was read or tried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+impl ReceiptMeta {
+    /// Metadata for a file that was refused before reading, with the refusal `code`.
+    pub fn refused(file: &str, code: &str) -> ReceiptMeta {
+        ReceiptMeta {
+            file: file.to_string(),
+            refused: Some(code.to_string()),
+            ..Default::default()
+        }
+    }
+
+    pub fn is_refused(&self) -> bool {
+        self.refused.is_some()
+    }
 }
 
 /// A transaction in `match-result.json`, with its matched or candidate receipts.

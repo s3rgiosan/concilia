@@ -10,7 +10,7 @@ afterEach(() => {
 
 const COUNTS: FinalizeCounts = { matched: 31, review: 2, unmatched: 5, total: 38 };
 
-function renderSheet({ counts = COUNTS, pending = 0, busy = false } = {}) {
+function renderSheet({ counts = COUNTS, pending = 0, refused = 0, busy = false } = {}) {
   const onCancel = vi.fn();
   const onConfirm = vi.fn();
   const onReviewRemaining = vi.fn();
@@ -19,6 +19,7 @@ function renderSheet({ counts = COUNTS, pending = 0, busy = false } = {}) {
       period="March 2030"
       counts={counts}
       pending={pending}
+      refused={refused}
       busy={busy}
       onCancel={onCancel}
       onConfirm={onConfirm}
@@ -44,6 +45,17 @@ describe("FinalizeSheet", () => {
     expect(finalizeButton().classList.contains("destructive")).toBe(true);
     expect(finalizeButton().disabled).toBe(false);
     expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("says how many unreadable files stay in the receipts folder, only when there are some", () => {
+    renderSheet({ refused: 2 });
+    expect(screen.getByText("2 files stay in the receipts folder because Concilia can't read them.")).toBeTruthy();
+    cleanup();
+    renderSheet({ refused: 1 });
+    expect(screen.getByText("1 file stays in the receipts folder because Concilia can't read it.")).toBeTruthy();
+    cleanup();
+    renderSheet();
+    expect(screen.queryByText(/can't read/)).toBeNull();
   });
 
   it("makes Cancel the default button", () => {

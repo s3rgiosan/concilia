@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Banner } from "../components/Banner";
-import { openReport, revealPeriod, type DroppedDecision } from "../lib/tauri";
+import { fileName } from "../lib/paths";
+import { openReport, revealPeriod, type DroppedDecision, type RefusedFile } from "../lib/tauri";
 import { periodLabel, type Period } from "../lib/period";
 import type { Notice } from "./notices";
 
@@ -10,14 +11,17 @@ export interface ReviewBannersProps {
   finalized: boolean;
   notice: Notice | null;
   dropped: DroppedDecision[];
+  /** Files Concilia refused to read. */
+  refused: RefusedFile[];
   onDismissFinalized: () => void;
   onDismissNotice: () => void;
   onDismissDropped: () => void;
+  onDismissRefused: () => void;
   onError: (e: unknown) => void;
 }
 
-/** The messages over the list: the completion of Finalize, a notice, and the decisions a run dropped. */
-export function ReviewBanners({ period, finalized, notice, dropped, onDismissFinalized, onDismissNotice, onDismissDropped, onError }: ReviewBannersProps) {
+/** The messages over the list: the completion of Finalize, a notice, the decisions a run dropped, and the files Concilia can't read. */
+export function ReviewBanners({ period, finalized, notice, dropped, refused, onDismissFinalized, onDismissNotice, onDismissDropped, onDismissRefused, onError }: ReviewBannersProps) {
   const { t } = useTranslation();
   const { year, month } = period;
   return (
@@ -50,6 +54,29 @@ export function ReviewBanners({ period, finalized, notice, dropped, onDismissFin
       {dropped.length > 0 ? (
         <Banner tone="warn" icon="warning" className="review__banner" onDismiss={onDismissDropped}>
           {t("review.scanDroppedBanner", { count: dropped.length, names: dropped.map((d) => d.description).join(", ") })}
+        </Banner>
+      ) : null}
+      {refused.length > 0 ? (
+        <Banner
+          tone="warn"
+          icon="warning"
+          className="review__banner"
+          onDismiss={onDismissRefused}
+          actions={
+            <button type="button" className="banner__action" onClick={() => revealPeriod(year, month).catch(onError)}>
+              {t("month.showInFinder")}
+            </button>
+          }
+        >
+          {t("review.refusedBanner", { count: refused.length })}
+          {refused.map((file) => (
+            <span key={file.file} className="review__refused-file">
+              {t("review.refusedFile", {
+                name: fileName(file.file),
+                reason: t(`review.refusedReason.${file.code}`, { defaultValue: t("review.refusedReason.other") }),
+              })}
+            </span>
+          ))}
         </Banner>
       ) : null}
     </>

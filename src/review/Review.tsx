@@ -83,6 +83,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const [notice, setNotice] = useState<Notice | null>(null);
   const [detailsWidth, setDetailsWidth] = useStoredWidth("review.detailsWidth", DETAILS_WIDTH.initial, DETAILS_WIDTH.min, DETAILS_WIDTH.max);
   const [adding, setAdding] = useState<Adding | null>(null);
+  /** The refused files whose banner was dismissed; a different set shows it again. */
+  const [dismissedRefused, setDismissedRefused] = useState("");
 
   const { data, applied, ready, loadError, load, history, draft, setDirty, autosave, rescanning, rescan } = useReviewData({
     year,
@@ -102,6 +104,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     clearAdding: () => setAdding(null),
   });
   const jobState = job.state;
+  const refused = data?.refused_files ?? [];
+  const refusedKey = refused.map((f) => `${f.file}:${f.code}`).join("|");
 
   const list = useReviewList(data, draft);
   const { filter, search, merged, claimed, pool, counts, pending, rows, reimbursementTotal, edited, selected, selectedIndex, selectedTx, receipts, focused } = list;
@@ -501,9 +505,11 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
           finalized={applied && justFinalized}
           notice={notice}
           dropped={dropped}
+          refused={refusedKey === dismissedRefused ? [] : refused}
           onDismissFinalized={() => setJustFinalized(false)}
           onDismissNotice={() => setNotice(null)}
           onDismissDropped={() => setDropped([])}
+          onDismissRefused={() => setDismissedRefused(refusedKey)}
           onError={onError}
         />
         <div className="review__list">
@@ -599,6 +605,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
             period={periodLabel(period, t)}
             counts={finalizeCounts(data, merged)}
             pending={pending}
+            refused={refused.length}
             busy={finalizing}
             onCancel={() => setConfirmFinalize(false)}
             onConfirm={runFinalize}

@@ -11,6 +11,7 @@ export function FinalizeSheet({
   period,
   counts,
   pending,
+  refused,
   busy,
   onCancel,
   onConfirm,
@@ -21,6 +22,8 @@ export function FinalizeSheet({
   counts: FinalizeCounts;
   /** Transactions still needing a decision. */
   pending: number;
+  /** Files left in the receipts folder because Concilia can't read them. */
+  refused: number;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -42,6 +45,7 @@ export function FinalizeSheet({
       message={
         <>
           <span className="sheet__line">{moves}</span>
+          {refused > 0 ? <span className="sheet__line">{t("review.finalizeConfirm.refused", { count: refused })}</span> : null}
           <span className="sheet__line">{t("review.finalizeConfirm.report")}</span>
           <span className="sheet__line">{t("review.finalizeConfirm.later")}</span>
         </>

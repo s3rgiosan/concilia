@@ -104,6 +104,7 @@ fn found(file: &str, extracted: Extracted) -> ReceiptMeta {
         vendor: extracted.vendor,
         date: extracted.date,
         provider_used: Some("gemini".into()),
+        refused: None,
         extra: Default::default(),
     }
 }
@@ -295,9 +296,9 @@ async fn extract_one(
                 log::debug!("no amount on attempt {number}: {file}");
             }
             Err(ExtractError::Fatal(message)) => return Err(ExtractAllError::Fatal(message)),
-            Err(ExtractError::Rejected { message, .. }) => {
+            Err(ExtractError::Rejected { code, message }) => {
                 log::warn!("not reading {file}: {message}");
-                return Ok(unread(file, "error"));
+                return Ok(ReceiptMeta::refused(file, code));
             }
             Err(ExtractError::Failed(message)) => {
                 log::warn!("attempt {number} failed for {file}: {message}")
