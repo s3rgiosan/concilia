@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { ActionPopUpButton } from "../components/PopUpButton";
@@ -6,41 +7,44 @@ import { shortDate } from "../lib/dates";
 import { formatMoney } from "../lib/money";
 import { popUpMenu, type MenuEntry } from "../lib/popUpMenu";
 import type { ReceiptMeta } from "../lib/tauri";
-import type { Mismatch } from "./effective";
+import { mismatch as amountDifference } from "./effective";
 import { receiptTitle } from "./receipts";
 
 /**
  * A receipt in the details column: vendor, amount, date and file, with a note when its amount
  * differs from the transaction's. Clicking it shows it in the preview below, and an eye marks the
  * one shown. Its `•••` menu and its context menu read it again or open it in Preview; `action` is
- * the decision button at the end. A receipt Gemini couldn't read says so under it, with Read
- * Again unless it is read-only. A read-only receipt cannot be read again.
+ * the Assign button at the end when `onAssign` is given. A receipt Gemini couldn't read says so
+ * under it, with Read Again unless it is read-only. A read-only receipt cannot be read again.
+ * Memoized: its handlers take the receipt, so a list passes the same functions to every row.
  */
-export function ReceiptRow({
+export const ReceiptRow = memo(function ReceiptRow({
   receipt,
   focused,
-  mismatch,
+  txAbsCents,
   rescanning,
   readOnly,
-  action,
+  onAssign,
   onFocus,
   onRescan,
   onOpen,
 }: {
   receipt: ReceiptMeta;
   focused: boolean;
-  mismatch: Mismatch | null;
+  /** The transaction's amount in cents, which the receipt's amount is compared with; null for none. */
+  txAbsCents: number | null;
   rescanning: boolean;
   readOnly?: boolean;
-  action?: { label: string; accessibleName: string; onClick: () => void };
-  onFocus: () => void;
-  onRescan: () => void;
-  onOpen: () => void;
+  onAssign?: (receipt: ReceiptMeta) => void;
+  onFocus: (receipt: ReceiptMeta) => void;
+  onRescan: (receipt: ReceiptMeta) => void;
+  onOpen: (receipt: ReceiptMeta) => void;
 }) {
   const { t, i18n } = useTranslation();
   const title = receiptTitle(receipt);
   const unreadable = receipt.amount_cents === null;
   const canRescan = !readOnly && !rescanning && Boolean(receipt.rel_path);
+  const mismatch = txAbsCents === null ? null : amountDifference(receipt, txAbsCents);
   let difference: string | null = null;
   switch (mismatch?.kind) {
     case "amount":
@@ -53,19 +57,19 @@ export function ReceiptRow({
       break;
   }
   const actions: MenuEntry[] = [
-    { label: t("review.actions.rescan"), onSelect: onRescan, disabled: !canRescan },
-    { label: t("review.openInPreview"), onSelect: onOpen, disabled: !receipt.rel_path },
+    { label: t("review.actions.rescan"), onSelect: () => onRescan(receipt), disabled: !canRescan },
+    { label: t("review.openInPreview"), onSelect: () => onOpen(receipt), disabled: !receipt.rel_path },
   ];
   return (
     <li
       className={`receipt-row ${focused ? "receipt-row--focused" : ""}`}
       onContextMenu={(e) => {
         e.preventDefault();
-        onFocus();
+        onFocus(receipt);
         void popUpMenu(actions, { x: e.clientX, y: e.clientY });
       }}
     >
-      <button type="button" className="receipt-row__main" aria-pressed={focused} onClick={onFocus}>
+      <button type="button" className="receipt-row__main" aria-pressed={focused} onClick={() => onFocus(receipt)}>
         <span className="receipt-row__marker" aria-hidden="true">
           {focused ? <Icon name="eye" size={12} /> : null}
         </span>
@@ -92,9 +96,9 @@ export function ReceiptRow({
       <span className="receipt-row__actions">
         {rescanning ? <span className="spinner receipt-row__spinner" role="status" aria-label={t("review.rescanning")} /> : null}
         <ActionPopUpButton borderless label={t("review.receiptActions", { name: title })} actions={actions} />
-        {action ? (
-          <button type="button" data-details-action aria-label={action.accessibleName} onClick={action.onClick}>
-            {action.label}
+        {onAssign ? (
+          <button type="button" data-details-action aria-label={t("review.assignReceipt", { name: title })} onClick={() => onAssign(receipt)}>
+            {t("review.actions.assign")}
           </button>
         ) : null}
       </span>
@@ -103,7 +107,7 @@ export function ReceiptRow({
           <Icon name="warning" size={12} className="receipt-row__warning" />
           <span className="grow">{t("review.unreadable")}</span>
           {readOnly ? null : (
-            <button type="button" onClick={onRescan} disabled={!canRescan} aria-label={t("review.readAgainNamed", { name: title })}>
+            <button type="button" onClick={() => onRescan(receipt)} disabled={!canRescan} aria-label={t("review.readAgainNamed", { name: title })}>
               {t("review.actions.rescan")}
             </button>
           )}
@@ -111,4 +115,4 @@ export function ReceiptRow({
       ) : null}
     </li>
   );
-}
+});

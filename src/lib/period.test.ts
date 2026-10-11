@@ -138,7 +138,8 @@ describe("groupByYear", () => {
 });
 
 describe("periodInSentence", () => {
-  it("writes the month in lower case in Portuguese only", () => {
+  it("writes the month in lower case in Portuguese only", async () => {
+    await i18n.loadLanguages("pt");
     expect(periodInSentence({ year: "2030", month: "03" }, i18n.t, "en")).toBe("March 2030");
     expect(periodInSentence({ year: "2030", month: "03" }, i18n.getFixedT("pt"), "pt")).toBe("março de 2030");
   });

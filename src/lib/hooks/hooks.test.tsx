@@ -55,6 +55,29 @@ describe("useAppState", () => {
     expect(changeLanguage).toHaveBeenCalledWith("en");
   });
 
+  it("starts from the state read at launch and does not read it again", async () => {
+    const view = makeView();
+    const { result } = renderHook(() => useAppState(view));
+    expect(result.current.state).toBe(view);
+    await act(async () => undefined);
+    expect(getAppState).not.toHaveBeenCalled();
+
+    const next = makeView({ settings: makeSettings({ language: "en", receipts_root: "/Users/example/Other" }) });
+    vi.spyOn(i18n, "changeLanguage").mockResolvedValue(i18n.t);
+    act(() => pushSettings(next));
+    expect(result.current.state).toEqual(next);
+  });
+
+  it("reads the state again on reload even when it started from one", async () => {
+    vi.spyOn(i18n, "changeLanguage").mockResolvedValue(i18n.t);
+    const next = makeView({ configured: false });
+    vi.mocked(getAppState).mockResolvedValue(next);
+    const { result } = renderHook(() => useAppState(makeView()));
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.state).toEqual(next));
+    expect(getAppState).toHaveBeenCalledTimes(1);
+  });
+
   it("replaces the state on settings-changed and applies the new language", async () => {
     const changeLanguage = vi.spyOn(i18n, "changeLanguage").mockResolvedValue(i18n.t);
     vi.mocked(getAppState).mockResolvedValue(makeView());

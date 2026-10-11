@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use concilia_lib::extract::{
-    extract_all, unread, ExtractAllError, ExtractError, ExtractOptions, ReceiptExtractor,
+    extract_all, unread, ExtractAllError, ExtractError, ExtractOptions, Prepared, ReceiptExtractor,
 };
 use concilia_lib::model::ReceiptMeta;
 use tokio::time::Instant;
@@ -137,6 +137,119 @@ fn files(names: &[&str]) -> Vec<String> {
 }
 
 fn ignore_progress(_: usize) {}
+
+/// Counts how often each file is prepared and read, preparing once per file.
+#[derive(Default)]
+struct Preparing {
+    prepared: Mutex<Vec<String>>,
+    attempts: AtomicUsize,
+}
+
+#[async_trait]
+impl ReceiptExtractor for Preparing {
+    async fn prepare(&self, file: &Path) -> Result<Prepared, ExtractError> {
+        self.prepared
+            .lock()
+            .unwrap()
+            .push(file.to_string_lossy().into_owned());
+        Ok(Prepared::default())
+    }
+
+    async fn extract_prepared(
+        &self,
+        file: &Path,
+        _prepared: &Prepared,
+    ) -> Result<ReceiptMeta, ExtractError> {
+        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
+        let name = file.to_string_lossy();
+        Ok(match attempt {
+            3 => found(&name, 1000),
+            _ => unread(&name, "gemini"),
+        })
+    }
+
+    async fn extract(&self, _file: &Path) -> Result<ReceiptMeta, ExtractError> {
+        unreachable!("extract_all prepares once and reads the prepared file")
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn each_file_is_prepared_once_for_all_its_attempts() {
+    let list = files(&["acme"]);
+    let extractor = Preparing::default();
+    let result = extract_all(
+        &list,
+        &[],
+        false,
+        &extractor,
+        &ExtractOptions::default(),
+        &ignore_progress,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result[0].amount_cents, Some(1000));
+    assert_eq!(extractor.attempts.load(Ordering::SeqCst), 3);
+    assert_eq!(*extractor.prepared.lock().unwrap(), list);
+}
+
+/// Refuses every file as one that is not a receipt.
+struct Refusing(AtomicUsize);
+
+#[async_trait]
+impl ReceiptExtractor for Refusing {
+    async fn extract(&self, _file: &Path) -> Result<ReceiptMeta, ExtractError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Err(ExtractError::Rejected {
+            code: "unrecognized_file",
+            message: "EXAMPLE REFUSAL".into(),
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_refused_file_is_not_retried() {
+    let list = files(&["acme"]);
+    let extractor = Refusing(AtomicUsize::new(0));
+    let result = extract_all(
+        &list,
+        &[],
+        false,
+        &extractor,
+        &ExtractOptions::default(),
+        &ignore_progress,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result, vec![unread(&list[0], "error")]);
+    assert_eq!(extractor.0.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn cache_hits_are_reported_together_before_extraction() {
+    let list = files(&["a", "b", "c", "d"]);
+    let cache = vec![
+        found(&list[0], 100),
+        found(&list[2], 300),
+        found(&list[3], 400),
+    ];
+    let fake = Fake::new();
+    let progress = Mutex::new(Vec::new());
+    extract_all(
+        &list,
+        &cache,
+        false,
+        &fake,
+        &ExtractOptions::default(),
+        &|done| progress.lock().unwrap().push(done),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(*progress.lock().unwrap(), vec![3, 4]);
+    assert_eq!(fake.total_calls(), 1);
+}
 
 async fn run(
     files: &[String],

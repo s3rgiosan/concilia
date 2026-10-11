@@ -21,7 +21,7 @@ export const ERROR_KINDS = [
 
 export type ErrorKind = (typeof ERROR_KINDS)[number];
 
-/** Known cases the backend marks with a `code`, as set in src-tauri/src/pipeline.rs. */
+/** Known cases the backend marks with a `code`. */
 export const ERROR_CODES = [
   "no_transactions",
   "not_reconciled",
@@ -32,6 +32,13 @@ export const ERROR_CODES = [
   "read_timeout",
   "no_statements",
   "outside_root",
+  "invalid_region",
+  "invalid_project",
+  "invalid_model",
+  "path_not_chosen",
+  "file_too_large",
+  "unrecognized_file",
+  "pdf_output_too_large",
 ] as const;
 
 function isKnownCode(code: string | undefined): code is (typeof ERROR_CODES)[number] {

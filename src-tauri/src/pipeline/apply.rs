@@ -5,7 +5,7 @@ use std::path::{Component, Path};
 use super::{create_dir, io, read_cache, PipelineError};
 use crate::dates::time_now_iso;
 use crate::excel;
-use crate::finalize;
+use crate::finalize::{self, Move};
 use crate::fsutil::{read_json_opt, remove_if_exists, write_atomic, write_json};
 use crate::model::{Draft, Language, MatchResult, ReceiptMeta};
 use crate::period::PeriodPaths;
@@ -73,12 +73,19 @@ pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineE
             return Err(error);
         }
     }
-    if let Err(error) = finalize::execute(&plan.moves) {
+    let moves = match pin_moves(paths, &plan.moves) {
+        Ok(moves) => moves,
+        Err(error) => {
+            cleanup();
+            return Err(error);
+        }
+    };
+    if let Err(error) = finalize::execute(&moves) {
         cleanup();
         return Err(io(&paths.receipts, error));
     }
     if let Err(error) = publish(paths, &result_tmp, &report_tmp) {
-        finalize::undo(&plan.moves);
+        finalize::undo(&moves);
         cleanup();
         return Err(error);
     }
@@ -86,6 +93,39 @@ pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineE
         log::warn!("could not delete the review draft: {error}");
     }
     Ok(())
+}
+
+/// The moves with both ends under the real `receipts/` folder: each source is its folder's
+/// real path plus its file name, so a folder swapped for a symlink after the check cannot
+/// redirect a move. Fails when a source leads outside the folder.
+fn pin_moves(paths: &PeriodPaths, moves: &[Move]) -> Result<Vec<Move>, PipelineError> {
+    let receipts_real = paths
+        .receipts
+        .canonicalize()
+        .map_err(|e| io(&paths.receipts, e))?;
+    let outside = |path: &Path| {
+        PipelineError::InvalidInput(format!(
+            "{} is not inside the receipts folder",
+            path.display()
+        ))
+    };
+    moves
+        .iter()
+        .map(|step| {
+            let name = step.from.file_name().ok_or_else(|| outside(&step.from))?;
+            let parent = step.from.parent().ok_or_else(|| outside(&step.from))?;
+            let from = parent.canonicalize().map_err(|e| io(parent, e))?.join(name);
+            let to = step
+                .to
+                .strip_prefix(&paths.receipts)
+                .map(|rest| receipts_real.join(rest))
+                .map_err(|_| outside(&step.to))?;
+            if !from.starts_with(&receipts_real) {
+                return Err(outside(&step.from));
+            }
+            Ok(Move { from, to })
+        })
+        .collect()
 }
 
 /// The contents of a file before Finalize replaces it, to put back if a later step fails.
@@ -137,4 +177,45 @@ fn publish(paths: &PeriodPaths, result_tmp: &Path, report_tmp: &Path) -> Result<
         }
     }
     outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::period::Period;
+
+    fn paths(root: &Path) -> PeriodPaths {
+        let paths = Period::parse("2030", "03").unwrap().paths(root);
+        std::fs::create_dir_all(&paths.receipts).unwrap();
+        paths
+    }
+
+    #[test]
+    fn pins_moves_to_the_real_receipts_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let step = Move {
+            from: paths.receipts.join("acme.pdf"),
+            to: paths.receipts.join("_matched").join("acme.pdf"),
+        };
+        let pinned = pin_moves(&paths, &[step]).unwrap();
+        let real = paths.receipts.canonicalize().unwrap();
+        assert_eq!(pinned[0].from, real.join("acme.pdf"));
+        assert_eq!(pinned[0].to, real.join("_matched").join("acme.pdf"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_source_folder_that_leads_outside() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), paths.receipts.join("sub")).unwrap();
+        let step = Move {
+            from: paths.receipts.join("sub").join("acme.pdf"),
+            to: paths.receipts.join("_matched").join("acme.pdf"),
+        };
+        let error = pin_moves(&paths, &[step]).unwrap_err();
+        assert!(matches!(error, PipelineError::InvalidInput(_)), "{error:?}");
+    }
 }

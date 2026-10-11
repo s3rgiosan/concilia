@@ -21,6 +21,14 @@ describe("buildRows", () => {
     expect(reimbursementId(TAXI)).toBe(ROWS[3].id);
     expect(ROWS.map(isPending)).toEqual([false, true, true, false]);
   });
+
+  it("gives an unchanged transaction or receipt the same row again", () => {
+    const again = buildRows([MATCHED], [TAXI]);
+    expect(again[0]).toBe(ROWS[0]);
+    expect(again[1]).toBe(ROWS[3]);
+    const changed = buildRows([{ ...MATCHED }], []);
+    expect(changed[0]).not.toBe(ROWS[0]);
+  });
 });
 
 describe("initialSelection", () => {

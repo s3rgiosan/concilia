@@ -12,7 +12,7 @@ interface ReviewDataOptions {
   year: string;
   month: string;
   /** Runs after a save, since the month list shows how many transactions are left. */
-  onChanged?: () => void;
+  onSaved?: () => void;
   onError: (e: unknown) => void;
   /** Picks the filter the month opens on, once the first load shows what is left to decide. */
   onFirstLoad: (filter: Filter) => void;
@@ -22,7 +22,7 @@ interface ReviewDataOptions {
  * A month's review data and its draft: loads both, keeps the draft's history and autosave, and
  * reads receipts again in place.
  */
-export function useReviewData({ year, month, onChanged, onError, onFirstLoad }: ReviewDataOptions) {
+export function useReviewData({ year, month, onSaved, onError, onFirstLoad }: ReviewDataOptions) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const history = useHistory<Draft>({});
@@ -37,13 +37,13 @@ export function useReviewData({ year, month, onChanged, onError, onFirstLoad }: 
   const autosave = useDraftAutosave(draft, dirty, save);
 
   const saveKind = autosave.state.kind;
-  const latestOnChanged = useLatest(onChanged);
+  const latestOnSaved = useLatest(onSaved);
   const latestOnFirstLoad = useLatest(onFirstLoad);
   useEffect(() => {
     if (saveKind === "saved") {
-      latestOnChanged.current?.();
+      latestOnSaved.current?.();
     }
-  }, [saveKind, latestOnChanged]);
+  }, [saveKind, latestOnSaved]);
 
   const { reset: resetHistory, map: mapHistory } = history;
   const { forget: forgetSaveState } = autosave;

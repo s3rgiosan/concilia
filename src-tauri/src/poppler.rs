@@ -6,9 +6,11 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::LazyLock;
 
+use regex::Regex;
 use serde::Serialize;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PopplerError {
@@ -16,10 +18,22 @@ pub enum PopplerError {
     Missing(String),
     #[error("{0}")]
     Failed(String),
+    #[error("{0} produced more output than Concilia reads")]
+    TooLarge(&'static str),
 }
 
 /// Largest text output accepted from `pdftotext`.
 const MAX_TEXT_BYTES: usize = 64 * 1024 * 1024;
+/// Largest page image accepted from `pdftoppm`.
+const MAX_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
+/// Error output kept from a tool, for the error message.
+const MAX_STDERR_BYTES: usize = 16 * 1024;
+/// The longest side of a rendered page in pixels: an A4 page at 300 DPI.
+pub const MAX_RENDER_PIXELS: u32 = 3508;
+
+static PAGE_SIZE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"<page width="([0-9.]+)" height="([0-9.]+)">"#).expect("pattern compiles")
+});
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Poppler {
@@ -83,76 +97,172 @@ impl Poppler {
 
 impl Poppler {
     /// Extracts the text of a PDF with `pdftotext -layout`, keeping column alignment.
-    pub async fn text(&self, pdf: &[u8]) -> Result<String, PopplerError> {
-        let mut child = tokio::process::Command::new(&self.pdftotext)
-            .args(["-layout", "-enc", "UTF-8", "-", "-"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| spawn_error("pdftotext", e))?;
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| PopplerError::Failed("pdftotext stdin unavailable".into()))?;
-        let input = pdf.to_vec();
-        let writer = tokio::spawn(async move {
-            let result = stdin.write_all(&input).await;
-            drop(stdin);
-            result
-        });
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| PopplerError::Failed(e.to_string()))?;
-        // A PDF pdftotext rejects early can close stdin before all bytes are written.
-        let _ = writer.await;
-        if !output.status.success() {
-            return Err(PopplerError::Failed(format!(
-                "pdftotext exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        if output.stdout.len() > MAX_TEXT_BYTES {
-            return Err(PopplerError::Failed("pdftotext output too large".into()));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    pub async fn text(&self, pdf: &Path) -> Result<String, PopplerError> {
+        let pdf = absolute(pdf)?;
+        let mut command = tokio::process::Command::new(&self.pdftotext);
+        command
+            .args(["-layout", "-enc", "UTF-8", "--"])
+            .arg(&pdf)
+            .arg("-");
+        let stdout = run_bounded(command, "pdftotext", MAX_TEXT_BYTES).await?;
+        Ok(String::from_utf8_lossy(&stdout).into_owned())
     }
 
-    /// Renders one page of a PDF to PNG bytes with `pdftoppm`.
+    /// The size of a page in points, read from `pdftotext -bbox`.
+    async fn page_size(&self, pdf: &Path, page: u32) -> Result<(f64, f64), PopplerError> {
+        let page = page.to_string();
+        let mut command = tokio::process::Command::new(&self.pdftotext);
+        command
+            .args(["-bbox", "-f", &page, "-l", &page, "--"])
+            .arg(pdf)
+            .arg("-");
+        let stdout = run_bounded(command, "pdftotext", MAX_TEXT_BYTES).await?;
+        parse_page_size(&String::from_utf8_lossy(&stdout))
+            .ok_or_else(|| PopplerError::Failed("pdftotext reported no page size".into()))
+    }
+
+    /// Renders one page of a PDF to PNG bytes with `pdftoppm`, at `dpi` or lower, so that
+    /// neither side exceeds `MAX_RENDER_PIXELS`.
     pub async fn render_page(
         &self,
         pdf: &Path,
         page: u32,
         dpi: u32,
     ) -> Result<Vec<u8>, PopplerError> {
+        let pdf = absolute(pdf)?;
+        let scale = match self.page_size(&pdf, page).await {
+            Ok((width, height)) => Scale::Dpi(capped_dpi(width, height, dpi)),
+            Err(PopplerError::Missing(tool)) => return Err(PopplerError::Missing(tool)),
+            Err(error) => {
+                log::debug!("page size unknown, fitting the render to the pixel cap: {error}");
+                Scale::Fit
+            }
+        };
         let dir = tempfile::tempdir().map_err(|e| PopplerError::Failed(e.to_string()))?;
         let prefix = dir.path().join("page");
-        let output = tokio::process::Command::new(&self.pdftoppm)
-            .arg("-png")
-            .args(["-r", &dpi.to_string()])
+        let mut command = tokio::process::Command::new(&self.pdftoppm);
+        command.arg("-png");
+        match scale {
+            Scale::Dpi(dpi) => command.args(["-r", &format!("{dpi:.2}")]),
+            Scale::Fit => command.args(["-scale-to", &MAX_RENDER_PIXELS.to_string()]),
+        };
+        command
             .args(["-f", &page.to_string(), "-l", &page.to_string()])
-            .arg("-singlefile")
-            .arg(pdf)
-            .arg(&prefix)
-            .stdin(Stdio::null())
-            .kill_on_drop(true)
-            .output()
+            .args(["-singlefile", "--"])
+            .arg(&pdf)
+            .arg(&prefix);
+        run_bounded(command, "pdftoppm", MAX_TEXT_BYTES).await?;
+        let image = prefix.with_extension("png");
+        let size = tokio::fs::metadata(&image)
             .await
-            .map_err(|e| spawn_error("pdftoppm", e))?;
-        if !output.status.success() {
-            return Err(PopplerError::Failed(format!(
-                "pdftoppm exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
+            .map_err(|e| PopplerError::Failed(format!("pdftoppm wrote no image: {e}")))?
+            .len();
+        if size > MAX_IMAGE_BYTES {
+            return Err(PopplerError::TooLarge("pdftoppm"));
         }
-        tokio::fs::read(prefix.with_extension("png"))
+        tokio::fs::read(&image)
             .await
             .map_err(|e| PopplerError::Failed(format!("pdftoppm wrote no image: {e}")))
     }
+}
+
+/// How a page is scaled for rendering.
+enum Scale {
+    Dpi(f64),
+    /// Fit within `MAX_RENDER_PIXELS` on both sides, for a page of unknown size.
+    Fit,
+}
+
+/// `dpi`, lowered when the page's longest side would exceed `MAX_RENDER_PIXELS`.
+pub fn capped_dpi(width_pt: f64, height_pt: f64, dpi: u32) -> f64 {
+    let longest = width_pt.max(height_pt);
+    let wanted = f64::from(dpi);
+    if longest <= 0.0 || !longest.is_finite() {
+        return wanted;
+    }
+    let cap = f64::from(MAX_RENDER_PIXELS) * 72.0 / longest;
+    // Two decimals reach pdftoppm; rounding down keeps the image inside the cap.
+    (wanted.min(cap) * 100.0).floor() / 100.0
+}
+
+/// The first page size in `pdftotext -bbox` output, in points.
+fn parse_page_size(bbox: &str) -> Option<(f64, f64)> {
+    let captures = PAGE_SIZE.captures(bbox)?;
+    let width = captures[1].parse().ok()?;
+    let height = captures[2].parse().ok()?;
+    Some((width, height))
+}
+
+/// The path made absolute, so the tools never read it as an option.
+fn absolute(path: &Path) -> Result<PathBuf, PopplerError> {
+    std::path::absolute(path).map_err(|e| PopplerError::Failed(format!("{}: {e}", path.display())))
+}
+
+/// Reads at most `limit` bytes from `reader`, plus one to tell an overflow apart.
+async fn read_capped(reader: impl AsyncRead + Unpin, limit: usize) -> std::io::Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    reader
+        .take(limit as u64 + 1)
+        .read_to_end(&mut buffer)
+        .await?;
+    Ok(buffer)
+}
+
+/// Reads all of `reader`, keeping the first `keep` bytes, so the writer never blocks.
+async fn drain(mut reader: impl AsyncRead + Unpin, keep: usize) -> Vec<u8> {
+    let mut kept = Vec::new();
+    let mut chunk = [0u8; 8192];
+    while let Ok(read @ 1..) = reader.read(&mut chunk).await {
+        let room = keep.saturating_sub(kept.len());
+        kept.extend_from_slice(&chunk[..read.min(room)]);
+    }
+    kept
+}
+
+/// Runs a tool and returns its standard output, stopping it once the output passes `limit`
+/// bytes.
+async fn run_bounded(
+    mut command: tokio::process::Command,
+    tool: &'static str,
+    limit: usize,
+) -> Result<Vec<u8>, PopplerError> {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| spawn_error(tool, e))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| PopplerError::Failed(format!("{tool} stdout unavailable")))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| PopplerError::Failed(format!("{tool} stderr unavailable")))?;
+    let errors = tokio::spawn(drain(stderr, MAX_STDERR_BYTES));
+    let output = read_capped(stdout, limit).await;
+    let too_large = output.as_ref().is_ok_and(|out| out.len() > limit);
+    if too_large {
+        let _ = child.kill().await;
+    }
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| PopplerError::Failed(e.to_string()))?;
+    let stderr = errors.await.unwrap_or_default();
+    if too_large {
+        return Err(PopplerError::TooLarge(tool));
+    }
+    let output = output.map_err(|e| PopplerError::Failed(e.to_string()))?;
+    if !status.success() {
+        return Err(PopplerError::Failed(format!(
+            "{tool} exited with {status}: {}",
+            String::from_utf8_lossy(&stderr).trim()
+        )));
+    }
+    Ok(output)
 }
 
 fn spawn_error(tool: &str, error: std::io::Error) -> PopplerError {
@@ -199,6 +309,41 @@ mod tests {
         let poppler = Poppler::resolve(Some(resources.path()));
         assert!(!poppler.bundled);
         assert_eq!(poppler.pdftotext, PathBuf::from(executable("pdftotext")));
+    }
+
+    #[test]
+    fn caps_the_render_resolution_by_the_longest_side() {
+        // A4 at 300 DPI is the cap itself.
+        let a4 = capped_dpi(595.0, 842.0, 300);
+        assert!((299.0..=300.0).contains(&a4), "{a4}");
+        assert!(842.0 * a4 / 72.0 <= f64::from(MAX_RENDER_PIXELS));
+        // A small receipt keeps its resolution.
+        assert_eq!(capped_dpi(227.0, 567.0, 300), 300.0);
+        // A poster is rendered at a lower resolution.
+        let poster = capped_dpi(2000.0, 3000.0, 300);
+        assert!(3000.0 * poster / 72.0 <= f64::from(MAX_RENDER_PIXELS));
+        assert!(poster > 80.0);
+        // A landscape page is capped by its width.
+        assert_eq!(capped_dpi(3000.0, 2000.0, 300), poster);
+        assert_eq!(capped_dpi(0.0, 0.0, 300), 300.0);
+    }
+
+    #[test]
+    fn reads_the_page_size_from_bbox_output() {
+        let bbox = r#"<doc>
+  <page width="595.276000" height="841.890000">
+    <word xMin="1" yMin="2" xMax="3" yMax="4">ACME</word>
+  </page>
+</doc>"#;
+        assert_eq!(parse_page_size(bbox), Some((595.276, 841.89)));
+        assert_eq!(parse_page_size("<doc></doc>"), None);
+    }
+
+    #[test]
+    fn passes_file_names_as_absolute_paths() {
+        let path = absolute(Path::new("-v.pdf")).unwrap();
+        assert!(path.is_absolute());
+        assert!(!path.to_string_lossy().starts_with('-'));
     }
 
     #[test]

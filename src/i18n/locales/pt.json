@@ -235,6 +235,7 @@
     },
     "candidatesTaken": "Todos os candidatos foram associados a outra transação.",
     "noCandidates": "Não há recibos para associar.",
+    "showAllReceipts": "Mostrar os {{count}} recibos",
     "dateUnknown": "Data desconhecida",
     "amountUnknown": "Valor desconhecido",
     "lowConfidence": "leitura incerta",
@@ -252,6 +253,7 @@
       "filenameMatch": "Nome de ficheiro — verificar valores",
       "manualMatch": "Associação manual",
       "ruleMatch": "Regra de associação ({{vendor}})",
+      "ruleMatchAmount": "Regra de associação, valor diferente ({{vendor}})",
       "fxMatch": "Correspondência em moeda estrangeira ({{detail}})",
       "multipleNameAmount_one": "{{count}} recibo coincide em nome e valor",
       "multipleNameAmount_other": "{{count}} recibos coincidem em nome e valor",
@@ -414,7 +416,14 @@
       "receipt_outside_period": "Esse ficheiro não é um recibo deste mês.",
       "read_timeout": "O Gemini demorou demasiado tempo a ler o recibo. Tente novamente.",
       "no_statements": "Escolha pelo menos um extrato bancário para adicionar.",
-      "outside_root": "Essa localização está fora da pasta de recibos."
+      "outside_root": "Essa localização está fora da pasta de recibos.",
+      "invalid_region": "Introduza uma região como europe-west1, ou global.",
+      "invalid_project": "Introduza o ID de um projeto do Google Cloud: 6 a 30 letras minúsculas, algarismos ou hífenes, a começar por uma letra.",
+      "invalid_model": "Introduza o nome de um modelo como gemini-2.5-flash, só com letras, algarismos, pontos, hífenes e sublinhados.",
+      "path_not_chosen": "Escolha novamente o ficheiro ou a pasta, com o botão ou arrastando-o para a janela.",
+      "file_too_large": "O ficheiro tem mais de 50 MB.",
+      "unrecognized_file": "O ficheiro não é um ficheiro PDF, PNG ou JPEG.",
+      "pdf_output_too_large": "O PDF tem mais texto do que o Concilia consegue ler."
     }
   },
   "menu": {

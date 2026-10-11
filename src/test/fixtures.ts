@@ -84,3 +84,8 @@ export function makeReviewData(patch: Partial<ReviewData> = {}): ReviewData {
 export function makePeriodStatus(patch: Partial<PeriodStatus> = {}): PeriodStatus {
   return { exists: true, applied: false, has_transactions: true, has_draft: false, ...patch };
 }
+
+/** Waits for the animation frame in which run progress is announced. */
+export function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}

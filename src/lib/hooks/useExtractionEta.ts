@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { remainingMs, WINDOW, type Sample } from "../eta";
 import type { RunEvent } from "../tauri";
 
+type Reading = Extract<RunEvent, { step: "extracting" }>;
+
 /**
  * Milliseconds left to read the run's receipts, at the rate measured from when each count
  * arrived, or null while there is no estimate. `events` is the running run's events, or null
@@ -9,27 +11,26 @@ import type { RunEvent } from "../tauri";
  */
 export function useExtractionEta(events: RunEvent[] | null): number | null {
   const [samples, setSamples] = useState<Sample[]>([]);
-  const seen = useRef(0);
-
-  useEffect(() => {
-    const restart = events === null || events.length < seen.current;
-    const from = restart ? 0 : seen.current;
-    const now = Date.now();
-    const fresh: Sample[] = [];
-    for (const event of events?.slice(from) ?? []) {
-      if (event.step === "extracting") {
-        fresh.push({ time: now, current: event.current });
-      }
-    }
-    seen.current = events?.length ?? 0;
-    if (restart || fresh.length > 0) {
-      setSamples((prev) => [...(restart ? [] : prev), ...fresh].slice(-(WINDOW + 1)));
-    }
-  }, [events]);
+  const seen = useRef<Reading | null>(null);
 
   const last = events?.[events.length - 1];
-  if (last?.step !== "extracting") {
+  const reading = last?.step === "extracting" ? last : null;
+
+  useEffect(() => {
+    if (reading === seen.current) {
+      return;
+    }
+    seen.current = reading;
+    if (reading === null) {
+      setSamples((prev) => (prev.length > 0 ? [] : prev));
+      return;
+    }
+    const sample: Sample = { time: Date.now(), current: reading.current };
+    setSamples((prev) => [...prev, sample].slice(-(WINDOW + 1)));
+  }, [reading]);
+
+  if (reading === null) {
     return null;
   }
-  return remainingMs(samples, last.total);
+  return remainingMs(samples, reading.total);
 }

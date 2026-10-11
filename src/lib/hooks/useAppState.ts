@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { applyLanguage } from "../../i18n";
 import { getAppState, onBusyChanged, onSettingsChanged, subscribe, type AppStateView } from "../tauri";
 
 /**
  * The app's setup, kept current by the backend's events. The UI language follows the saved
- * choice. `replace` takes a view returned by a command, before its event arrives.
+ * choice. `replace` takes a view returned by a command, before its event arrives. With
+ * `initial`, the setup read at launch, nothing is read again until `reload`.
  */
-export function useAppState(): {
+export function useAppState(initial: AppStateView | null = null): {
   state: AppStateView | null;
   error: unknown;
   replace: (view: AppStateView) => void;
   reload: () => void;
 } {
-  const [state, setState] = useState<AppStateView | null>(null);
+  const [state, setState] = useState<AppStateView | null>(initial);
+  const seeded = useRef(initial !== null);
   const [error, setError] = useState<unknown>(null);
 
   const replace = useCallback((view: AppStateView) => {
@@ -31,7 +33,9 @@ export function useAppState(): {
   }, [replace]);
 
   useEffect(() => {
-    reload();
+    if (!seeded.current) {
+      reload();
+    }
     const stopSettings = subscribe(onSettingsChanged(replace));
     const stopBusy = subscribe(onBusyChanged((busy) => setState((prev) => (prev ? { ...prev, busy } : prev))));
     return () => {

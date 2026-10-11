@@ -715,12 +715,27 @@ fn matches_via_rule_when_vendor_and_description_keywords_match() {
     let rules = [rule("1", "acme", "hooli")];
     let result = match_transactions(
         &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
-        &[with_vendor(eur("/r/acme.pdf", 800), "Acme Pty Ltd")],
+        &[with_vendor(eur("/r/acme.pdf", 1100), "Acme Pty Ltd")],
         &rules,
     );
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Matched);
-    assert!(t.notes.starts_with("rule_match"));
+    assert_eq!(t.notes, "rule_match (acme)");
+}
+
+#[test]
+fn sends_a_rule_hit_with_another_amount_to_review() {
+    let rules = [rule("1", "acme", "hooli")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &[with_vendor(eur("/r/acme.pdf", 800), "Acme Pty Ltd")],
+        &rules,
+    );
+    let t = &result.transactions[0];
+    assert_eq!(t.status, Status::Review);
+    assert_eq!(t.notes, "rule_match_amount (acme)");
+    assert_eq!(t.receipt_files, strings(&["/r/acme.pdf"]));
+    assert_eq!(result.receipts_by_status.review, strings(&["/r/acme.pdf"]));
 }
 
 #[test]
@@ -740,16 +755,16 @@ fn matches_via_rule_using_filename_when_vendor_is_null() {
     let rules = [rule("1", "acme", "hooli")];
     let result = match_transactions(
         &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
-        &[eur("/r/acme_invoice.pdf", 800)],
+        &[eur("/r/acme_invoice.pdf", 1100)],
         &rules,
     );
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Matched);
-    assert!(t.notes.starts_with("rule_match"));
+    assert_eq!(t.notes, "rule_match (acme)");
 }
 
 #[test]
-fn matches_via_rule_when_receipt_has_null_amount_cents() {
+fn reviews_a_rule_hit_on_a_receipt_without_an_amount() {
     let rules = [rule("1", "acme", "hooli")];
     let r = ReceiptMeta {
         confidence: None,
@@ -764,16 +779,60 @@ fn matches_via_rule_when_receipt_has_null_amount_cents() {
         &rules,
     );
     let t = &result.transactions[0];
-    assert_eq!(t.status, Status::Matched);
-    assert!(t.notes.starts_with("rule_match"));
+    assert_eq!(t.status, Status::Review);
+    assert_eq!(t.notes, "rule_match_amount (acme)");
 }
 
 #[test]
-fn rule_takes_priority_over_amount_match() {
+fn matches_a_foreign_currency_rule_hit_within_the_tolerance() {
+    let rules = [rule("1", "acme", "hooli")];
+    let within = receipt("/r/acme-usd.pdf", Some(1180), None, Some("USD"));
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &[with_vendor(within, "Acme Inc")],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].status, Status::Matched);
+    assert_eq!(result.transactions[0].notes, "rule_match (acme)");
+
+    let beyond = receipt("/r/acme-usd.pdf", Some(1300), None, Some("USD"));
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &[with_vendor(beyond, "Acme Inc")],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].status, Status::Review);
+    assert_eq!(result.transactions[0].notes, "rule_match_amount (acme)");
+}
+
+#[test]
+fn reviews_several_rule_hits_that_fit_the_amount() {
     let rules = [rule("1", "acme", "hooli")];
     let receipts = [
-        with_vendor(eur("/r/acme.pdf", 800), "Acme Pty Ltd"),
-        with_vendor(eur("/r/exact.pdf", 1100), "Someone Else"),
+        with_vendor(eur("/r/acme-1.pdf", 1100), "Acme"),
+        with_vendor(eur("/r/acme-2.pdf", 1100), "Acme"),
+        with_vendor(eur("/r/acme-3.pdf", 900), "Acme"),
+    ];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &receipts,
+        &rules,
+    );
+    let t = &result.transactions[0];
+    assert_eq!(t.status, Status::Review);
+    assert_eq!(t.notes, "rule_match (acme)");
+    assert_eq!(
+        t.receipt_files,
+        strings(&["/r/acme-1.pdf", "/r/acme-2.pdf"])
+    );
+}
+
+#[test]
+fn a_later_rule_that_fits_the_amount_wins() {
+    let rules = [rule("1", "acme", "hooli"), rule("2", "globex", "hooli")];
+    let receipts = [
+        with_vendor(eur("/r/acme.pdf", 800), "Acme"),
+        with_vendor(eur("/r/globex.pdf", 1100), "Globex"),
     ];
     let result = match_transactions(
         &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
@@ -782,8 +841,37 @@ fn rule_takes_priority_over_amount_match() {
     );
     let t = &result.transactions[0];
     assert_eq!(t.status, Status::Matched);
-    assert!(t.notes.starts_with("rule_match"));
+    assert_eq!(t.notes, "rule_match (globex)");
+    assert_eq!(t.receipt_files, strings(&["/r/globex.pdf"]));
+}
+
+#[test]
+fn rule_takes_priority_over_amount_match() {
+    let rules = [rule("1", "acme", "hooli")];
+    let receipts = [
+        with_vendor(eur("/r/exact.pdf", 1100), "Someone Else"),
+        with_vendor(eur("/r/acme.pdf", 1100), "Acme Pty Ltd"),
+    ];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "HOOLI.NET CHARGE", -1100)],
+        &receipts,
+        &rules,
+    );
+    let t = &result.transactions[0];
+    assert_eq!(t.status, Status::Matched);
+    assert_eq!(t.notes, "rule_match (acme)");
     assert_eq!(t.receipt_files, strings(&["/r/acme.pdf"]));
+}
+
+#[test]
+fn rule_keywords_ignore_letter_case() {
+    let rules = [rule("1", "ACME", "Hooli.Net")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "hooli.net charge", -1100)],
+        &[with_vendor(eur("/r/x.pdf", 1100), "acme pty ltd")],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].notes, "rule_match (ACME)");
 }
 
 // matchTransactions > date tiebreaker

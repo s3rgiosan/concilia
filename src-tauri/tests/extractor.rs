@@ -78,7 +78,7 @@ async fn sends_image_files_as_images() {
         .await;
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("acme.JPG");
-    std::fs::write(&file, b"jpeg bytes").unwrap();
+    std::fs::write(&file, b"\xFF\xD8\xFFjpeg bytes").unwrap();
 
     let meta = extractor(&server, no_poppler())
         .extract(&file)
@@ -94,7 +94,7 @@ async fn sends_image_files_as_images() {
     let requests = generate_requests(&server).await;
     let image = &requests[0]["contents"][0]["parts"][1]["inline_data"];
     assert_eq!(image["mime_type"], "image/jpeg");
-    assert_eq!(image["data"], "anBlZyBieXRlcw==");
+    assert_eq!(image["data"], "/9j/anBlZyBieXRlcw==");
 }
 
 #[tokio::test]
@@ -191,7 +191,7 @@ async fn stops_on_authorization_failures() {
         .await;
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("acme.png");
-    std::fs::write(&file, b"png bytes").unwrap();
+    std::fs::write(&file, b"\x89PNG\r\n\x1a\npng bytes").unwrap();
 
     let error = extractor(&server, no_poppler())
         .extract(&file)
@@ -208,4 +208,80 @@ async fn reports_unreadable_files_as_failed_attempts() {
         .await
         .unwrap_err();
     assert!(matches!(error, ExtractError::Failed(_)), "{error:?}");
+}
+
+#[tokio::test]
+async fn refuses_files_whose_contents_do_not_match_their_type() {
+    let server = server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let cases: [(&str, &[u8]); 3] = [
+        ("script.pdf", b"#!/bin/sh\necho"),
+        ("photo.png", b"%PDF-1.4\n"),
+        ("photo.jpg", b"GIF89a"),
+    ];
+    for (name, bytes) in cases {
+        let file = dir.path().join(name);
+        std::fs::write(&file, bytes).unwrap();
+        let error = extractor(&server, no_poppler())
+            .extract(&file)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                ExtractError::Rejected {
+                    code: "unrecognized_file",
+                    ..
+                }
+            ),
+            "{name}: {error:?}"
+        );
+    }
+    assert!(generate_requests(&server).await.is_empty());
+}
+
+#[tokio::test]
+async fn sends_a_png_named_jpg_as_a_png() {
+    let server = server().await;
+    Mock::given(path_regex(":generateContent$"))
+        .respond_with(reply(r#"{"amount": 1.00}"#))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("acme.jpg");
+    std::fs::write(&file, b"\x89PNG\r\n\x1a\npng bytes").unwrap();
+    extractor(&server, no_poppler())
+        .extract(&file)
+        .await
+        .unwrap();
+    let requests = generate_requests(&server).await;
+    assert_eq!(
+        requests[0]["contents"][0]["parts"][1]["inline_data"]["mime_type"],
+        "image/png"
+    );
+}
+
+#[tokio::test]
+async fn refuses_files_over_the_size_limit() {
+    let server = server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("big.png");
+    let handle = std::fs::File::create(&file).unwrap();
+    handle
+        .set_len(concilia_lib::filecheck::MAX_INPUT_BYTES + 1)
+        .unwrap();
+    let error = extractor(&server, no_poppler())
+        .extract(&file)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ExtractError::Rejected {
+                code: "file_too_large",
+                ..
+            }
+        ),
+        "{error:?}"
+    );
 }

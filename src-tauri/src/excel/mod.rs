@@ -7,6 +7,7 @@
 
 pub mod strings;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -178,6 +179,10 @@ fn format_notes(notes: &str, s: &Strings) -> String {
     }
     if notes.starts_with("filename_match") {
         return s.filename_match.to_string();
+    }
+    if notes.starts_with("rule_match_amount") {
+        let (before, after) = s.rule_match_amount;
+        return format!("{before}{}{after}", detail(notes));
     }
     if notes.starts_with("rule_match") {
         return format!("{}{}{}", s.rule_match.0, detail(notes), s.rule_match.1);
@@ -381,9 +386,29 @@ fn color(hex: &str) -> Color {
     Color::RGB(u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0xFFFFFF))
 }
 
-/// Saves the sheets as an `.xlsx` file. Empty text cells are left blank.
+/// What a cell's format depends on.
+type FormatKey = (bool, Option<&'static str>, Option<&'static str>);
+
+fn format_for(key: FormatKey) -> Format {
+    let (bold, background, number_format) = key;
+    let mut format = Format::new();
+    if bold {
+        format = format.set_bold();
+    }
+    if let Some(background) = background {
+        format = format.set_background_color(color(background));
+    }
+    if let Some(number_format) = number_format {
+        format = format.set_num_format(number_format);
+    }
+    format
+}
+
+/// Saves the sheets as an `.xlsx` file. Empty text cells are left blank. Cells with the same
+/// styling share one format.
 pub fn write(sheets: &[Sheet], path: &Path) -> Result<(), XlsxError> {
     let mut workbook = Workbook::new();
+    let mut formats: HashMap<FormatKey, Format> = HashMap::new();
     for sheet in sheets {
         let worksheet = workbook.add_worksheet();
         worksheet.set_name(&sheet.name)?;
@@ -392,24 +417,19 @@ pub fn write(sheets: &[Sheet], path: &Path) -> Result<(), XlsxError> {
         }
         for (row, cells) in sheet.rows.iter().enumerate() {
             for (col, cell) in cells.iter().enumerate() {
-                let mut format = Format::new();
-                if cell.bold {
-                    format = format.set_bold();
-                }
-                if let Some(background) = cell.background {
-                    format = format.set_background_color(color(background));
-                }
-                if let Some(number_format) = cell.number_format {
-                    format = format.set_num_format(number_format);
-                }
                 let (row, col) = (row as u32, col as u16);
-                match &cell.value {
-                    CellValue::Text(text) if text.is_empty() => {}
+                let value = match &cell.value {
+                    CellValue::Text(text) if text.is_empty() => continue,
+                    value => value,
+                };
+                let key = (cell.bold, cell.background, cell.number_format);
+                let format = formats.entry(key).or_insert_with(|| format_for(key));
+                match value {
                     CellValue::Text(text) => {
-                        worksheet.write_string_with_format(row, col, text, &format)?;
+                        worksheet.write_string_with_format(row, col, text, format)?;
                     }
                     CellValue::Number(number) => {
-                        worksheet.write_number_with_format(row, col, *number, &format)?;
+                        worksheet.write_number_with_format(row, col, *number, format)?;
                     }
                 }
             }
@@ -430,6 +450,14 @@ mod tests {
             "Foreign-currency match (USD ±10%)"
         );
         assert_eq!(format_notes("rule_match (ACME)", en), "Rule match (ACME)");
+        assert_eq!(
+            format_notes("rule_match_amount (ACME)", en),
+            "Rule match, different amount (ACME)"
+        );
+        assert_eq!(
+            format_notes("rule_match_amount (ACME)", strings(Language::Pt)),
+            "Regra de associação, valor diferente (ACME)"
+        );
         assert_eq!(
             format_notes("filename_match (acme.pdf)", en),
             "Filename match — verify amounts"

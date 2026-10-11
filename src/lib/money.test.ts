@@ -41,12 +41,14 @@ describe("formatMoney", () => {
     expect(formatMoney(1000, null, "en")).toBe("€10.00");
   });
 
-  it("shows the plain amount and code when the formatter fails", () => {
+  it("shows the plain amount and code when the formatter fails", async () => {
+    vi.resetModules();
+    const fresh = await import("./money");
     vi.spyOn(Intl, "NumberFormat").mockImplementation(() => {
       throw new RangeError("unsupported");
     });
-    expect(formatMoney(1000, "USD", "en")).toBe("10.00 USD");
-    expect(formatMoney(1000, null, "en")).toBe("10.00");
+    expect(fresh.formatMoney(1000, "USD", "en")).toBe("10.00 USD");
+    expect(fresh.formatMoney(1000, null, "en")).toBe("10.00");
   });
 });
 
@@ -61,12 +63,14 @@ describe("formatSignedMoney", () => {
     expect(formatSignedMoney(0, "EUR", "en")).toBe("€0.00");
   });
 
-  it("keeps the sign when the formatter fails", () => {
+  it("keeps the sign when the formatter fails", async () => {
+    vi.resetModules();
+    const fresh = await import("./money");
     vi.spyOn(Intl, "NumberFormat").mockImplementation(() => {
       throw new RangeError("unsupported");
     });
-    expect(formatSignedMoney(1000, "EUR", "en")).toBe("+10.00 EUR");
-    expect(formatSignedMoney(-1000, "EUR", "en")).toBe("-10.00 EUR");
+    expect(fresh.formatSignedMoney(1000, "EUR", "en")).toBe("+10.00 EUR");
+    expect(fresh.formatSignedMoney(-1000, "EUR", "en")).toBe("-10.00 EUR");
   });
 });
 
@@ -75,5 +79,27 @@ describe("formatPercent", () => {
     expect(formatPercent(74, "en")).toBe("74%");
     expect(formatPercent(74, "pt")).toBe(`74${NBSP}%`);
     expect(formatPercent(0, "en")).toBe("0%");
+  });
+});
+
+describe("formatter caching", () => {
+  it("builds one formatter per locale and options", async () => {
+    vi.resetModules();
+    const fresh = await import("./money");
+    const construct = vi.spyOn(Intl, "NumberFormat");
+    for (let i = 0; i < 50; i += 1) {
+      fresh.formatMoney(i, "EUR", "en");
+      fresh.formatSignedMoney(i, "EUR", "en");
+      fresh.formatMoney(i, "EUR", "pt");
+    }
+    expect(construct).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps formatting correctly with a cached formatter", async () => {
+    vi.resetModules();
+    const fresh = await import("./money");
+    expect(fresh.formatMoney(1000, "EUR", "en")).toBe("€10.00");
+    expect(fresh.formatMoney(2000, "EUR", "en")).toBe("€20.00");
+    expect(fresh.formatMoney(1000, "EUR", "pt")).toBe(`10,00${NBSP}€`);
   });
 });

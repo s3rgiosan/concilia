@@ -7,6 +7,7 @@ pub mod dates;
 pub mod error;
 pub mod excel;
 pub mod extract;
+pub mod filecheck;
 pub mod finalize;
 pub mod fsutil;
 pub mod gemini;
@@ -28,7 +29,7 @@ pub mod windows;
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, DragDropEvent, Emitter, Manager, WindowEvent};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::app::{AppState, BUSY_CHANGED_EVENT};
@@ -54,6 +55,15 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 menu::MENU_EVENT,
                 serde_json::json!({ "id": id }),
             );
+        }
+    }
+}
+
+/// Records files dropped on a window, so the commands that read them accept them.
+fn grant_dropped(app: &AppHandle, event: &DragDropEvent) {
+    if let DragDropEvent::Drop { paths, .. } = event {
+        if let Some(state) = app.try_state::<Arc<AppState>>() {
+            state.grant_paths(paths.iter().cloned());
         }
     }
 }
@@ -148,6 +158,16 @@ pub fn run() {
             commands::install_update,
         ])
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
+        .on_window_event(|window, event| {
+            if let WindowEvent::DragDrop(drop) = event {
+                grant_dropped(window.app_handle(), drop);
+            }
+        })
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(drop) = event {
+                grant_dropped(webview.app_handle(), drop);
+            }
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             let config_dir = app.path().app_config_dir()?;
@@ -174,6 +194,14 @@ pub fn run() {
             );
 
             let state = Arc::new(AppState::new(config, rules, accounts, poppler));
+            // The first read of the service account may wait on a Keychain prompt; reading it
+            // now keeps the windows' first `get_app_state` from waiting on it.
+            let warm_state = Arc::clone(&state);
+            std::thread::spawn(move || {
+                if let Err(error) = warm_state.accounts.get() {
+                    log::warn!("service account unavailable: {error}");
+                }
+            });
             let busy_handle = handle.clone();
             state.locks.on_busy_change(move |busy| {
                 let _ = busy_handle.emit(BUSY_CHANGED_EVENT, serde_json::json!({ "busy": busy }));

@@ -56,3 +56,4 @@ coverage/
 
 # Generated icons (scripts/symbols.mjs)
 src/assets/symbols/
+*.bak

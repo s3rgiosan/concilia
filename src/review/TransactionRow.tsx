@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { shortDate } from "../lib/dates";
@@ -37,9 +37,11 @@ export function StatusLabel({ status, notes }: { status?: Status; notes?: string
  * One option of the review list: a transaction's status, date, description, a pencil when the
  * user decided it (`edited`) and its signed amount, or a reimbursement's kind, date, name and
  * amount. A press selects it. With `onLeft` it is a row that just left the list: hidden from
- * assistive technology, collapsing until `onLeft` runs.
+ * assistive technology, collapsing until `onLeft` runs. Memoized: its handlers take the row, so
+ * the list can pass the same functions to every row and an arrow key renders only the two rows
+ * whose selection changed.
  */
-export function TransactionRow({
+export const TransactionRow = memo(function TransactionRow({
   id,
   row,
   selected,
@@ -53,11 +55,11 @@ export function TransactionRow({
   row: ListRow;
   selected: boolean;
   edited?: boolean;
-  onSelect: () => void;
+  onSelect: (row: ListRow) => void;
   /** Runs on a double click. */
-  onOpen: () => void;
-  onContextMenu: (e: MouseEvent<HTMLDivElement>) => void;
-  onLeft?: () => void;
+  onOpen: (row: ListRow) => void;
+  onContextMenu: (row: ListRow, e: MouseEvent<HTMLDivElement>) => void;
+  onLeft?: (row: ListRow) => void;
 }) {
   const { t, i18n } = useTranslation();
   const language = i18n.language;
@@ -100,7 +102,7 @@ export function TransactionRow({
   }
   if (onLeft) {
     return (
-      <div className="list-row list-row--leaving" aria-hidden="true" onAnimationEnd={onLeft}>
+      <div className="list-row list-row--leaving" aria-hidden="true" onAnimationEnd={() => onLeft(row)}>
         {cells}
       </div>
     );
@@ -113,13 +115,13 @@ export function TransactionRow({
       className={`list-row ${selected ? "list-row--selected" : ""}`}
       onMouseDown={(e) => {
         if (e.button === 0) {
-          onSelect();
+          onSelect(row);
         }
       }}
-      onDoubleClick={onOpen}
-      onContextMenu={onContextMenu}
+      onDoubleClick={() => onOpen(row)}
+      onContextMenu={(e) => onContextMenu(row, e)}
     >
       {cells}
     </div>
   );
-}
+});

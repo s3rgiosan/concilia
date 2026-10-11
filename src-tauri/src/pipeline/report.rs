@@ -8,6 +8,7 @@ use serde_json::{Map, Value};
 use super::periods::read_statements;
 use super::{io, read_cache, PipelineError};
 use crate::excel;
+use crate::finalize::TRANSIENT_FIELDS;
 use crate::fsutil::{read_json_lenient, read_json_opt};
 use crate::model::{
     Draft, Language, MatchResult, ReceiptMeta, StatementRecord, Status, Transaction,
@@ -38,8 +39,13 @@ pub struct ReceiptView {
 }
 
 impl ReceiptView {
-    pub fn new(paths: &PeriodPaths, meta: ReceiptMeta) -> ReceiptView {
+    /// The view of a stored receipt. Display fields a stored file may still carry are dropped,
+    /// so each key appears once.
+    pub fn new(paths: &PeriodPaths, mut meta: ReceiptMeta) -> ReceiptView {
         let rel_path = paths.relative(&meta.file);
+        for field in TRANSIENT_FIELDS {
+            meta.extra.remove(*field);
+        }
         ReceiptView { meta, rel_path }
     }
 }
@@ -128,5 +134,38 @@ fn review_transaction(
         receipt_meta: tx.receipt_meta.into_iter().map(view).collect(),
         notes: tx.notes,
         extra: tx.extra,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::period::Period;
+
+    #[test]
+    fn serializes_each_receipt_field_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Period::parse("2030", "03").unwrap().paths(dir.path());
+        let file = paths
+            .receipts
+            .join("acme.pdf")
+            .to_string_lossy()
+            .into_owned();
+        let mut meta = ReceiptMeta {
+            file,
+            amount_cents: Some(1000),
+            ..Default::default()
+        };
+        meta.extra
+            .insert("rel_path".into(), Value::String("stale".into()));
+        meta.extra
+            .insert("note".into(), Value::String("kept".into()));
+        let json = serde_json::to_string(&ReceiptView::new(&paths, meta)).unwrap();
+        assert_eq!(json.matches("\"rel_path\"").count(), 1, "{json}");
+        assert!(
+            json.contains("\"rel_path\":\"2030/03/receipts/acme.pdf\""),
+            "{json}"
+        );
+        assert!(json.contains("\"note\":\"kept\""), "{json}");
     }
 }

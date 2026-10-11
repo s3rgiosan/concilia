@@ -231,13 +231,22 @@ export function finalizeCounts(data: Pick<ReviewData, "transactions" | "unmatche
   return counts;
 }
 
-/** Replaces a receipt's metadata wherever it appears, after a rescan. */
+/** `items` with `patch` applied to each, or `items` itself when none changed. */
+function patchAll<T>(items: T[], patch: (item: T) => T): T[] {
+  const patched = items.map(patch);
+  return patched.some((item, index) => item !== items[index]) ? patched : items;
+}
+
+/** Replaces a receipt's metadata wherever it appears, after a rescan. Entries that do not hold it stay the same objects. */
 export function patchReceipt(data: ReviewData, meta: ReceiptMeta): ReviewData {
   const patch = (m: ReceiptMeta) => (m.file === meta.file ? { ...meta, rel_path: meta.rel_path ?? m.rel_path } : m);
   return {
     ...data,
-    transactions: data.transactions.map((tx) => ({ ...tx, receipt_meta: tx.receipt_meta.map(patch) })),
-    unmatched_receipts: data.unmatched_receipts.map(patch),
-    reimbursements: data.reimbursements.map(patch),
+    transactions: patchAll(data.transactions, (tx) => {
+      const receipt_meta = patchAll(tx.receipt_meta, patch);
+      return receipt_meta === tx.receipt_meta ? tx : { ...tx, receipt_meta };
+    }),
+    unmatched_receipts: patchAll(data.unmatched_receipts, patch),
+    reimbursements: patchAll(data.reimbursements, patch),
   };
 }

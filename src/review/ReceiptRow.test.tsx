@@ -10,7 +10,7 @@ function renderRow(props: Partial<Parameters<typeof ReceiptRow>[0]> = {}) {
   const handlers = { onFocus: vi.fn(), onRescan: vi.fn(), onOpen: vi.fn() };
   const { container } = render(
     <ul>
-      <ReceiptRow receipt={makeReceipt("acme.pdf", { vendor: "ACME" })} focused={false} mismatch={null} rescanning={false} {...handlers} {...props} />
+      <ReceiptRow receipt={makeReceipt("acme.pdf", { vendor: "ACME" })} focused={false} txAbsCents={null} rescanning={false} {...handlers} {...props} />
     </ul>,
   );
   return { container, ...handlers };
@@ -61,10 +61,10 @@ describe("ReceiptRow", () => {
   });
 
   it("says how much the amount differs", () => {
-    renderRow({ mismatch: { kind: "amount", cents: 1500 } });
+    renderRow({ txAbsCents: 2500 });
     expect(screen.getByText("Differs by €15.00")).toBeTruthy();
     cleanup();
-    renderRow({ receipt: makeReceipt("acme.pdf", { vendor: "ACME", currency: "USD" }), mismatch: { kind: "fx" } });
+    renderRow({ receipt: makeReceipt("acme.pdf", { vendor: "ACME", currency: "USD" }), txAbsCents: 5000 });
     expect(screen.getByText("Differs by more than 10% (USD receipt)")).toBeTruthy();
   });
 
@@ -123,10 +123,11 @@ describe("ReceiptRow", () => {
   });
 
   it("runs its decision button", () => {
-    const onClick = vi.fn();
-    renderRow({ action: { label: "Assign", accessibleName: "Assign ACME", onClick } });
+    const onAssign = vi.fn();
+    const receipt = makeReceipt("acme.pdf", { vendor: "ACME" });
+    renderRow({ receipt, onAssign });
     expect(screen.getByText("Assign").textContent).toBe("Assign");
     fireEvent.click(screen.getByRole("button", { name: "Assign ACME" }));
-    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onAssign).toHaveBeenCalledExactlyOnceWith(receipt);
   });
 });

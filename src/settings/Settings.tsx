@@ -8,7 +8,7 @@ import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import { useWindowTitle } from "../lib/hooks/useWindowTitle";
 import { isTextField } from "../lib/popUpMenu";
 import { isPreview } from "../lib/preview";
-import { onMenu, saveSettings, subscribe, type Settings as SettingsData } from "../lib/tauri";
+import { onMenu, saveSettings, subscribe, type AppStateView, type Settings as SettingsData } from "../lib/tauri";
 import { FolderTab } from "./FolderTab";
 import { GeminiTab } from "./GeminiTab";
 import { GeneralTab } from "./GeneralTab";
@@ -30,9 +30,9 @@ function isPane(value: string): value is Pane {
 }
 
 /** The Settings window: General, Folder, Gemini and Rules panes. Every change saves at once. */
-export function Settings() {
+export function Settings({ initialState = null }: { initialState?: AppStateView | null }) {
   const { t } = useTranslation();
-  const { state, error: loadError, replace, reload } = useAppState();
+  const { state, error: loadError, replace, reload } = useAppState(initialState);
   const [stored, setStored] = useSafeStorage("settings.pane", "folder");
   const pane: Pane = isPane(stored) ? stored : "folder";
   /** The latest failure, boxed so any value can be held. */

@@ -265,6 +265,17 @@ fn extracting(total: usize) -> Vec<RunEvent> {
         .collect()
 }
 
+/// Extraction progress when every receipt comes from the cache: one event for all of them.
+fn extracting_from_cache(total: usize) -> Vec<RunEvent> {
+    vec![
+        RunEvent::Extracting { current: 0, total },
+        RunEvent::Extracting {
+            current: total,
+            total,
+        },
+    ]
+}
+
 fn standard_summary() -> Summary {
     Summary {
         total_transactions: 3,
@@ -684,6 +695,84 @@ async fn cancelling_stops_a_hanging_extraction() {
     assert!(!h.paths.match_result().exists());
 }
 
+/// Reads every receipt as ACME 10,00 except the one named `slow`, which never answers.
+struct HangsOn(&'static str);
+
+#[async_trait]
+impl ReceiptExtractor for HangsOn {
+    async fn extract(&self, file: &Path) -> Result<ReceiptMeta, ExtractError> {
+        let name = file.file_name().unwrap().to_string_lossy();
+        if name == self.0 {
+            std::future::pending::<()>().await;
+        }
+        Ok(receipt_meta(&file.to_string_lossy(), 1000, "ACME"))
+    }
+}
+
+#[tokio::test]
+async fn a_cancelled_extraction_keeps_the_receipts_already_read() {
+    let h = Harness::new();
+    let statement = h.standard();
+    let slow = h.receipt("slow.pdf");
+    let extractor = HangsOn("slow.pdf");
+    let ctx = RunContext {
+        extractor: &extractor,
+        ..h.ctx()
+    };
+    let cancel = async {
+        while !h.take_events().contains(&RunEvent::Extracting {
+            current: 2,
+            total: 3,
+        }) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        h.cancel.cancel();
+    };
+    let run = tokio::time::timeout(
+        Duration::from_secs(5),
+        pipeline::reconcile(&ctx, std::slice::from_ref(&statement), false),
+    );
+    let (result, ()) = tokio::join!(run, cancel);
+
+    assert_eq!(
+        result.expect("cancel ends the run").unwrap_err(),
+        PipelineError::Cancelled
+    );
+    let cached = files(&h.receipts_cache());
+    assert_eq!(cached.len(), 2, "{cached:?}");
+    assert!(!cached.contains(&slow));
+}
+
+#[tokio::test]
+async fn statements_must_start_like_a_pdf() {
+    let h = Harness::new();
+    let statement = h.statement("fake.pdf", STATEMENT);
+    write_file(&statement.path, b"#!/bin/sh\necho");
+
+    let error = pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap_err();
+
+    assert_code(&error, "not_pdf");
+    assert_eq!(h.statements.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn statements_over_the_size_limit_are_refused() {
+    let h = Harness::new();
+    let statement = h.statement("big.pdf", STATEMENT);
+    std::fs::File::create(&statement.path)
+        .unwrap()
+        .set_len(concilia_lib::filecheck::MAX_INPUT_BYTES + 1)
+        .unwrap();
+
+    let error = pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap_err();
+
+    assert_code(&error, "file_too_large");
+}
+
 // Scan.
 
 #[tokio::test]
@@ -878,7 +967,7 @@ async fn adding_statements_keeps_ids_and_the_draft() {
         RunEvent::Parsing { count: 1 },
         RunEvent::ReceiptsFound { count: 2 },
     ];
-    expected.extend(extracting(2));
+    expected.extend(extracting_from_cache(2));
     expected.extend([
         RunEvent::Matching,
         RunEvent::ReimbursementsFound { count: 0 },
@@ -1408,6 +1497,39 @@ fn refuses_symlinks_leading_out_of_the_receipts_folder() {
             .unwrap_err();
 
     assert_code(&error, "receipt_outside_period");
+}
+
+#[cfg(unix)]
+#[test]
+fn refuses_a_receipt_named_symlink_to_another_file_type() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = period().paths(dir.path());
+    let script = paths.receipts.join("run.command");
+    write_file(&script, b"#!/bin/sh\n");
+    std::os::unix::fs::symlink(&script, paths.receipts.join("invoice.pdf")).unwrap();
+
+    let error =
+        pipeline::resolve_period_file(&paths, RescanKind::Receipt, "2030/03/receipts/invoice.pdf")
+            .unwrap_err();
+
+    assert_code(&error, "receipt_outside_period");
+}
+
+#[cfg(unix)]
+#[test]
+fn resolves_a_symlink_to_its_target_inside_the_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = period().paths(dir.path());
+    let real = paths.receipts.join("real.pdf");
+    write_file(&real, b"%PDF-1.4");
+    std::os::unix::fs::symlink(&real, paths.receipts.join("alias.pdf")).unwrap();
+
+    let file =
+        pipeline::resolve_period_file(&paths, RescanKind::Receipt, "2030/03/receipts/alias.pdf")
+            .unwrap();
+
+    assert!(file.stored.ends_with("alias.pdf"));
+    assert_eq!(file.canonical, real.canonicalize().unwrap());
 }
 
 fn period_paths(root: &Path, month: &str) -> PeriodPaths {

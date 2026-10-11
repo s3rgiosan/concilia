@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { longDate, shortDate } from "./dates";
 
 describe("shortDate", () => {
@@ -29,5 +29,21 @@ describe("longDate", () => {
 
   it("keeps text that is not an ISO date", () => {
     expect(longDate("unknown", "pt")).toBe("unknown");
+  });
+});
+
+describe("formatter caching", () => {
+  it("builds one formatter per locale and options", async () => {
+    vi.resetModules();
+    const fresh = await import("./dates");
+    const construct = vi.spyOn(Intl, "DateTimeFormat");
+    for (let day = 1; day <= 28; day += 1) {
+      const iso = `2030-03-${String(day).padStart(2, "0")}`;
+      fresh.shortDate(iso, "en");
+      fresh.longDate(iso, "en");
+      fresh.shortDate(iso, "pt");
+    }
+    expect(construct).toHaveBeenCalledTimes(3);
+    construct.mockRestore();
   });
 });

@@ -8,6 +8,7 @@ import "./components/Sheet.css";
 import "./components/Toolbar.css";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import type { AppStateView } from "./lib/tauri";
 import { isTextField } from "./lib/popUpMenu";
 import { viewFromSearch } from "./lib/view";
 
@@ -23,14 +24,15 @@ document.addEventListener("contextmenu", (e) => {
   }
 });
 
-function App() {
+/** The window for the `view` in the address. `initialState` is the setup read at launch, so the window need not read it again. */
+function App({ initialState = null }: { initialState?: AppStateView | null }) {
   const view = viewFromSearch(window.location.search);
   switch (view) {
     case "settings":
       return (
         <ErrorBoundary>
           <Suspense fallback={null}>
-            <Settings />
+            <Settings initialState={initialState} />
           </Suspense>
         </ErrorBoundary>
       );
@@ -39,7 +41,7 @@ function App() {
       return (
         <ErrorBoundary>
           <Suspense fallback={null}>
-            <Main />
+            <Main initialState={initialState} />
           </Suspense>
         </ErrorBoundary>
       );

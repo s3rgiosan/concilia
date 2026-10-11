@@ -10,6 +10,19 @@ function parseIsoDate(iso: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** The formatter for these options, built once per locale and options. */
+function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let formatter = dateFormats.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    dateFormats.set(key, formatter);
+  }
+  return formatter;
+}
+
 function localeFor(language: string): string {
   return LOCALES[language] ?? "en-GB";
 }
@@ -20,7 +33,7 @@ export function shortDate(iso: string, language: string): string {
   if (!date) {
     return iso;
   }
-  const month = new Intl.DateTimeFormat(localeFor(language), { month: "short", timeZone: "UTC" }).format(date);
+  const month = dateFormat(localeFor(language), { month: "short", timeZone: "UTC" }).format(date);
   return `${date.getUTCDate()} ${month}`;
 }
 
@@ -30,5 +43,5 @@ export function longDate(iso: string, language: string): string {
   if (!date) {
     return iso;
   }
-  return new Intl.DateTimeFormat(localeFor(language), { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+  return dateFormat(localeFor(language), { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
 }

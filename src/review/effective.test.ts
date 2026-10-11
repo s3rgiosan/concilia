@@ -283,6 +283,15 @@ describe("patchReceipt", () => {
     expect(patched.reimbursements).toEqual([rescanned, INITECH]);
   });
 
+  it("keeps the objects that do not hold the receipt", () => {
+    const other = makeTransaction("tx-2", { status: "MATCHED", receipt_meta: [HOOLI] });
+    const holding = makeTransaction("tx-1", { status: "MATCHED", receipt_meta: [ACME] });
+    const patched = patchReceipt(makeReviewData({ transactions: [holding, other], unmatched_receipts: [INITECH] }), { ...ACME, amount_cents: 1500 });
+    expect(patched.transactions[0]).not.toBe(holding);
+    expect(patched.transactions[1]).toBe(other);
+    expect(patched.unmatched_receipts).toEqual([INITECH]);
+  });
+
   it("keeps the statements the month holds", () => {
     const statements = [{ file: "statement.pdf", bank: "cgd" as const, transactions: 2, added_at: "2030-03-01T00:00:00Z" }];
     const patched = patchReceipt({ ...data, statements }, { ...ACME, amount_cents: 1500 });

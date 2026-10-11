@@ -371,6 +371,15 @@
   margin-top: 10px;
 }
 
+.details__more {
+  display: flex;
+  margin-top: 8px;
+}
+
+.details__more button:not([class]) {
+  padding: 0 10px;
+}
+
 .details__edited {
   margin-right: 4px;
   vertical-align: -1px;

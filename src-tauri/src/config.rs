@@ -7,7 +7,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::fsutil::write_json;
-use crate::gemini::client::{DEFAULT_LOCATION, DEFAULT_MODEL};
+use crate::gemini::client::{
+    check_location, check_model, check_project, InvalidSetting, DEFAULT_LOCATION, DEFAULT_MODEL,
+};
 use crate::model::{Language, Rule};
 
 const SCHEMA_VERSION: u32 = 1;
@@ -80,6 +82,15 @@ impl Settings {
         self.gemini.model = trimmed(self.gemini.model, DEFAULT_MODEL);
         self.receipts_root = self.receipts_root.filter(|p| !p.as_os_str().is_empty());
         self
+    }
+
+    /// Checks that the region, project and model can be part of the Gemini API address.
+    pub fn validate(&self) -> Result<(), InvalidSetting> {
+        check_location(&self.gemini.location)?;
+        if let Some(project) = &self.gemini.project {
+            check_project(project)?;
+        }
+        check_model(&self.gemini.model)
     }
 
     /// The report's language: the chosen one, English when none is chosen.
@@ -315,6 +326,35 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(json["schema_version"], 1);
+    }
+
+    #[test]
+    fn validates_the_gemini_settings() {
+        let with = |location: &str, project: Option<&str>, model: &str| Settings {
+            gemini: GeminiSettings {
+                project: project.map(str::to_string),
+                location: location.into(),
+                model: model.into(),
+            },
+            ..Default::default()
+        };
+        assert_eq!(Settings::default().validate(), Ok(()));
+        assert_eq!(
+            with("global", Some("acme-test"), "gemini-2.5-flash").validate(),
+            Ok(())
+        );
+        assert_eq!(
+            with("evil.com/", None, "gemini-2.5-flash").validate(),
+            Err(InvalidSetting::Region)
+        );
+        assert_eq!(
+            with("europe-west1", Some("ACME"), "gemini-2.5-flash").validate(),
+            Err(InvalidSetting::Project)
+        );
+        assert_eq!(
+            with("europe-west1", None, "gemini/../x").validate(),
+            Err(InvalidSetting::Model)
+        );
     }
 
     #[test]

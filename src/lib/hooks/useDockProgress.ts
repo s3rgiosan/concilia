@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { errorKind } from "../errors";
 import { isPreview } from "../preview";
 import { requestAttention, setDockProgress, type RunEvent } from "../tauri";
-import type { RunState } from "./useRun";
+import type { RunEvents, RunState } from "./useRun";
 
 /** The percentage of receipts read so far, or "indeterminate" before the first count. */
 function progressOf(events: RunEvent[]): number | "indeterminate" {
@@ -25,9 +25,10 @@ function report(call: () => Promise<void>) {
 
 /**
  * Shows a run's progress on the Dock icon and clears it when the run ends. A run that finishes
- * (or fails) while the window is in the background bounces the icon once.
+ * (or fails) while the window is in the background bounces the icon once. It follows `events`
+ * without rendering the component that calls it.
  */
-export function useDockProgress(state: RunState<unknown>) {
+export function useDockProgress(state: RunState<unknown>, events: RunEvents) {
   const wasRunning = useRef(false);
   const shown = useRef<number | "indeterminate" | null>(null);
 
@@ -36,13 +37,16 @@ export function useDockProgress(state: RunState<unknown>) {
       return;
     }
     if (state.phase === "running") {
-      const progress = progressOf(state.events);
-      if (shown.current !== progress) {
-        shown.current = progress;
-        report(() => setDockProgress(progress));
-      }
+      const show = () => {
+        const progress = progressOf(events.get());
+        if (shown.current !== progress) {
+          shown.current = progress;
+          report(() => setDockProgress(progress));
+        }
+      };
+      show();
       wasRunning.current = true;
-      return;
+      return events.subscribe(show);
     }
     if (shown.current !== null) {
       shown.current = null;
@@ -56,7 +60,7 @@ export function useDockProgress(state: RunState<unknown>) {
     if (state.phase === "succeeded" || (state.phase === "failed" && errorKind(state.error) !== "cancelled")) {
       report(requestAttention);
     }
-  }, [state]);
+  }, [state, events]);
 
   useEffect(
     () => () => {

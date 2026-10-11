@@ -1,7 +1,8 @@
 //! State shared by every command: settings, rules, the service account, period locks, the
 //! PDF tools and the Gemini client built from them.
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
@@ -65,6 +66,8 @@ pub struct AppState {
     pub locks: Arc<PeriodLocks>,
     pub poppler: Poppler,
     gemini: Mutex<Option<Arc<GeminiClient>>>,
+    /// Paths the user chose in a file dialog or dropped on a window, which commands may read.
+    granted: Mutex<HashSet<PathBuf>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -85,7 +88,42 @@ impl AppState {
             locks: PeriodLocks::new(),
             poppler,
             gemini: Mutex::new(None),
+            granted: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Records paths the user chose, so commands accept them. Each path is kept as given and
+    /// as its real path.
+    pub fn grant_paths(&self, paths: impl IntoIterator<Item = PathBuf>) {
+        let mut granted = lock(&self.granted);
+        for path in paths {
+            if let Ok(real) = path.canonicalize() {
+                granted.insert(real);
+            }
+            granted.insert(path);
+        }
+    }
+
+    /// Whether the user chose `path` in a file dialog or dropped it on a window.
+    pub fn is_granted(&self, path: &Path) -> bool {
+        let granted = lock(&self.granted);
+        granted.contains(path)
+            || path
+                .canonicalize()
+                .is_ok_and(|real| granted.contains(&real))
+    }
+
+    /// Fails unless every path was chosen by the user.
+    pub fn ensure_granted<'a>(
+        &self,
+        paths: impl IntoIterator<Item = &'a Path>,
+    ) -> CommandResult<()> {
+        for path in paths {
+            if !self.is_granted(path) {
+                return Err(not_granted(path));
+            }
+        }
+        Ok(())
     }
 
     pub fn settings(&self) -> Settings {
@@ -195,19 +233,23 @@ impl AppState {
     }
 
     /// Saves the settings. The receipts folder and the Gemini settings cannot change while a
-    /// job runs.
+    /// job runs, and a new receipts folder must be one the user chose.
     pub fn save_settings(&self, settings: Settings) -> CommandResult<AppStateView> {
         {
             let mut config = lock(&self.config);
             let current = config.settings().clone();
             let next = settings.normalized();
-            let affects_jobs =
-                current.receipts_root != next.receipts_root || current.gemini != next.gemini;
+            next.validate()?;
+            let root_changed = current.receipts_root != next.receipts_root;
+            let affects_jobs = root_changed || current.gemini != next.gemini;
             if affects_jobs && self.locks.busy() {
                 return Err(CommandError::new(
                     ErrorKind::Busy,
                     "wait for the running job to finish before changing the folder or Gemini settings",
                 ));
+            }
+            if let (true, Some(root)) = (root_changed, &next.receipts_root) {
+                self.ensure_granted([root.as_path()])?;
             }
             config.replace(next)?;
             if current.gemini != config.settings().gemini {
@@ -244,6 +286,18 @@ impl AppState {
     }
 }
 
+/// The error for a path the user never chose.
+fn not_granted(path: &Path) -> CommandError {
+    CommandError::coded(
+        ErrorKind::InvalidInput,
+        "path_not_chosen",
+        format!(
+            "{} was not chosen in a dialog or dropped on the window",
+            path.display()
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +324,7 @@ mod tests {
         );
 
         let dir = tempfile::tempdir().unwrap();
+        state.grant_paths([dir.path().to_path_buf()]);
         let settings = Settings {
             receipts_root: Some(dir.path().to_path_buf()),
             ..Default::default()
@@ -279,8 +334,74 @@ mod tests {
     }
 
     #[test]
+    fn a_new_receipts_root_must_have_been_chosen() {
+        let state = state();
+        let chosen = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let with_root = |root: &Path| Settings {
+            receipts_root: Some(root.to_path_buf()),
+            ..Default::default()
+        };
+
+        let error = state.save_settings(with_root(other.path())).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert_eq!(error.code.as_deref(), Some("path_not_chosen"));
+
+        state.grant_paths([chosen.path().to_path_buf()]);
+        state.save_settings(with_root(chosen.path())).unwrap();
+        // The folder already in the settings needs no new grant.
+        let language = Settings {
+            language: Some(crate::model::Language::Pt),
+            ..with_root(chosen.path())
+        };
+        let fresh = AppState::new(
+            ConfigStore::in_memory(language.clone()),
+            RulesStore::in_memory(Vec::new()),
+            ServiceAccountStore::new(Box::new(MemoryStore::default())),
+            Poppler::resolve(None),
+        );
+        assert!(fresh.save_settings(language).is_ok());
+        // Clearing the folder needs no grant either.
+        assert!(state.save_settings(Settings::default()).is_ok());
+    }
+
+    #[test]
+    fn granted_paths_match_by_real_path() {
+        let state = state();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("statement.pdf");
+        std::fs::write(&file, b"%PDF-1.4").unwrap();
+        assert!(!state.is_granted(&file));
+        state.grant_paths([file.clone()]);
+        assert!(state.is_granted(&file));
+        let indirect = dir.path().join(".").join("statement.pdf");
+        assert!(state.is_granted(&indirect));
+        assert!(state.ensure_granted([file.as_path()]).is_ok());
+        let other = dir.path().join("other.pdf");
+        assert_eq!(
+            state
+                .ensure_granted([file.as_path(), other.as_path()])
+                .unwrap_err()
+                .code
+                .as_deref(),
+            Some("path_not_chosen")
+        );
+    }
+
+    #[test]
+    fn refuses_invalid_gemini_settings() {
+        let state = state();
+        let mut settings = Settings::default();
+        settings.gemini.location = "evil.com/".into();
+        let error = state.save_settings(settings).unwrap_err();
+        assert_eq!(error.code.as_deref(), Some("invalid_region"));
+        assert_eq!(state.settings().gemini.location, "europe-west1");
+    }
+
+    #[test]
     fn a_receipts_root_that_is_not_a_folder_counts_as_missing() {
         let state = state();
+        state.grant_paths([PathBuf::from("/nonexistent/receipts")]);
         let settings = Settings {
             receipts_root: Some("/nonexistent/receipts".into()),
             ..Default::default()

@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::bank::Bank;
 use crate::error::ErrorKind;
 use crate::extract::{ExtractAllError, ExtractOptions, ReceiptExtractor};
+use crate::filecheck::{self, FileCheckError, FileKind};
 use crate::fsutil::{read_json_lenient, FsError};
 use crate::model::{Language, ReceiptMeta, Rule};
 use crate::period::PeriodPaths;
@@ -100,8 +101,29 @@ impl From<PopplerError> for PipelineError {
         match error {
             PopplerError::Missing(tool) => PipelineError::PopplerMissing(tool),
             PopplerError::Failed(message) => PipelineError::Parse(message),
+            PopplerError::TooLarge(_) => {
+                PipelineError::coded(ErrorKind::Parse, "pdf_output_too_large", error.to_string())
+            }
         }
     }
+}
+
+impl From<FileCheckError> for PipelineError {
+    fn from(error: FileCheckError) -> PipelineError {
+        match error.code() {
+            Some(code) => PipelineError::coded(ErrorKind::InvalidInput, code, error.to_string()),
+            None => PipelineError::Io(error.to_string()),
+        }
+    }
+}
+
+/// Runs file or CPU work on the blocking thread pool, keeping it off the async workers.
+pub(crate) async fn off_thread<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, PipelineError> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| PipelineError::Io(format!("background work failed: {e}")))
 }
 
 fn io(path: &Path, error: impl std::fmt::Display) -> PipelineError {
@@ -130,9 +152,25 @@ pub trait StatementText: Send + Sync {
 #[async_trait]
 impl StatementText for Poppler {
     async fn text(&self, pdf: &Path) -> Result<String, PipelineError> {
-        let bytes = tokio::fs::read(pdf).await.map_err(|e| io(pdf, e))?;
-        Ok(Poppler::text(self, &bytes).await?)
+        Ok(Poppler::text(self, pdf).await?)
     }
+}
+
+/// Checks that a statement is a PDF of at most 50 MB, by its first bytes.
+async fn check_statement(pdf: &Path) -> Result<(), PipelineError> {
+    match filecheck::inspect(pdf).await {
+        Ok(FileKind::Pdf) => Ok(()),
+        Ok(_) | Err(FileCheckError::Unrecognized(_)) => Err(not_pdf(pdf)),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn not_pdf(pdf: &Path) -> PipelineError {
+    PipelineError::coded(
+        ErrorKind::InvalidInput,
+        "not_pdf",
+        format!("{} is not a PDF file", pdf.display()),
+    )
 }
 
 /// Everything a reconcile or scan needs besides the period's files.

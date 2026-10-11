@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::model::{basename, ReceiptMeta, ReceiptsByStatus, Status, Transaction};
 
 /// Fields added for display that never belong in stored metadata.
-const TRANSIENT_FIELDS: &[&str] = &["receiptUrl", "rel_path"];
+pub const TRANSIENT_FIELDS: &[&str] = &["receiptUrl", "rel_path"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Move {

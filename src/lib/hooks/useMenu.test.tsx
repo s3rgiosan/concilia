@@ -4,14 +4,16 @@ import { createRef, type RefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
 import menuSource from "../../../src-tauri/src/menu.rs?raw";
-import { REVIEW_COMMANDS, type ReviewAvailability, type ReviewCommands } from "../menuCommands";
-import { onMenu, setMenu, setMenuState } from "../tauri";
+import { REVIEW_COMMANDS, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../menuCommands";
+import { createReviewMenuStore } from "../reviewMenu";
+import { onMenu, setMenu, setMenuItemText, setMenuState } from "../tauri";
 import { menuEnabled, useMenu, type MenuActions, type MenuModel } from "./useMenu";
 
 vi.mock("../tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../tauri")>()),
   onMenu: vi.fn(),
   setMenu: vi.fn(),
+  setMenuItemText: vi.fn(),
   setMenuState: vi.fn(),
 }));
 
@@ -24,7 +26,10 @@ function availability(value: boolean): ReviewAvailability {
   return Object.fromEntries(REVIEW_COMMANDS.map((command) => [command, value])) as ReviewAvailability;
 }
 
-const STATEMENTS_SCREEN: MenuModel = {
+/** The model a screen has: the hook's inputs, with the review's part as the review reports it. */
+type TestModel = MenuModel & { rejectKind: RejectKind };
+
+const STATEMENTS_SCREEN: TestModel = {
   configured: true,
   sidebarShown: true,
   rejectKind: "removeMatch",
@@ -35,7 +40,7 @@ const STATEMENTS_SCREEN: MenuModel = {
   reviewCan: null,
 };
 
-const REVIEW_SCREEN: MenuModel = {
+const REVIEW_SCREEN: TestModel = {
   ...STATEMENTS_SCREEN,
   acceptsStatements: false,
   canReconcile: false,
@@ -43,7 +48,7 @@ const REVIEW_SCREEN: MenuModel = {
   reviewCan: availability(true),
 };
 
-const UNCONFIGURED: MenuModel = { ...STATEMENTS_SCREEN, configured: false, acceptsStatements: false, canReconcile: false };
+const UNCONFIGURED: TestModel = { ...STATEMENTS_SCREEN, configured: false, acceptsStatements: false, canReconcile: false };
 
 function makeActions(): { [K in keyof MenuActions]: ReturnType<typeof vi.fn> } {
   return {
@@ -79,12 +84,35 @@ function makeCommands(can: ReviewAvailability = availability(true)): ReviewComma
   };
 }
 
-function setup(model: MenuModel, commands: ReviewCommands | null = null) {
+function setup(model: TestModel, commands: ReviewCommands | null = null) {
   const actions = makeActions();
   const ref = createRef<ReviewCommands | null>() as RefObject<ReviewCommands | null>;
   ref.current = commands;
-  const view = renderHook(({ m }: { m: MenuModel }) => useMenu(m, actions as unknown as MenuActions, ref), { initialProps: { m: model } });
-  return { actions, ...view };
+  const review = createReviewMenuStore();
+  const report = (m: TestModel) => {
+    if (m.reviewCan) {
+      review.setCan(m.reviewCan);
+    }
+    review.setRejectKind(m.rejectKind);
+  };
+  report(model);
+  const view = renderHook(
+    ({ m }: { m: TestModel }) => {
+      const { reviewCan, rejectKind, ...rest } = m;
+      void rejectKind;
+      return useMenu({ ...rest, reviewShown: reviewCan !== null }, actions as unknown as MenuActions, ref, review);
+    },
+    { initialProps: { m: model } },
+  );
+  return {
+    actions,
+    review,
+    ...view,
+    rerender: (props: { m: TestModel }) => {
+      act(() => report(props.m));
+      view.rerender(props);
+    },
+  };
 }
 
 /** The labels from the last `setMenu` call. */
@@ -200,19 +228,58 @@ describe("labels", () => {
   });
 
   it("names the reject item by what it does to the selected transaction", async () => {
-    const { rerender } = setup({ ...REVIEW_SCREEN, rejectKind: "noneOfThese" });
+    const { review } = setup({ ...REVIEW_SCREEN, rejectKind: "noneOfThese" });
     await flush();
     expect(labels().reject).toBe("None of These");
-    rerender({ m: { ...REVIEW_SCREEN, rejectKind: "needsReceipt" } });
+    act(() => review.setRejectKind("removeMatch"));
     await flush();
-    expect(labels().reject).toBe("Needs a Receipt");
-    rerender({ m: REVIEW_SCREEN });
-    await flush();
-    expect(labels().reject).toBe("Remove Match");
     await act(async () => {
       await i18n.changeLanguage("pt");
     });
     expect(labels().reject).toBe("Remover associação");
+  });
+
+  it("renames only the reject item when the selected transaction changes what it does", async () => {
+    const { review } = setup({ ...REVIEW_SCREEN, rejectKind: "removeMatch" });
+    await flush();
+    expect(setMenu).toHaveBeenCalledTimes(1);
+    expect(setMenuItemText).not.toHaveBeenCalled();
+
+    act(() => review.setRejectKind("needsReceipt"));
+    await flush();
+    expect(setMenuItemText).toHaveBeenLastCalledWith("reject", "Needs a Receipt");
+    act(() => review.setRejectKind("noneOfThese"));
+    await flush();
+    expect(setMenuItemText).toHaveBeenLastCalledWith("reject", "None of These");
+    expect(setMenuItemText).toHaveBeenCalledTimes(2);
+    expect(setMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not rename the reject item for a kind it already shows", async () => {
+    const { review } = setup({ ...REVIEW_SCREEN, rejectKind: "removeMatch" });
+    await flush();
+    act(() => review.setRejectKind("removeMatch"));
+    await flush();
+    expect(setMenuItemText).not.toHaveBeenCalled();
+  });
+
+  it("sends the review's availability as it changes, without rendering the caller", async () => {
+    let renders = 0;
+    const review = createReviewMenuStore();
+    review.setCan(availability(false));
+    const ref = createRef<ReviewCommands | null>() as RefObject<ReviewCommands | null>;
+    const inputs = { configured: true, sidebarShown: true, acceptsStatements: false, canReconcile: false, hasResult: true, running: false, reviewShown: true };
+    renderHook(() => {
+      renders += 1;
+      useMenu(inputs, makeActions() as unknown as MenuActions, ref, review);
+    });
+    await flush();
+    expect(lastState()).toMatchObject({ accept: false });
+    const before = renders;
+    act(() => review.setCan({ ...availability(false), accept: true }));
+    await flush();
+    expect(lastState()).toMatchObject({ accept: true });
+    expect(renders).toBe(before);
   });
 
   it("sends the labels before the state", async () => {

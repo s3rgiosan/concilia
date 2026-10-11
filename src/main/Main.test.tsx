@@ -18,6 +18,7 @@ import {
   openReport,
   openSettings,
   pendingUpdate,
+  periodSummary,
   pickStatements,
   requestAttention,
   revealPeriod,
@@ -34,7 +35,7 @@ import {
   type UpdateCheckResult,
   type UpdateProgress,
 } from "../lib/tauri";
-import { deferred, makeSettings, makeView } from "../test/fixtures";
+import { deferred, makeSettings, makeView, nextFrame } from "../test/fixtures";
 import { Main } from "./Main";
 
 vi.mock("../lib/tauri", async (importOriginal) => ({
@@ -53,6 +54,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   openReport: vi.fn(),
   openSettings: vi.fn(),
   pendingUpdate: vi.fn(),
+  periodSummary: vi.fn(),
   pickReceiptsRoot: vi.fn(),
   pickStatements: vi.fn(),
   revealPeriod: vi.fn(),
@@ -60,6 +62,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   saveSettings: vi.fn(),
   setDockProgress: vi.fn(),
   setMenu: vi.fn(),
+  setMenuItemText: vi.fn(),
   setMenuState: vi.fn(),
   setWindowTitle: vi.fn(),
   startReconcile: vi.fn(),
@@ -78,6 +81,7 @@ vi.mock("../review/Review", async () => {
       runSummary,
       moreActions,
       onChanged,
+      onSaved,
       onError,
     }: {
       period: Period;
@@ -86,6 +90,7 @@ vi.mock("../review/Review", async () => {
       runSummary?: string;
       moreActions: PopUpAction[];
       onChanged?: () => void;
+      onSaved?: (period: Period) => void;
       onError: (e: unknown) => void;
     }) => (
       <section aria-label="Review">
@@ -96,6 +101,9 @@ vi.mock("../review/Review", async () => {
         <p>{`Review ${period.year}-${period.month}`}</p>
         <button type="button" onClick={onChanged}>
           Change Review
+        </button>
+        <button type="button" onClick={() => onSaved?.(period)}>
+          Save Review
         </button>
         <button type="button" onClick={() => onError({ kind: "io", message: "draft unreadable" })}>
           Fail Review
@@ -224,7 +232,11 @@ function reconcileRun() {
     onEvent = callback;
     return handle;
   });
-  return { result, cancel, push: (event: RunEvent) => act(() => onEvent(event)) };
+  return { result, cancel, push: (event: RunEvent) =>
+      act(async () => {
+        onEvent(event);
+        await nextFrame();
+      }) };
 }
 
 function button(name: string, scope: HTMLElement = document.body): HTMLButtonElement {
@@ -303,6 +315,14 @@ describe("first run", () => {
     expect(listPeriods).not.toHaveBeenCalled();
     expect(setWindowTitle).toHaveBeenLastCalledWith("Concilia");
     expect(document.title).toBe("Concilia");
+  });
+
+  it("opens from the setup read at launch without reading it again", async () => {
+    render(<Main initialState={makeView()} />);
+    await act(async () => undefined);
+    expect(getAppState).not.toHaveBeenCalled();
+    expect(listPeriods).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("navigation", { name: "Months" })).toBeTruthy();
   });
 
   it("shows the months once the settings are complete", async () => {
@@ -457,9 +477,22 @@ describe("sidebar", () => {
   it("lists the months again when the window gets focus", async () => {
     await renderMain();
     vi.mocked(listPeriods).mockResolvedValue([summary("2030", "03", { status: "ready", receipts: 2 }), ...LISTED]);
+    vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 6));
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(listPeriods).toHaveBeenCalledTimes(2);
     expect(months()[0]).toBe("* MarchNeeds statements · 2 receipts");
+  });
+
+  it("does not list the months again for a focus soon after a listing", async () => {
+    await renderMain();
+    vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 3));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(listPeriods).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 6));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(listPeriods).toHaveBeenCalledTimes(2);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(listPeriods).toHaveBeenCalledTimes(2);
   });
 
   it("explains a listing that failed and lists again on Try Again", async () => {
@@ -476,6 +509,7 @@ describe("sidebar", () => {
     const slow = deferred<PeriodSummary[]>();
     vi.mocked(listPeriods).mockReturnValueOnce(slow.promise);
     await renderMain();
+    vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 6));
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(months()).toHaveLength(4);
     await act(async () => slow.resolve([]));
@@ -674,6 +708,7 @@ describe("month without a match", () => {
     await renderMain();
     selectMonth(/March/);
     vi.mocked(listPeriods).mockResolvedValue([summary("2030", "03", { status: "ready", transactions: 8 })]);
+    vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 6));
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(subtitle()).toBe("Needs receipts");
     expect(within(toolbar()).getByText("Add receipts first")).toBeTruthy();
@@ -748,6 +783,25 @@ describe("month in review", () => {
     expect(subtitle()).toBe("Finalized");
   });
 
+  it("refreshes only the month's own entry after a draft save", async () => {
+    await renderMain();
+    selectMonth(/February/);
+    vi.mocked(periodSummary).mockResolvedValue(summary("2030", "02", { status: "in_review", receipts: 30, transactions: 42, pending: 2 }));
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Save Review" })));
+    expect(periodSummary).toHaveBeenCalledExactlyOnceWith("2030", "02");
+    expect(listPeriods).toHaveBeenCalledTimes(1);
+    expect(months().find((m) => m.includes("February"))).toContain("2 to decide");
+    expect(months().find((m) => m.includes("January"))).toContain("Finalized");
+  });
+
+  it("lists every month when a single month cannot be read", async () => {
+    await renderMain();
+    selectMonth(/February/);
+    vi.mocked(periodSummary).mockRejectedValue({ kind: "io", message: "unreadable" });
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Save Review" })));
+    expect(listPeriods).toHaveBeenCalledTimes(2);
+  });
+
   it("asks before re-running and re-runs from the saved transactions", async () => {
     const run = reconcileRun();
     await renderMain();
@@ -763,7 +817,7 @@ describe("month in review", () => {
     fireEvent.click(button("Reconcile Again", screen.getByRole("alertdialog")));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(startReconcile).toHaveBeenCalledWith("2030", "02", [], true, expect.any(Function));
-    run.push({ step: "parsing", count: 0 });
+    await run.push({ step: "parsing", count: 0 });
     expect(steps()[0]).toBe("running: Reading statements · using the saved transactions");
   });
 });
@@ -777,9 +831,9 @@ describe("reconcile", () => {
     expect(months()[0]).toBe("* MarchReconciling…");
     expect(within(toolbar()).queryByRole("button", { name: "Reconcile" })).toBeNull();
 
-    run.push({ step: "parsing", count: 1 });
-    run.push({ step: "receipts_found", count: 40 });
-    run.push({ step: "extracting", current: 10, total: 40 });
+    await run.push({ step: "parsing", count: 1 });
+    await run.push({ step: "receipts_found", count: 40 });
+    await run.push({ step: "extracting", current: 10, total: 40 });
     expect(steps().slice(0, 3)).toEqual([
       "done: Reading statements · 1 file",
       "done: Scanning receipts · 40 found",
@@ -790,7 +844,7 @@ describe("reconcile", () => {
     expect(within(screen.getByRole("listbox", { name: "Months" })).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("10");
     expect(document.querySelectorAll(".run button")).toHaveLength(0);
 
-    run.push({ step: "matching" });
+    await run.push({ step: "matching" });
     expect(subtitle()).toBe("Reconciling…");
   });
 
@@ -839,7 +893,7 @@ describe("reconcile", () => {
 
   it("explains a failed run and returns to the statements", async () => {
     const run = await startReconciling();
-    run.push({ step: "parsing", count: 1 });
+    await run.push({ step: "parsing", count: 1 });
     await act(async () => run.result.reject({ kind: "parse", message: "no transactions found" }));
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("Details: no transactions found");
@@ -865,7 +919,7 @@ describe("reconcile", () => {
     expect(startReconcile).toHaveBeenCalledTimes(2);
     expect(vi.mocked(startReconcile).mock.calls[1].slice(0, 4)).toEqual(["2030", "03", [{ path: STATEMENT_PATH, bank: "cgd" }], false]);
     expect(subtitle()).toBe("Reconciling…");
-    again.push({ step: "parsing", count: 1 });
+    await again.push({ step: "parsing", count: 1 });
   });
 
   it("offers Settings when the failure is fixed there", async () => {
@@ -902,20 +956,20 @@ describe("reconcile", () => {
 
   it("estimates the time left once three receipts are read", async () => {
     const run = await startReconciling();
-    run.push({ step: "receipts_found", count: 40 });
+    await run.push({ step: "receipts_found", count: 40 });
     for (const current of [0, 1, 2]) {
       vi.setSystemTime(new Date(2030, 3, 15, 0, 0, current * 10));
-      run.push({ step: "extracting", current, total: 40 });
+      await run.push({ step: "extracting", current, total: 40 });
     }
     expect(subtitle()).toBe("Reading receipts: 2 of 40");
     vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 30));
-    run.push({ step: "extracting", current: 3, total: 40 });
+    await run.push({ step: "extracting", current: 3, total: 40 });
     expect(steps()[2]).toBe("running: Extracting receipt data · 3 of 40 · About 6 min left");
     expect(subtitle()).toBe("Reading receipts: 3 of 40 · About 6 min left");
     vi.setSystemTime(new Date(2030, 3, 15, 0, 1, 0));
-    run.push({ step: "extracting", current: 39, total: 40 });
+    await run.push({ step: "extracting", current: 39, total: 40 });
     expect(subtitle()).toBe("Reading receipts: 39 of 40 · Less than a minute left");
-    run.push({ step: "matching" });
+    await run.push({ step: "matching" });
     expect(subtitle()).toBe("Reconciling…");
   });
 
@@ -1020,7 +1074,7 @@ describe("dock progress", () => {
   it("follows the receipts being read and clears when the run ends", async () => {
     const run = await startReconciling();
     expect(setDockProgress).toHaveBeenLastCalledWith("indeterminate");
-    run.push({ step: "extracting", current: 10, total: 40 });
+    await run.push({ step: "extracting", current: 10, total: 40 });
     expect(setDockProgress).toHaveBeenLastCalledWith(25);
     await act(async () => run.result.reject(new Error("failed")));
     expect(setDockProgress).toHaveBeenLastCalledWith(null);

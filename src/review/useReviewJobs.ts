@@ -49,7 +49,7 @@ export function useReviewJobs({ year, month, flush, load, onChanged, onError, se
   const latestOnChanged = useLatest(onChanged);
   const latestSetNotice = useLatest(setNotice);
   const latestClearAdding = useLatest(clearAdding);
-  useDockProgress(jobState);
+  useDockProgress(jobState, job.events);
 
   /** Saves pending decisions, then starts a run; Try Again starts it the same way. */
   function runJob(kind: JobKind, launch: (onEvent: (event: RunEvent) => void) => RunHandle<JobOutcome>) {

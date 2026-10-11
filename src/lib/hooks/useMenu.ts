@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { menuState, rejectMenuLabel, runMenuCommand, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../menuCommands";
+import { menuState, rejectMenuLabel, runMenuCommand, type ReviewAvailability, type ReviewCommands } from "../menuCommands";
 import { isTextField } from "../popUpMenu";
 import { isPreview } from "../preview";
-import { onMenu, setMenu, setMenuState, subscribe } from "../tauri";
+import type { ReviewMenuStore } from "../reviewMenu";
+import { shallowEqual } from "../shallowEqual";
+import { onMenu, setMenu, setMenuItemText, setMenuState, subscribe } from "../tauri";
 import { useLatest } from "./useLatest";
 import { useShallowStable } from "./useShallowStable";
 
@@ -12,8 +14,6 @@ export interface MenuModel {
   /** False before setup: only Settings, Check for Updates and Help work. */
   configured: boolean;
   sidebarShown: boolean;
-  /** What Reject does for the selected transaction, which names its menu item. */
-  rejectKind: RejectKind;
   /** The month is shown as statements to add and reconcile, and no run is going. */
   acceptsStatements: boolean;
   /** The month has receipts, and statements added or transactions to reconcile. */
@@ -24,6 +24,12 @@ export interface MenuModel {
   /** What the open review can run, or null when no review is shown. */
   reviewCan: ReviewAvailability | null;
 }
+
+/** `MenuModel` for the hook: the review's availability comes from the review's store. */
+export type MenuInputs = Omit<MenuModel, "reviewCan"> & {
+  /** A review is shown, so its availability in the store applies. */
+  reviewShown: boolean;
+};
 
 /** The month-level actions the menu runs. */
 export interface MenuActions {
@@ -146,24 +152,25 @@ export function menuEnabled(model: MenuModel): Record<string, boolean> {
 
 /**
  * Keeps the native menu bar in step with the main window: sends the localized labels when the
- * language, the sidebar or the selected transaction change, sends which items are enabled, and runs
- * the items the user chooses. Does nothing in the browser preview.
+ * language or the sidebar change, renames Reject as the selected transaction changes what it does,
+ * sends which items are enabled, and runs the items the user chooses. The review's availability and
+ * Reject kind are read from `review` without rendering the caller. Does nothing in the browser
+ * preview.
  */
-export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: RefObject<ReviewCommands | null>) {
+export function useMenu(inputs: MenuInputs, actions: MenuActions, reviewCommands: RefObject<ReviewCommands | null>, review: ReviewMenuStore) {
   const { t } = useTranslation();
-  const { sidebarShown, rejectKind } = model;
+  const { sidebarShown } = inputs;
 
-  const labels = useMemo(() => {
-    const result: Record<string, string> = {};
+  const menu = useMemo(() => {
+    const labels: Record<string, string> = {};
     for (const key of LABEL_KEYS) {
-      result[key] = t(`menu.${key}`);
+      labels[key] = t(`menu.${key}`);
     }
-    result.toggle_sidebar = t(sidebarShown ? "menu.hide_sidebar" : "menu.show_sidebar");
-    result.reject = t(rejectMenuLabel(rejectKind));
-    return result;
-  }, [t, sidebarShown, rejectKind]);
-
-  const enabled = useShallowStable(menuEnabled(model));
+    labels.toggle_sidebar = t(sidebarShown ? "menu.hide_sidebar" : "menu.show_sidebar");
+    const rejectKind = review.get().rejectKind;
+    labels.reject = t(rejectMenuLabel(rejectKind));
+    return { labels, rejectKind };
+  }, [t, sidebarShown, review]);
 
   /** Menu calls run one after another, so a state update never lands before the labels it follows. */
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -171,19 +178,64 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
     queue.current = queue.current.then(call).catch((e) => console.error("could not update the menu", e));
   }, []);
 
-  useEffect(() => {
-    if (!isPreview()) {
-      send(() => setMenu(labels));
+  const latestModel = useLatest(inputs);
+  /** The model with the review's availability from the store. */
+  const modelNow = useCallback((): MenuModel => {
+    const current = latestModel.current;
+    return { ...current, reviewCan: current.reviewShown ? review.get().can : null };
+  }, [latestModel, review]);
+
+  /** The Reject kind whose text the menu shows. */
+  const sentKind = useRef(menu.rejectKind);
+  const sentState = useRef<Record<string, boolean> | null>(null);
+
+  const syncState = useCallback(
+    (force: boolean) => {
+      const next = menuEnabled(modelNow());
+      if (!force && sentState.current && shallowEqual(sentState.current, next)) {
+        return;
+      }
+      sentState.current = next;
+      send(() => setMenuState(next));
+    },
+    [modelNow, send],
+  );
+
+  const syncReject = useCallback(() => {
+    const kind = review.get().rejectKind;
+    if (kind !== sentKind.current) {
+      sentKind.current = kind;
+      send(() => setMenuItemText("reject", t(rejectMenuLabel(kind))));
     }
-  }, [labels, send]);
+  }, [review, send, t]);
 
   useEffect(() => {
-    if (!isPreview()) {
-      send(() => setMenuState(enabled));
+    if (isPreview()) {
+      return;
     }
-  }, [enabled, labels, send]);
+    sentKind.current = menu.rejectKind;
+    send(() => setMenu(menu.labels));
+    syncReject();
+    syncState(true);
+  }, [menu, send, syncReject, syncState]);
 
-  const latestModel = useLatest(model);
+  const stableInputs = useShallowStable(inputs);
+  useEffect(() => {
+    if (!isPreview()) {
+      syncState(false);
+    }
+  }, [stableInputs, syncState]);
+
+  useEffect(() => {
+    if (isPreview()) {
+      return;
+    }
+    return review.subscribe(() => {
+      syncReject();
+      syncState(false);
+    });
+  }, [review, syncReject, syncState]);
+
   const latestActions = useLatest(actions);
   useEffect(() => {
     if (isPreview()) {
@@ -191,7 +243,7 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
     }
     return subscribe(
       onMenu((id) => {
-        const current = latestModel.current;
+        const current = modelNow();
         const monthActions = latestActions.current;
 
         if ((id === "undo" || id === "redo") && isTextField(document.activeElement)) {
@@ -240,5 +292,5 @@ export function useMenu(model: MenuModel, actions: MenuActions, reviewCommands: 
         }
       }),
     );
-  }, [latestModel, latestActions, reviewCommands]);
+  }, [modelNow, latestActions, reviewCommands]);
 }

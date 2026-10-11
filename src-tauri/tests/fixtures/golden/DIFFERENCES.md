@@ -22,6 +22,14 @@ show these differences are kept out of the fixtures.
   with one of its candidates, the other candidates return to the unmatched receipts, so the
   review screen can assign them and Finalize moves them to `_unmatched`. Node dropped them
   from the records and left them in `receipts/`.
+- **Rule matches check the amount.** Node MATCHED a transaction to the one receipt sharing a
+  rule's keywords, whatever its amount. Rust MATCHES it only when the receipt's amount fits:
+  exactly for EUR or an unknown currency, within ±10% for a foreign currency. Several fitting
+  receipts are REVIEW with `rule_match (vendor)`. When no receipt of any matching rule fits, the
+  transaction is REVIEW with `rule_match_amount (vendor)` and every receipt sharing the first
+  rule's keywords. A later rule with a fitting receipt wins over an earlier one without. The
+  matcher fixtures keep the Node output; `tests/golden.rs` skips the cases where Node settled a
+  rule hit on a receipt that does not fit, and checks Rust's rule notes in those cases.
 - **Finalize input.** Finalize derives the reviewed state from `match-result.json` and the
   saved draft, and only touches receipts inside the period's `receipts/` folder. Node took
   both lists from the review screen.

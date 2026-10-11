@@ -2,7 +2,10 @@
 //!
 //! Passes run in order; each one only looks at transactions still UNMATCHED:
 //!
-//! - Pass 0, user rules: vendor keyword plus description keyword.
+//! - Pass 0, user rules: vendor keyword plus description keyword. A receipt whose amount fits
+//!   (exact for EUR or unknown currency, within ±10% for a foreign currency) is MATCHED when it
+//!   is the only one; several are REVIEW, and receipts that only share the keywords are REVIEW
+//!   with `rule_match_amount`.
 //! - Pass 1, name and exact amount, EUR receipts. A unique date within the window breaks ties.
 //! - Pass 1b, name and exact amount, receipts of unknown currency: always REVIEW.
 //! - Pass 2, exact amount, EUR receipts, preferring name overlap; date breaks ties.
@@ -83,14 +86,51 @@ fn is_known_foreign_currency(receipt: &ReceiptMeta) -> bool {
     matches!(receipt.currency.as_deref(), Some(c) if c != "EUR")
 }
 
-fn rule_matches(rule: &Rule, description: &str, receipt: &ReceiptMeta) -> bool {
-    let vendor = receipt.vendor.as_deref().unwrap_or("").to_lowercase();
-    let filename = basename(&receipt.file).to_lowercase();
-    let keyword = rule.receipt_vendor.to_lowercase();
-    (vendor.contains(&keyword) || filename.contains(&keyword))
-        && description
-            .to_lowercase()
-            .contains(&rule.transaction_description.to_lowercase())
+/// A rule with its keywords lowercased once.
+struct LoweredRule<'a> {
+    rule: &'a Rule,
+    vendor: String,
+    description: String,
+}
+
+/// A receipt's vendor and file name lowercased once, for the rule keywords.
+struct LoweredReceipt {
+    vendor: String,
+    filename: String,
+}
+
+impl LoweredReceipt {
+    fn new(receipt: &ReceiptMeta) -> LoweredReceipt {
+        LoweredReceipt {
+            vendor: receipt.vendor.as_deref().unwrap_or("").to_lowercase(),
+            filename: basename(&receipt.file).to_lowercase(),
+        }
+    }
+
+    fn has_keyword(&self, keyword: &str) -> bool {
+        self.vendor.contains(keyword) || self.filename.contains(keyword)
+    }
+}
+
+/// The FX tolerance band around `abs_cents`, inclusive.
+fn fx_bounds(abs_cents: i64) -> (i64, i64) {
+    let lo = (abs_cents as f64 * (1.0 - FX_TOLERANCE_PERCENT as f64 / 100.0)).floor() as i64;
+    let hi = (abs_cents as f64 * (1.0 + FX_TOLERANCE_PERCENT as f64 / 100.0)).ceil() as i64;
+    (lo, hi)
+}
+
+/// Whether a receipt's amount fits a transaction for a rule hit: exactly for EUR or an
+/// unknown currency, within the FX tolerance for a foreign currency.
+fn amount_fits(receipt: &ReceiptMeta, abs_cents: i64) -> bool {
+    let Some(cents) = receipt.amount_cents else {
+        return false;
+    };
+    if is_known_foreign_currency(receipt) {
+        let (lo, hi) = fx_bounds(abs_cents);
+        (lo..=hi).contains(&cents)
+    } else {
+        cents == abs_cents
+    }
 }
 
 /// Which receipts an exact-amount pass considers.
@@ -233,8 +273,7 @@ impl<'a> Matcher<'a> {
     }
 
     fn fx_candidates(&self, abs_cents: i64) -> Vec<usize> {
-        let lo = (abs_cents as f64 * (1.0 - FX_TOLERANCE_PERCENT as f64 / 100.0)).floor() as i64;
-        let hi = (abs_cents as f64 * (1.0 + FX_TOLERANCE_PERCENT as f64 / 100.0)).ceil() as i64;
+        let (lo, hi) = fx_bounds(abs_cents);
         let mut out = Vec::new();
         for (cents, indexes) in &self.amount_index {
             if *cents < lo || *cents > hi {
@@ -422,23 +461,58 @@ pub fn match_transactions(
 
     // Pass 0: user rules.
     if !rules.is_empty() {
+        let lowered_rules: Vec<LoweredRule> = rules
+            .iter()
+            .map(|rule| LoweredRule {
+                rule,
+                vendor: rule.receipt_vendor.to_lowercase(),
+                description: rule.transaction_description.to_lowercase(),
+            })
+            .collect();
+        let lowered_receipts: Vec<LoweredReceipt> =
+            receipts.iter().map(LoweredReceipt::new).collect();
         let mut rule_hits = 0;
         for out in result.iter_mut().filter(|t| t.status == Status::Unmatched) {
-            for rule in rules {
+            let description = out.description.to_lowercase();
+            // The first rule whose receipts fit the amount wins; otherwise the first rule with
+            // any receipt sends the transaction to REVIEW.
+            let mut without_amount: Option<(&Rule, Vec<usize>)> = None;
+            let mut settled = false;
+            for lowered in lowered_rules
+                .iter()
+                .filter(|r| description.contains(&r.description))
+            {
                 let candidates: Vec<usize> = (0..receipts.len())
-                    .filter(|&i| {
-                        m.available[i] && rule_matches(rule, &out.description, &receipts[i])
-                    })
+                    .filter(|&i| m.available[i] && lowered_receipts[i].has_keyword(&lowered.vendor))
                     .collect();
-                let notes = format!("rule_match ({})", rule.receipt_vendor);
-                match candidates.len() {
-                    0 => continue,
-                    1 => m.match_single(out, candidates[0], notes),
-                    _ => m.mark_review(out, &candidates, notes),
+                if candidates.is_empty() {
+                    continue;
                 }
-                rule_hits += 1;
+                let fitting: Vec<usize> = candidates
+                    .iter()
+                    .copied()
+                    .filter(|&i| amount_fits(&receipts[i], out.abs_cents))
+                    .collect();
+                let notes = format!("rule_match ({})", lowered.rule.receipt_vendor);
+                match fitting.len() {
+                    0 => {
+                        without_amount.get_or_insert((lowered.rule, candidates));
+                        continue;
+                    }
+                    1 => m.match_single(out, fitting[0], notes),
+                    _ => m.mark_review(out, &fitting, notes),
+                }
+                settled = true;
                 break;
             }
+            if !settled {
+                let Some((rule, candidates)) = without_amount else {
+                    continue;
+                };
+                let notes = format!("rule_match_amount ({})", rule.receipt_vendor);
+                m.mark_review(out, &candidates, notes);
+            }
+            rule_hits += 1;
         }
         log::debug!(
             "matcher pass 0: {rule_hits} rule match(es) from {} rule(s)",

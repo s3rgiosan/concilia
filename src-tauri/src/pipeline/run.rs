@@ -2,29 +2,36 @@
 //! write the match result.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
 use super::draft::{clean_saved_draft, match_keeping_draft};
 use super::report::write_report;
 use super::{
-    create_dir, read_cache, read_statements, reset_period, PipelineError, RunContext, RunEvent,
-    StatementFile,
+    check_statement, create_dir, not_pdf, off_thread, read_cache, read_statements, reset_period,
+    PipelineError, RunContext, RunEvent, StatementFile,
 };
 use crate::bank::{append_statements, normalize_statements, Bank};
 use crate::dates::time_now_iso;
 use crate::error::ErrorKind;
-use crate::extract::extract_all;
-use crate::fsutil::{read_json_lenient, read_json_opt, write_json};
+use crate::extract::{extract_all_observed, ExtractProgress};
+use crate::fsutil::{read_json_lenient, read_json_opt, write_json, FsError};
 use crate::matcher::match_transactions;
 use crate::model::{
-    DroppedDecision, MatchResult, RawTransaction, ReceiptMeta, StatementRecord,
+    DroppedDecision, MatchResult, RawTransaction, ReceiptMeta, Rule, StatementRecord,
     StatementTransaction, Status, Summary,
 };
 use crate::period::PeriodPaths;
 use crate::receipts::{is_pdf, walk};
 use crate::review::summary;
+
+/// The extraction cache is saved after this many newly read receipts…
+const CACHE_SAVE_EVERY: usize = 10;
+/// …or after this long, whichever comes first.
+const CACHE_SAVE_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Parses the statements (or reuses `transactions.json` when there are none), extracts and
 /// matches the receipts, extracts reimbursements and writes the report. `clear_cache` first
@@ -34,24 +41,32 @@ pub async fn reconcile(
     statements: &[StatementFile],
     clear_cache: bool,
 ) -> Result<Summary, PipelineError> {
-    create_dir(&ctx.paths.docs)?;
-    create_dir(&ctx.paths.receipts)?;
-    if clear_cache {
-        let report = reset_period(&ctx.paths);
-        for warning in &report.warnings {
-            log::warn!("reset {}: {warning}", ctx.paths.prefix);
+    let paths = ctx.paths.clone();
+    off_thread(move || {
+        create_dir(&paths.docs)?;
+        create_dir(&paths.receipts)?;
+        if clear_cache {
+            let report = reset_period(&paths);
+            for warning in &report.warnings {
+                log::warn!("reset {}: {warning}", paths.prefix);
+            }
         }
-    }
+        Ok::<_, PipelineError>(())
+    })
+    .await??;
 
     let transactions: Vec<StatementTransaction> = if statements.is_empty() {
         (ctx.progress)(RunEvent::Parsing { count: 0 });
-        read_json_opt(&ctx.paths.transactions())?.ok_or_else(|| {
-            PipelineError::coded(
-                ErrorKind::InvalidInput,
-                "no_transactions",
-                "add a bank statement; this period has no transactions yet",
-            )
-        })?
+        let path = ctx.paths.transactions();
+        off_thread(move || read_json_opt(&path))
+            .await??
+            .ok_or_else(|| {
+                PipelineError::coded(
+                    ErrorKind::InvalidInput,
+                    "no_transactions",
+                    "add a bank statement; this period has no transactions yet",
+                )
+            })?
     } else {
         let parsed = parse_statements(ctx, statements).await?;
         let normalized =
@@ -59,19 +74,29 @@ pub async fn reconcile(
         if normalized.transactions.is_empty() {
             return Err(no_bank_match());
         }
-        write_json(&ctx.paths.transactions(), &normalized.transactions)?;
         let records = statement_records(statements, &normalized.counts);
-        write_json(&ctx.paths.statements(), &records)?;
-        normalized.transactions
+        let paths = ctx.paths.clone();
+        let transactions = normalized.transactions;
+        off_thread(move || {
+            write_json(&paths.transactions(), &transactions)?;
+            write_json(&paths.statements(), &records)?;
+            Ok::<_, FsError>(transactions)
+        })
+        .await??
     };
 
-    let (receipts, result) = extract_and_match(ctx, &transactions, clear_cache).await?;
+    let (receipt_count, result) = extract_and_match(ctx, transactions, clear_cache).await?;
     let reimbursements = extract_reimbursements(ctx, clear_cache).await?;
     ctx.check_cancelled()?;
 
     (ctx.progress)(RunEvent::Exporting);
-    write_report(&result, &reimbursements, ctx.language, &ctx.paths.report())?;
-    Ok(summary(&result, receipts.len()))
+    let language = ctx.language;
+    let report = ctx.paths.report();
+    off_thread(move || {
+        write_report(&result, &reimbursements, language, &report)?;
+        Ok::<_, PipelineError>(summary(&result, receipt_count))
+    })
+    .await?
 }
 
 /// What a scan for new receipts changed.
@@ -88,35 +113,43 @@ pub struct ScanOutcome {
 /// Re-reads the receipts folder against the existing transactions, keeping review decisions
 /// whose receipts still exist.
 pub async fn scan_receipts(ctx: &RunContext<'_>) -> Result<ScanOutcome, PipelineError> {
-    let transactions: Vec<StatementTransaction> =
-        read_json_opt(&ctx.paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
-    if ctx.paths.applied_marker().exists() {
-        return Err(PipelineError::Finalized);
-    }
-    let known: HashSet<String> = read_cache(&ctx.paths.receipts_cache())
-        .into_iter()
-        .map(|r| r.file)
-        .collect();
-    let matched_before = matched_ids(&ctx.paths);
-    create_dir(&ctx.paths.receipts)?;
+    let paths = ctx.paths.clone();
+    let (transactions, known, matched_before) = off_thread(move || {
+        let transactions: Vec<StatementTransaction> =
+            read_json_opt(&paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
+        if paths.applied_marker().exists() {
+            return Err(PipelineError::Finalized);
+        }
+        let known: HashSet<String> = read_cache(&paths.receipts_cache())
+            .into_iter()
+            .map(|r| r.file)
+            .collect();
+        let matched_before = matched_ids(&paths);
+        create_dir(&paths.receipts)?;
+        Ok((transactions, known, matched_before))
+    })
+    .await??;
     let receipts = extract_receipts(ctx, false).await?;
     (ctx.progress)(RunEvent::Matching);
-    let result = match_keeping_draft(&ctx.paths, &transactions, &receipts, &ctx.rules);
-    write_json(&ctx.paths.match_result(), &result)?;
+    let (receipts, result) = match_and_store(ctx, transactions, receipts).await?;
     extract_reimbursements(ctx, false).await?;
-    let dropped_decisions = clean_saved_draft(&ctx.paths, &receipts, &result);
-    let new_receipts = receipts.iter().filter(|r| !known.contains(&r.file)).count();
-    let newly_matched = result
-        .transactions
-        .iter()
-        .filter(|tx| tx.status == Status::Matched && !matched_before.contains(&tx.id))
-        .count();
-    Ok(ScanOutcome {
-        summary: summary(&result, receipts.len()),
-        dropped_decisions,
-        new_receipts,
-        newly_matched,
+    let paths = ctx.paths.clone();
+    off_thread(move || {
+        let dropped_decisions = clean_saved_draft(&paths, &receipts, &result);
+        let new_receipts = receipts.iter().filter(|r| !known.contains(&r.file)).count();
+        let newly_matched = result
+            .transactions
+            .iter()
+            .filter(|tx| tx.status == Status::Matched && !matched_before.contains(&tx.id))
+            .count();
+        ScanOutcome {
+            summary: summary(&result, receipts.len()),
+            dropped_decisions,
+            new_receipts,
+            newly_matched,
+        }
     })
+    .await
 }
 
 /// What one statement given to `add_statements` contributed.
@@ -150,11 +183,14 @@ pub async fn add_statements(
     ctx: &RunContext<'_>,
     statements: &[StatementFile],
 ) -> Result<AddStatementsResult, PipelineError> {
-    if ctx.paths.applied_marker().exists() {
-        return Err(PipelineError::Finalized);
-    }
-    let existing: Vec<StatementTransaction> =
-        read_json_opt(&ctx.paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
+    let paths = ctx.paths.clone();
+    let existing: Vec<StatementTransaction> = off_thread(move || {
+        if paths.applied_marker().exists() {
+            return Err(PipelineError::Finalized);
+        }
+        read_json_opt(&paths.transactions())?.ok_or_else(PipelineError::not_reconciled)
+    })
+    .await??;
     if statements.is_empty() {
         return Err(PipelineError::coded(
             ErrorKind::InvalidInput,
@@ -172,33 +208,45 @@ pub async fn add_statements(
     let existing_count = existing.len();
     let mut transactions = existing;
     transactions.extend(appended.transactions);
-    let new_ids: HashSet<&str> = transactions[existing_count..]
+    let new_ids: HashSet<String> = transactions[existing_count..]
         .iter()
-        .map(|tx| tx.id.as_str())
+        .map(|tx| tx.id.clone())
         .collect();
     ctx.check_cancelled()?;
 
     // Only caches are written until the last cancellation point, so a cancelled run leaves
     // the period as it was.
-    create_dir(&ctx.paths.receipts)?;
+    let receipts_dir = ctx.paths.receipts.clone();
+    off_thread(move || create_dir(&receipts_dir)).await??;
     let receipts = extract_receipts(ctx, false).await?;
     (ctx.progress)(RunEvent::Matching);
-    let result = match_keeping_draft(&ctx.paths, &transactions, &receipts, &ctx.rules);
+    let (paths, rules) = (ctx.paths.clone(), ctx.rules.clone());
+    let (transactions, receipts, result) = off_thread(move || {
+        let result = match_keeping_draft(&paths, &transactions, &receipts, &rules);
+        (transactions, receipts, result)
+    })
+    .await?;
     extract_reimbursements(ctx, false).await?;
     ctx.check_cancelled()?;
 
-    write_json(&ctx.paths.transactions(), &transactions)?;
-    write_json(&ctx.paths.match_result(), &result)?;
     let added_counts: Vec<usize> = appended.counts.iter().map(|c| c.added).collect();
-    let mut records = read_statements(&ctx.paths);
-    records.extend(statement_records(statements, &added_counts));
-    write_json(&ctx.paths.statements(), &records)?;
-    let dropped_decisions = clean_saved_draft(&ctx.paths, &receipts, &result);
+    let new_records = statement_records(statements, &added_counts);
+    let paths = ctx.paths.clone();
+    let (receipts, result, dropped_decisions) = off_thread(move || {
+        write_json(&paths.transactions(), &transactions)?;
+        write_json(&paths.match_result(), &result)?;
+        let mut records = read_statements(&paths);
+        records.extend(new_records);
+        write_json(&paths.statements(), &records)?;
+        let dropped_decisions = clean_saved_draft(&paths, &receipts, &result);
+        Ok::<_, FsError>((receipts, result, dropped_decisions))
+    })
+    .await??;
 
     let newly_matched = result
         .transactions
         .iter()
-        .filter(|tx| tx.status == Status::Matched && new_ids.contains(tx.id.as_str()))
+        .filter(|tx| tx.status == Status::Matched && new_ids.contains(&tx.id))
         .count();
     let outcomes: Vec<StatementOutcome> = statements
         .iter()
@@ -220,6 +268,119 @@ pub async fn add_statements(
     })
 }
 
+/// Writes extraction results to the cache file while a run goes on. Each save holds the
+/// receipts read so far plus the earlier cache entries of files still waiting, so a run that
+/// stops keeps what it read.
+struct CacheWriter {
+    path: PathBuf,
+    entries: Mutex<CacheEntries>,
+    /// The number of the newest snapshot written; older snapshots that finish later are
+    /// dropped.
+    written: Arc<Mutex<u64>>,
+}
+
+struct CacheEntries {
+    entries: Vec<Option<ReceiptMeta>>,
+    unsaved: usize,
+    saved_at: Instant,
+    snapshot: u64,
+}
+
+impl CacheWriter {
+    fn new(path: PathBuf, files: &[String], previous: &[ReceiptMeta]) -> CacheWriter {
+        let entries = files
+            .iter()
+            .map(|file| previous.iter().find(|r| &r.file == file).cloned())
+            .collect();
+        CacheWriter {
+            path,
+            entries: Mutex::new(CacheEntries {
+                entries,
+                unsaved: 0,
+                saved_at: Instant::now(),
+                snapshot: 0,
+            }),
+            written: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, CacheEntries> {
+        self.entries.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Records a receipt just read, and saves when enough are waiting or enough time passed.
+    fn record(&self, index: usize, meta: &ReceiptMeta) {
+        let mut state = self.lock();
+        if let Some(slot) = state.entries.get_mut(index) {
+            *slot = Some(meta.clone());
+        }
+        state.unsaved += 1;
+        let due =
+            state.unsaved >= CACHE_SAVE_EVERY || state.saved_at.elapsed() >= CACHE_SAVE_INTERVAL;
+        if due {
+            let (snapshot, entries) = Self::take_snapshot(&mut state);
+            drop(state);
+            let task = self.save(snapshot, entries);
+            tokio::task::spawn_blocking(move || {
+                if let Err(error) = task() {
+                    log::warn!("could not save the extraction cache: {error}");
+                }
+            });
+        }
+    }
+
+    fn take_snapshot(state: &mut CacheEntries) -> (u64, Vec<ReceiptMeta>) {
+        state.unsaved = 0;
+        state.saved_at = Instant::now();
+        state.snapshot += 1;
+        (
+            state.snapshot,
+            state.entries.iter().flatten().cloned().collect(),
+        )
+    }
+
+    /// A save of `entries` as snapshot number `snapshot`, skipped when a newer one is written.
+    fn save(
+        &self,
+        snapshot: u64,
+        entries: Vec<ReceiptMeta>,
+    ) -> impl FnOnce() -> Result<(), FsError> + Send + 'static {
+        let path = self.path.clone();
+        let written = Arc::clone(&self.written);
+        move || {
+            let mut newest = written.lock().unwrap_or_else(|p| p.into_inner());
+            if snapshot <= *newest {
+                return Ok(());
+            }
+            write_json(&path, &entries)?;
+            *newest = snapshot;
+            Ok(())
+        }
+    }
+
+    /// Saves `entries` as the final cache, after every snapshot taken so far.
+    async fn finish(&self, entries: Vec<ReceiptMeta>) -> Result<(), PipelineError> {
+        let snapshot = {
+            let mut state = self.lock();
+            state.snapshot += 1;
+            state.snapshot
+        };
+        let task = self.save(snapshot, entries);
+        Ok(off_thread(task).await??)
+    }
+
+    /// Saves what was read so far, for a run that stops early.
+    async fn flush(&self) {
+        let (snapshot, entries) = Self::take_snapshot(&mut self.lock());
+        let task = self.save(snapshot, entries);
+        match off_thread(task).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => log::warn!("could not save the extraction cache: {error}"),
+            Err(error) => log::warn!("could not save the extraction cache: {error}"),
+        }
+    }
+}
+
 async fn extract_to_cache(
     ctx: &RunContext<'_>,
     files: &[String],
@@ -232,10 +393,17 @@ async fn extract_to_cache(
     let cache = if force {
         Vec::new()
     } else {
-        read_cache(cache_path)
+        let path = cache_path.to_path_buf();
+        off_thread(move || read_cache(&path)).await?
     };
-    let progress = |current| (ctx.progress)(event(current, total));
-    let receipts = extract_all(
+    let writer = CacheWriter::new(cache_path.to_path_buf(), files, &cache);
+    let progress = |progress: ExtractProgress<'_>| {
+        if let Some((index, meta)) = progress.extracted {
+            writer.record(index, meta);
+        }
+        (ctx.progress)(event(progress.done, total));
+    };
+    let outcome = extract_all_observed(
         files,
         &cache,
         force,
@@ -244,9 +412,17 @@ async fn extract_to_cache(
         &progress,
         &ctx.cancel,
     )
-    .await?;
-    write_json(cache_path, &receipts)?;
-    Ok(receipts)
+    .await;
+    match outcome {
+        Ok(receipts) => {
+            writer.finish(receipts.clone()).await?;
+            Ok(receipts)
+        }
+        Err(error) => {
+            writer.flush().await;
+            Err(error.into())
+        }
+    }
 }
 
 /// Extracts the receipts in the period's `receipts/` folder, through the cache.
@@ -254,7 +430,8 @@ async fn extract_receipts(
     ctx: &RunContext<'_>,
     force: bool,
 ) -> Result<Vec<ReceiptMeta>, PipelineError> {
-    let files = walk(&ctx.paths.receipts);
+    let dir = ctx.paths.receipts.clone();
+    let files = off_thread(move || walk(&dir)).await?;
     (ctx.progress)(RunEvent::ReceiptsFound { count: files.len() });
     let receipts = extract_to_cache(
         ctx,
@@ -268,17 +445,41 @@ async fn extract_receipts(
     Ok(receipts)
 }
 
-/// Extracts the period's receipts, matches them and writes `match-result.json`.
+/// Matches the receipts against the transactions, keeping draft decisions, and writes
+/// `match-result.json`. Returns the receipts with the result.
+async fn match_and_store(
+    ctx: &RunContext<'_>,
+    transactions: Vec<StatementTransaction>,
+    receipts: Vec<ReceiptMeta>,
+) -> Result<(Vec<ReceiptMeta>, MatchResult), PipelineError> {
+    let (paths, rules) = (ctx.paths.clone(), ctx.rules.clone());
+    off_thread(move || {
+        let result = match_keeping_draft(&paths, &transactions, &receipts, &rules);
+        write_json(&paths.match_result(), &result)?;
+        Ok::<_, FsError>((receipts, result))
+    })
+    .await?
+    .map_err(PipelineError::from)
+}
+
+/// Extracts the period's receipts, matches them and writes `match-result.json`. Returns the
+/// number of receipts and the result.
 async fn extract_and_match(
     ctx: &RunContext<'_>,
-    transactions: &[StatementTransaction],
+    transactions: Vec<StatementTransaction>,
     force: bool,
-) -> Result<(Vec<ReceiptMeta>, MatchResult), PipelineError> {
+) -> Result<(usize, MatchResult), PipelineError> {
     let receipts = extract_receipts(ctx, force).await?;
     (ctx.progress)(RunEvent::Matching);
-    let result = match_transactions(transactions, &receipts, &ctx.rules);
-    write_json(&ctx.paths.match_result(), &result)?;
-    Ok((receipts, result))
+    let path = ctx.paths.match_result();
+    let rules: Vec<Rule> = ctx.rules.clone();
+    off_thread(move || {
+        let result = match_transactions(&transactions, &receipts, &rules);
+        write_json(&path, &result)?;
+        Ok::<_, FsError>((receipts.len(), result))
+    })
+    .await?
+    .map_err(PipelineError::from)
 }
 
 /// Extracts the receipts in `reimbursements/`, which no transaction matches.
@@ -286,14 +487,19 @@ async fn extract_reimbursements(
     ctx: &RunContext<'_>,
     force: bool,
 ) -> Result<Vec<ReceiptMeta>, PipelineError> {
-    let files = walk(&ctx.paths.reimbursements);
+    let dir = ctx.paths.reimbursements.clone();
+    let files = off_thread(move || walk(&dir)).await?;
     (ctx.progress)(RunEvent::ReimbursementsFound { count: files.len() });
     let cache_path = ctx.paths.reimbursements_cache();
     if files.is_empty() {
         // An emptied folder must not leave stale entries behind.
-        if cache_path.exists() {
-            write_json(&cache_path, &Vec::<ReceiptMeta>::new())?;
-        }
+        off_thread(move || {
+            if cache_path.exists() {
+                write_json(&cache_path, &Vec::<ReceiptMeta>::new())?;
+            }
+            Ok::<_, FsError>(())
+        })
+        .await??;
         return Ok(Vec::new());
     }
     extract_to_cache(ctx, &files, &cache_path, force, |current, total| {
@@ -310,7 +516,7 @@ fn no_bank_match() -> PipelineError {
     )
 }
 
-/// Checks that every statement is an existing PDF, then reads each one with its bank's
+/// Checks that every statement is an existing PDF of at most 50 MB, then reads each one with its bank's
 /// parser.
 async fn parse_statements(
     ctx: &RunContext<'_>,
@@ -319,15 +525,11 @@ async fn parse_statements(
     (ctx.progress)(RunEvent::Parsing {
         count: statements.len(),
     });
-    if let Some(statement) = statements
-        .iter()
-        .find(|s| !is_pdf(&s.path) || !s.path.is_file())
-    {
-        return Err(PipelineError::coded(
-            ErrorKind::InvalidInput,
-            "not_pdf",
-            format!("{} is not a PDF file", statement.path.display()),
-        ));
+    for statement in statements {
+        if !is_pdf(&statement.path) || !statement.path.is_file() {
+            return Err(not_pdf(&statement.path));
+        }
+        check_statement(&statement.path).await?;
     }
     let mut parsed = Vec::new();
     for statement in statements {

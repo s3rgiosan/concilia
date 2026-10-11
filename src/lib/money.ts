@@ -1,10 +1,23 @@
 const LOCALES: Record<string, string> = { en: "en-GB", pt: "pt-PT" };
 
+const numberFormats = new Map<string, Intl.NumberFormat>();
+
+/** The formatter for these options, built once per locale and options. */
+function numberFormat(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let formatter = numberFormats.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, options);
+    numberFormats.set(key, formatter);
+  }
+  return formatter;
+}
+
 function format(cents: number, currency: string | null, language: string, signDisplay: "auto" | "exceptZero"): string {
   const locale = LOCALES[language] ?? "en-GB";
   const code = currency && /^[A-Z]{3}$/.test(currency) ? currency : "EUR";
   try {
-    return new Intl.NumberFormat(locale, { style: "currency", currency: code, signDisplay }).format(cents / 100);
+    return numberFormat(locale, { style: "currency", currency: code, signDisplay }).format(cents / 100);
   } catch {
     const sign = signDisplay === "exceptZero" && cents > 0 ? "+" : "";
     return `${sign}${(cents / 100).toFixed(2)} ${currency ?? ""}`.trim();
@@ -14,7 +27,7 @@ function format(cents: number, currency: string | null, language: string, signDi
 /** A whole-number percentage as text in the given language: "74%" in English, "74 %" in Portuguese. */
 export function formatPercent(percent: number, language: string): string {
   const locale = LOCALES[language] ?? "en-GB";
-  const digits = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(percent);
+  const digits = numberFormat(locale, { maximumFractionDigits: 0 }).format(percent);
   return language === "pt" ? `${digits}\u00a0%` : `${digits}%`;
 }
 

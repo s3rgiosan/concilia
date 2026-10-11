@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { receiptUrl } from "../lib/tauri";
 import { makeReceipt } from "../test/fixtures";
@@ -34,6 +34,56 @@ describe("ReceiptPreview", () => {
     cleanup();
     render(<ReceiptPreview receipt={null} />);
     expect(screen.getByText("No Preview")).toBeTruthy();
+  });
+});
+
+describe("ReceiptPreview with a delay", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const frameSource = () => screen.getByTitle(/^Preview of /).getAttribute("src");
+
+  it("shows the first receipt at once", () => {
+    render(<ReceiptPreview receipt={makeReceipt("a.pdf")} delayMs={120} />);
+    expect(frameSource()).toContain("a.pdf");
+  });
+
+  it("loads a new receipt only after it has stayed for the delay", () => {
+    const { rerender } = render(<ReceiptPreview receipt={makeReceipt("a.pdf")} delayMs={120} />);
+    for (const name of ["b.pdf", "c.pdf", "d.pdf"]) {
+      rerender(<ReceiptPreview receipt={makeReceipt(name)} delayMs={120} />);
+      act(() => {
+        vi.advanceTimersByTime(50);
+      });
+      expect(frameSource()).toContain("a.pdf");
+    }
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    expect(frameSource()).toContain("d.pdf");
+  });
+
+  it("says there is no preview at once", () => {
+    const { rerender } = render(<ReceiptPreview receipt={makeReceipt("a.pdf")} delayMs={120} />);
+    rerender(<ReceiptPreview receipt={makeReceipt("b.pdf", { rel_path: null })} delayMs={120} />);
+    expect(screen.getByText("No Preview")).toBeTruthy();
+    expect(screen.queryByTitle(/^Preview of /)).toBeNull();
+  });
+});
+
+describe("ReceiptPreview suspended", () => {
+  it("leaves the frame out while the same file shows elsewhere", () => {
+    const receipt = makeReceipt("a.pdf");
+    const { rerender, container } = render(<ReceiptPreview receipt={receipt} suspended />);
+    expect(screen.queryByTitle(/^Preview of /)).toBeNull();
+    expect(container.querySelector(".receipt-preview")).toBeTruthy();
+    rerender(<ReceiptPreview receipt={receipt} />);
+    expect(screen.getByTitle("Preview of a.pdf")).toBeTruthy();
   });
 });
 

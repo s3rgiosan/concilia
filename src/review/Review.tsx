@@ -10,6 +10,7 @@ import { ToolbarPortal, type ToolbarSlots } from "../components/Toolbar";
 import { useFileDrop } from "../lib/hooks/useFileDrop";
 import { useLatest } from "../lib/hooks/useLatest";
 import { useShallowStable } from "../lib/hooks/useShallowStable";
+import { useStableCallback, useStableHandlers } from "../lib/hooks/useStableCallback";
 import { useToolbarOverflow } from "../lib/hooks/useToolbarOverflow";
 import { guardCommands, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../lib/menuCommands";
 import { fileName } from "../lib/paths";
@@ -52,6 +53,8 @@ export interface ReviewProps {
   moreActions: PopUpAction[];
   /** Runs after a scan or Finalize changes what the month holds. */
   onChanged?: () => void;
+  /** Runs after the draft is saved, which changes only the month's own summary. */
+  onSaved?: (period: Period) => void;
   onError: (e: unknown) => void;
   /** Runs whenever the commands that can run change, such as for the app menu. */
   onAvailabilityChange?: (can: ReviewAvailability) => void;
@@ -65,7 +68,7 @@ export interface ReviewProps {
  * one. It opens on the transactions still to decide when there are any. Decisions save as a draft
  * until Finalize applies them, and each can be undone.
  */
-export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onError, onAvailabilityChange, onRejectKindChange, ref }: ReviewProps) {
+export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onSaved, onError, onAvailabilityChange, onRejectKindChange, ref }: ReviewProps) {
   const { t, i18n } = useTranslation();
   const { year, month } = period;
   const listId = useId();
@@ -84,7 +87,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const { data, applied, ready, loadError, load, history, draft, setDirty, autosave, rescanning, rescan } = useReviewData({
     year,
     month,
-    onChanged,
+    onSaved: () => onSaved?.(period),
     onError,
     onFirstLoad: (initial) => list.setFilterState(initial),
   });
@@ -350,6 +353,66 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     }
   }
 
+  /** Runs a decision made in the details column, then returns focus to the list. */
+  function fromDetails(run: () => void) {
+    run();
+    focusList();
+  }
+
+  const detailsHandlers = useStableHandlers<DetailsHandlers>({
+    onFocusReceipt: (receipt) => {
+      if (selected) {
+        setFocus({ rowId: selected.id, file: receipt.file });
+      }
+    },
+    onAccept: (receipt) =>
+      fromDetails(() => {
+        if (selectedTx && decidable) {
+          acceptReceipt(selectedTx, receipt);
+        }
+      }),
+    onReject: () => fromDetails(commands.reject),
+    onNoReceipt: (category) => fromDetails(() => commands.noReceipt(category)),
+    onRescan: (receipt) => {
+      void rescan(receipt, selected?.kind === "reimbursement");
+    },
+    onOpen: open,
+    onQuickLook: () => setQuickLook(true),
+  });
+
+  const menuContext: RowMenuContext = {
+    t,
+    applied,
+    decidable,
+    selectedId: selected?.id ?? null,
+    focused,
+    pool,
+    claimed,
+    edited,
+    rescanning,
+    selectRow,
+    showQuickLook: () => setQuickLook(true),
+    open,
+    rescan: (receipt, reimbursement) => void rescan(receipt, reimbursement),
+    acceptReceipt,
+    decide,
+    setNotice,
+    onError,
+  };
+
+  const showRowMenu = useStableCallback((row: ListRow, e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    selectRow(row);
+    focusList();
+    void popUpMenu(rowMenu(row, menuContext), { x: e.clientX, y: e.clientY });
+  });
+
+  const selectListRow = useStableCallback(selectRow);
+  const openListRow = useStableCallback((row: ListRow) => {
+    selectRow(row);
+    setQuickLook(true);
+  });
+
   const touched = history.canUndo || history.canRedo || autosave.state.kind !== "idle";
   let statusText = status;
   if (ready) {
@@ -387,60 +450,6 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   }
   if (!data) {
     return subtitle;
-  }
-
-  /** Runs a decision made in the details column, then returns focus to the list. */
-  function fromDetails(run: () => void) {
-    run();
-    focusList();
-  }
-
-  const handlers: DetailsHandlers = {
-    onFocusReceipt: (receipt) => {
-      if (selected) {
-        setFocus({ rowId: selected.id, file: receipt.file });
-      }
-    },
-    onAccept: (receipt) =>
-      fromDetails(() => {
-        if (selectedTx && decidable) {
-          acceptReceipt(selectedTx, receipt);
-        }
-      }),
-    onReject: () => fromDetails(commands.reject),
-    onNoReceipt: (category) => fromDetails(() => commands.noReceipt(category)),
-    onRescan: (receipt) => {
-      void rescan(receipt, selected?.kind === "reimbursement");
-    },
-    onOpen: open,
-    onQuickLook: () => setQuickLook(true),
-  };
-
-  const menuContext: RowMenuContext = {
-    t,
-    applied,
-    decidable,
-    selectedId: selected?.id ?? null,
-    focused,
-    pool,
-    claimed,
-    edited,
-    rescanning,
-    selectRow,
-    showQuickLook: () => setQuickLook(true),
-    open,
-    rescan: (receipt, reimbursement) => void rescan(receipt, reimbursement),
-    acceptReceipt,
-    decide,
-    setNotice,
-    onError,
-  };
-
-  function showRowMenu(row: ListRow, e: MouseEvent<HTMLDivElement>) {
-    e.preventDefault();
-    selectRow(row);
-    focusList();
-    void popUpMenu(rowMenu(row, menuContext), { x: e.clientX, y: e.clientY });
   }
 
   /** Closes the Finalize sheet and goes to the first transaction still to decide. */
@@ -506,11 +515,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
             edited={edited}
             reimbursementTotal={reimbursementTotal}
             listRef={listRef}
-            onSelect={selectRow}
-            onOpen={(row) => {
-              selectRow(row);
-              setQuickLook(true);
-            }}
+            onSelect={selectListRow}
+            onOpen={openListRow}
             onContextMenu={showRowMenu}
             onKeyDown={onListKeyDown}
           />
@@ -547,7 +553,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         rescanning={rescanning}
         readOnly={applied}
         edited={selectedTx !== null && edited.has(selectedTx.id)}
-        handlers={handlers}
+        quickLook={quickLook}
+        handlers={detailsHandlers}
       />
 
       <Presence>
@@ -573,6 +580,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         period={periodInSentence(period, t, i18n.language)}
         kind={jobKind}
         state={jobState}
+        events={job.events}
         adding={adding}
         existing={data.statements ?? []}
         onCancel={job.cancel}

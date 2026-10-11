@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::bank::UnknownBank;
 use crate::config::{ConfigError, InvalidRule};
-use crate::gemini::client::GeminiError;
+use crate::gemini::client::{GeminiError, InvalidSetting};
 use crate::locks::Busy;
 use crate::period::InvalidPeriod;
 use crate::pipeline::PipelineError;
@@ -135,8 +135,15 @@ impl From<GeminiError> for CommandError {
             GeminiError::Auth(_) => ErrorKind::Unauthorized,
             GeminiError::Network(_) => ErrorKind::Network,
             GeminiError::Invalid(_) => ErrorKind::InvalidInput,
+            GeminiError::Setting(setting) => return (*setting).into(),
         };
         CommandError::new(kind, error.to_string())
+    }
+}
+
+impl From<InvalidSetting> for CommandError {
+    fn from(error: InvalidSetting) -> CommandError {
+        CommandError::coded(ErrorKind::InvalidInput, error.code(), error.to_string())
     }
 }
 
@@ -154,6 +161,9 @@ impl From<PopplerError> for CommandError {
         let kind = match &error {
             PopplerError::Missing(_) => ErrorKind::PopplerMissing,
             PopplerError::Failed(_) => ErrorKind::Internal,
+            PopplerError::TooLarge(_) => {
+                return PipelineError::from(error).into();
+            }
         };
         CommandError::new(kind, error.to_string())
     }
@@ -230,5 +240,12 @@ mod tests {
             kind(UnknownBank("x".into()).into()),
             ErrorKind::InvalidInput
         );
+    }
+
+    #[test]
+    fn invalid_gemini_settings_carry_their_code() {
+        let error = CommandError::from(GeminiError::Setting(InvalidSetting::Project));
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert_eq!(error.code.as_deref(), Some("invalid_project"));
     }
 }

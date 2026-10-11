@@ -34,10 +34,45 @@ struct MatcherInput {
     rules: Vec<Rule>,
 }
 
+/// Whether a receipt's amount fits a transaction the way a rule hit requires: exactly for EUR
+/// or an unknown currency, within ±10% for a foreign currency.
+fn rule_amount_fits(receipt: &Value, abs_cents: i64) -> bool {
+    let Some(cents) = receipt["amount_cents"].as_i64() else {
+        return false;
+    };
+    match receipt["currency"].as_str() {
+        None | Some("EUR") => cents == abs_cents,
+        Some(_) => {
+            let lo = (abs_cents as f64 * 0.9).floor() as i64;
+            let hi = (abs_cents as f64 * 1.1).ceil() as i64;
+            (lo..=hi).contains(&cents)
+        }
+    }
+}
+
+/// Whether Node settled a transaction by a rule with a receipt whose amount does not fit.
+/// Rust sends those to REVIEW (see DIFFERENCES.md), and every later pass differs with them.
+fn has_rule_hit_without_amount(expected: &Value) -> bool {
+    expected["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|tx| tx["notes"].as_str().unwrap().starts_with("rule_match ("))
+        .any(|tx| {
+            let abs_cents = tx["abs_cents"].as_i64().unwrap();
+            tx["receipt_meta"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| !rule_amount_fits(r, abs_cents))
+        })
+}
+
 #[test]
 fn matcher_matches_the_node_implementation() {
     let cases: Vec<Case<MatcherInput, Value>> = cases("matcher");
     assert!(!cases.is_empty());
+    let mut compared = 0;
     for (i, case) in cases.iter().enumerate() {
         let input = &case.input;
         let actual = serde_json::to_value(match_transactions(
@@ -46,8 +81,35 @@ fn matcher_matches_the_node_implementation() {
             &input.rules,
         ))
         .unwrap();
+        if has_rule_hit_without_amount(&case.expected) {
+            // Rust's rule hits always fit the amount, or are REVIEW with `rule_match_amount`.
+            for tx in actual["transactions"].as_array().unwrap() {
+                let notes = tx["notes"].as_str().unwrap();
+                let abs_cents = tx["abs_cents"].as_i64().unwrap();
+                let receipts = tx["receipt_meta"].as_array().unwrap();
+                if notes.starts_with("rule_match (") {
+                    assert!(
+                        receipts.iter().all(|r| rule_amount_fits(r, abs_cents)),
+                        "matcher case {i}: {tx}"
+                    );
+                }
+                if notes.starts_with("rule_match_amount (") {
+                    assert_eq!(tx["status"], "REVIEW", "matcher case {i}");
+                    assert!(
+                        receipts.iter().all(|r| !rule_amount_fits(r, abs_cents)),
+                        "matcher case {i}: {tx}"
+                    );
+                }
+            }
+            continue;
+        }
         assert_eq!(actual, case.expected, "matcher case {i}");
+        compared += 1;
     }
+    assert!(
+        compared >= cases.len() - 20,
+        "only {compared} cases compared"
+    );
 }
 
 #[test]

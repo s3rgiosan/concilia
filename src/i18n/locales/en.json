@@ -235,6 +235,7 @@
     },
     "candidatesTaken": "Every candidate was assigned to another transaction.",
     "noCandidates": "No receipts to assign.",
+    "showAllReceipts": "Show All {{count}} Receipts",
     "dateUnknown": "Date unknown",
     "amountUnknown": "Amount unknown",
     "lowConfidence": "unsure reading",
@@ -252,6 +253,7 @@
       "filenameMatch": "Filename match — verify amounts",
       "manualMatch": "Manual match",
       "ruleMatch": "Rule match ({{vendor}})",
+      "ruleMatchAmount": "Rule match, different amount ({{vendor}})",
       "fxMatch": "Foreign-currency match ({{detail}})",
       "multipleNameAmount_one": "{{count}} receipt matches name & amount",
       "multipleNameAmount_other": "{{count}} receipts match name & amount",
@@ -414,7 +416,14 @@
       "receipt_outside_period": "That file isn't a receipt of this month.",
       "read_timeout": "Gemini took too long to read the receipt. Try again.",
       "no_statements": "Choose at least one bank statement to add.",
-      "outside_root": "That location is outside the receipts folder."
+      "outside_root": "That location is outside the receipts folder.",
+      "invalid_region": "Enter a region such as europe-west1, or global.",
+      "invalid_project": "Enter a Google Cloud project ID: 6 to 30 lowercase letters, digits or hyphens, starting with a letter.",
+      "invalid_model": "Enter a model name such as gemini-2.5-flash, using only letters, digits, dots, hyphens and underscores.",
+      "path_not_chosen": "Choose the file or folder again, with the button or by dragging it onto the window.",
+      "file_too_large": "The file is larger than 50 MB.",
+      "unrecognized_file": "The file isn't a PDF, PNG or JPEG file.",
+      "pdf_output_too_large": "The PDF holds more text than Concilia can read."
     }
   },
   "menu": {

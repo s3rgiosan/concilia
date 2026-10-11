@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode, type Ref } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { formatMoney } from "../lib/money";
 import type { ListRow } from "./rows";
@@ -8,6 +8,8 @@ import { TransactionRow } from "./TransactionRow";
 export function optionId(listId: string, index: number): string {
   return `${listId}-option-${index}`;
 }
+
+const noop = () => undefined;
 
 /** A row that left the list, collapsing after the row it followed (`after`, or null at the top). */
 interface LeavingRow {
@@ -32,7 +34,7 @@ function canAnimate(): boolean {
  * decided transaction under the Needs Review filter. They stay in place, collapsing, so the rows
  * below move up into the gap. Returns them with a function that drops one once it has collapsed.
  */
-function useLeavingRows(rows: ListRow[], viewKey: string): [LeavingRow[], (id: string) => void] {
+function useLeavingRows(rows: ListRow[], viewKey: string): [LeavingRow[], (row: ListRow) => void] {
   const [previous, setPrevious] = useState({ rows, viewKey });
   const [leaving, setLeaving] = useState<LeavingRow[]>([]);
 
@@ -69,7 +71,8 @@ function useLeavingRows(rows: ListRow[], viewKey: string): [LeavingRow[], (id: s
     return () => window.clearTimeout(timer);
   }, [leaving]);
 
-  return [leaving, (id: string) => setLeaving((prev) => prev.filter((l) => l.row.id !== id))];
+  const drop = useCallback((row: ListRow) => setLeaving((prev) => prev.filter((l) => l.row.id !== row.id)), []);
+  return [leaving, drop];
 }
 
 /**
@@ -125,9 +128,9 @@ export function TransactionList({
       row={row}
       selected={index === selectedIndex}
       edited={edited.has(row.id)}
-      onSelect={() => onSelect(row)}
-      onOpen={() => onOpen(row)}
-      onContextMenu={(e) => onContextMenu(row, e)}
+      onSelect={onSelect}
+      onOpen={onOpen}
+      onContextMenu={onContextMenu}
     />
   );
   const ghost = ({ row }: LeavingRow) => (
@@ -136,10 +139,10 @@ export function TransactionList({
       id=""
       row={row}
       selected={false}
-      onSelect={() => undefined}
-      onOpen={() => undefined}
-      onContextMenu={() => undefined}
-      onLeft={() => dropLeaving(row.id)}
+      onSelect={noop}
+      onOpen={noop}
+      onContextMenu={noop}
+      onLeft={dropLeaving}
     />
   );
   const ghostsAfter = (id: string | null) => leaving.filter((l) => l.after === id).map((l) => ({ kind: l.row.kind, node: ghost(l) }));

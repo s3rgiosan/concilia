@@ -29,6 +29,7 @@ describe("matchReason", () => {
 
   it("names the vendor of a rule match", () => {
     expect(matchReason("rule_match (acme)", t)).toBe("Rule match (acme)");
+    expect(matchReason("rule_match_amount (acme)", t)).toBe("Rule match, different amount (acme)");
   });
 
   it("describes a rule or FX match without detail", () => {

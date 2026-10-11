@@ -66,6 +66,9 @@ export function matchReason(notes: string, t: TFunction): string {
   if (notes.startsWith("filename_match")) {
     return t("review.matchReason.filenameMatch");
   }
+  if (notes.startsWith("rule_match_amount")) {
+    return t("review.matchReason.ruleMatchAmount", { vendor: detail });
+  }
   if (notes.startsWith("rule_match")) {
     return t("review.matchReason.ruleMatch", { vendor: detail });
   }

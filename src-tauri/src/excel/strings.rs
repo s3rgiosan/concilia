@@ -49,6 +49,8 @@ pub struct Strings {
     pub manual_match: &'static str,
     /// Wraps a detail: the rule's vendor keyword.
     pub rule_match: (&'static str, &'static str),
+    /// Wraps a detail: the rule's vendor keyword, for receipts whose amount differs.
+    pub rule_match_amount: (&'static str, &'static str),
     /// Wraps a detail: the currency and tolerance.
     pub fx_match: (&'static str, &'static str),
     /// Singular, then plural with `{n}` for the count.
@@ -108,6 +110,7 @@ const EN: Strings = Strings {
     filename_match: "Filename match — verify amounts",
     manual_match: "Manual match",
     rule_match: ("Rule match (", ")"),
+    rule_match_amount: ("Rule match, different amount (", ")"),
     fx_match: ("Foreign-currency match (", ")"),
     multiple_name_amount: (
         "1 receipt matches name & amount",
@@ -178,6 +181,7 @@ const PT: Strings = Strings {
     filename_match: "Nome de ficheiro — verificar valores",
     manual_match: "Associação manual",
     rule_match: ("Regra de associação (", ")"),
+    rule_match_amount: ("Regra de associação, valor diferente (", ")"),
     fx_match: ("Correspondência em moeda estrangeira (", ")"),
     multiple_name_amount: (
         "1 recibo coincide em nome e valor",

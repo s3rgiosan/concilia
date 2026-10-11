@@ -9,11 +9,26 @@ export function reimbursementId(receipt: Pick<ReceiptMeta, "file">): string {
   return `reimbursement:${receipt.file}`;
 }
 
-/** Transactions first, then the reimbursements, in the order given. */
+/** The row of each transaction or receipt, so a row keeps its identity while its data does. */
+const rowCache = new WeakMap<object, ListRow>();
+
+function cachedRow(source: Transaction | ReceiptMeta, make: () => ListRow): ListRow {
+  let row = rowCache.get(source);
+  if (!row) {
+    row = make();
+    rowCache.set(source, row);
+  }
+  return row;
+}
+
+/**
+ * Transactions first, then the reimbursements, in the order given. A transaction or receipt that
+ * is unchanged yields the same row object as before.
+ */
 export function buildRows(transactions: Transaction[], reimbursements: ReceiptMeta[]): ListRow[] {
   return [
-    ...transactions.map((tx): ListRow => ({ kind: "transaction", id: tx.id, tx })),
-    ...reimbursements.map((receipt): ListRow => ({ kind: "reimbursement", id: reimbursementId(receipt), receipt })),
+    ...transactions.map((tx) => cachedRow(tx, (): ListRow => ({ kind: "transaction", id: tx.id, tx }))),
+    ...reimbursements.map((receipt) => cachedRow(receipt, (): ListRow => ({ kind: "reimbursement", id: reimbursementId(receipt), receipt }))),
   ];
 }
 

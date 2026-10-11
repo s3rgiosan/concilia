@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import en from "./locales/en.json";
 import pt from "./locales/pt.json";
-import { resolveLanguage } from "./index";
+import i18n, { applyLanguage, resolveLanguage } from "./index";
 
 type Tree = { [key: string]: string | Tree };
 
@@ -58,5 +59,18 @@ describe("resolveLanguage", () => {
     expect(resolveLanguage(null, "pt-PT")).toBe("pt");
     expect(resolveLanguage(null, "pt-BR")).toBe("pt");
     expect(resolveLanguage(null, "de-DE")).toBe("en");
+  });
+});
+
+describe("loading", () => {
+  it("loads a language the first time it is shown", async () => {
+    await applyLanguage("en");
+    expect(i18n.hasResourceBundle("en", "translation")).toBe(true);
+    expect(i18n.hasResourceBundle("pt", "translation")).toBe(false);
+    await applyLanguage("pt");
+    expect(i18n.hasResourceBundle("pt", "translation")).toBe(true);
+    expect(i18n.t("common.cancel")).toBe(pt.common.cancel);
+    await applyLanguage("en");
+    expect(i18n.t("common.cancel")).toBe(en.common.cancel);
   });
 });

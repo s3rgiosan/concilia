@@ -1,5 +1,5 @@
 import "./Main.css";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Banner } from "../components/Banner";
 import { Icon } from "../components/Icon";
@@ -15,7 +15,7 @@ import { useDockProgress } from "../lib/hooks/useDockProgress";
 import { useExtractionEta } from "../lib/hooks/useExtractionEta";
 import { useMenu } from "../lib/hooks/useMenu";
 import { useAppState } from "../lib/hooks/useAppState";
-import { useRun, type RunState } from "../lib/hooks/useRun";
+import { useRun, useRunEvents } from "../lib/hooks/useRun";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import { useWindowTitle } from "../lib/hooks/useWindowTitle";
 import {
@@ -37,11 +37,14 @@ import { buildSteps } from "../lib/steps";
 import {
   createPeriod,
   listPeriods,
+  periodSummary,
   openReport,
   openSettings,
   revealPeriod,
   startReconcile,
+  type AppStateView,
   type PeriodSummary,
+  type RunEvent,
   type Summary,
 } from "../lib/tauri";
 import { NewMonthSheet } from "./NewMonthSheet";
@@ -51,10 +54,15 @@ import { Sidebar, type RunningMonth } from "./Sidebar";
 import type { Statement } from "../lib/statements";
 import { Statements } from "./Statements";
 import { UpdateBanner } from "./UpdateBanner";
-import type { RejectKind, ReviewAvailability, ReviewCommands } from "../lib/menuCommands";
+import type { ReviewCommands } from "../lib/menuCommands";
+import { createReviewMenuStore } from "../lib/reviewMenu";
 import { Welcome } from "./Welcome";
 
-const Review = lazy(() => import("../review/Review").then((m) => ({ default: m.Review })));
+const loadReview = () => import("../review/Review");
+const Review = lazy(() => loadReview().then((m) => ({ default: memo(m.Review) })));
+
+/** Least time between full listings caused by the window gaining focus, in milliseconds. */
+const FOCUS_REFRESH_MS = 5000;
 
 /** The sidebar's width range and default, in pixels. */
 const SIDEBAR_WIDTH = { min: 180, max: 280, initial: 220 };
@@ -91,11 +99,8 @@ function withReviewed(listed: PeriodSummary[], period: Period, summary: Summary)
 }
 
 /** How many receipts have been read while they are being read, otherwise null. */
-function runProgress(state: RunState<Summary>): { current: number; total: number } | null {
-  if (state.phase !== "running") {
-    return null;
-  }
-  const last = state.events[state.events.length - 1];
+function runProgress(events: RunEvent[]): { current: number; total: number } | null {
+  const last = events[events.length - 1];
   return last?.step === "extracting" ? { current: last.current, total: last.total } : null;
 }
 
@@ -103,9 +108,9 @@ function runProgress(state: RunState<Summary>): { current: number; total: number
  * The main window: a toolbar, the months in a sidebar and the selected month in the detail area,
  * by where the month stands. Before the app is configured it shows the welcome steps instead.
  */
-export function Main() {
+export function Main({ initialState = null }: { initialState?: AppStateView | null }) {
   const { t, i18n } = useTranslation();
-  const { state, error: loadError, replace, reload } = useAppState();
+  const { state, error: loadError, replace, reload } = useAppState(initialState);
   const fallback = useMemo(() => defaultPeriod(new Date()), []);
   const [storedKey, setStoredKey] = useSafeStorage("main.period", periodKey(fallback));
   const selected = useMemo(() => parsePeriodKey(storedKey) ?? fallback, [storedKey, fallback]);
@@ -125,14 +130,15 @@ export function Main() {
   const [trailingSlot, setTrailingSlot] = useState<HTMLElement | null>(null);
   /** The open review's commands, for the app menu. */
   const reviewCommands = useRef<ReviewCommands>(null);
-  const [reviewCan, setReviewCan] = useState<ReviewAvailability | null>(null);
-  const [rejectKind, setRejectKind] = useState<RejectKind>("removeMatch");
+  /** What the open review tells the app menu, kept outside the render state so a selection change does not render this window. */
+  const [reviewMenu] = useState(createReviewMenuStore);
   /** The statements area's file picker, for the app menu. */
   const statementsPicker = useRef<{ browse: () => void }>(null);
   const run = useRun<Summary>();
   const { state: runState, reset: resetRun } = run;
-  useDockProgress(runState);
-  const eta = useExtractionEta(runState.phase === "running" ? runState.events : null);
+  const runEvents = useRunEvents(run.events);
+  useDockProgress(runState, run.events);
+  const eta = useExtractionEta(runState.phase === "running" ? runEvents : null);
   /** The month whose last run failed or was stopped; it shows why until the user leaves it. */
   const failedKey = runPeriod && runState.phase === "failed" ? periodKey(runPeriod) : null;
   /** Setup just finished, so the detail area confirms it for a moment. */
@@ -181,8 +187,11 @@ export function Main() {
 
   /** Counts listings, so only the latest one lands. */
   const listing = useRef(0);
+  /** When the last full listing started. */
+  const listedAt = useRef(0);
   const refresh = useCallback(() => {
     listing.current += 1;
+    listedAt.current = Date.now();
     const mine = listing.current;
     listPeriods().then(
       (list) => {
@@ -199,20 +208,54 @@ export function Main() {
     );
   }, []);
 
+  /** Lists the months again when the window gains focus, unless a listing just ran. */
+  const refreshOnFocus = useCallback(() => {
+    if (Date.now() - listedAt.current >= FOCUS_REFRESH_MS) {
+      refresh();
+    }
+  }, [refresh]);
+
+  /** Counts single-month refreshes, so only the latest one lands. */
+  const summarizing = useRef(0);
+  /** Reads one month's entry for the sidebar and puts it in the listing; the other months stay as listed. */
+  const refreshSummary = useCallback(
+    (period: Period) => {
+      summarizing.current += 1;
+      const mine = summarizing.current;
+      const listings = listing.current;
+      periodSummary(period.year, period.month).then(
+        (entry) => {
+          if (summarizing.current === mine && listing.current === listings) {
+            setListed((prev) => withSummary(prev ?? [], entry));
+          }
+        },
+        () => refresh(),
+      );
+    },
+    [refresh],
+  );
+
   useEffect(() => {
     if (!configured) {
       return;
     }
     refresh();
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
-  }, [configured, root, refresh]);
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [configured, root, refresh, refreshOnFocus]);
 
   const periods = useMemo(() => mergePeriods(listed ?? [], [fallback, selected]), [listed, fallback, selected]);
   const summary = periods.find((p) => periodKey(p) === key) ?? emptySummary(selected);
   const label = periodLabel(selected, t);
 
   useWindowTitle(configured ? label : "Concilia");
+
+  // The review's code loads while the months are listed.
+  useEffect(() => {
+    if (configured) {
+      void loadReview();
+    }
+  }, [configured]);
 
   const select = useCallback(
     (period: Period) => {
@@ -300,7 +343,7 @@ export function Main() {
   const hasStatements = monthStatements.length > 0 || summary.transactions > 0;
   let runningMonth: RunningMonth | null = null;
   if (runPeriod && running) {
-    runningMonth = { key: periodKey(runPeriod), progress: runProgress(runState) };
+    runningMonth = { key: periodKey(runPeriod), progress: runProgress(runEvents) };
   } else if (failedKey !== null && runState.phase === "failed") {
     runningMonth = { key: failedKey, progress: null, outcome: errorKind(runState.error) === "cancelled" ? "stopped" : "failed" };
   }
@@ -315,12 +358,11 @@ export function Main() {
     {
       configured,
       sidebarShown,
-      rejectKind,
       acceptsStatements: onStatementsScreen && !running,
       canReconcile: hasReceipts && hasStatements,
       hasResult: reviewable,
       running,
-      reviewCan: reviewShown ? reviewCan : null,
+      reviewShown,
     },
     {
       newMonth: () => setSheet("new-month"),
@@ -340,7 +382,26 @@ export function Main() {
       toggleSidebar,
     },
     reviewCommands,
+    reviewMenu,
   );
+
+  const monthActions = useMemo<PopUpAction[]>(() => {
+    const entries: PopUpAction[] = [
+      {
+        label: t("month.openReport"),
+        onSelect: () => {
+          openReport(selected.year, selected.month).catch(setMessage);
+        },
+        disabled: !reviewable,
+      },
+      { label: t("month.showInFinder"), onSelect: () => revealPeriod(selected.year, selected.month).catch(setMessage) },
+    ];
+    if (reviewable) {
+      entries.push({ label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
+    }
+    return entries;
+  }, [t, selected, reviewable, running]);
+  const toolbarSlots = useMemo(() => ({ subtitle: subtitleSlot, trailing: trailingSlot }), [subtitleSlot, trailingSlot]);
 
   /** A month's context menu in the sidebar. */
   function monthMenu(month: PeriodSummary): MenuEntry[] {
@@ -365,7 +426,7 @@ export function Main() {
     const cancelled = failed !== null && errorKind(failed) === "cancelled";
     const outcome = failed !== null ? "failed" : null;
     const progress = runningMonth?.progress;
-    const steps = buildSteps("reconcile", runState.events, outcome, t);
+    const steps = buildSteps("reconcile", runEvents, outcome, t);
     const extract = steps.find((step) => step.id === "extract");
     if (etaText && extract?.status === "running") {
       extract.detail = extract.detail ? `${extract.detail} · ${etaText}` : etaText;
@@ -400,18 +461,8 @@ export function Main() {
   } else if (state && listReady) {
     const status = statusLine(summary, t).label;
     const runSummary = lastRun?.key === key ? runSummaryText(lastRun.summary, i18n.language, t) : undefined;
-    const actions: PopUpAction[] = [
-      {
-        label: t("month.openReport"),
-        onSelect: () => {
-          openReport(selected.year, selected.month).catch(setMessage);
-        },
-        disabled: !reviewable,
-      },
-      { label: t("month.showInFinder"), onSelect: reveal },
-    ];
+    const actions = monthActions;
     if (reviewable) {
-      actions.push({ label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
       // The review fills the toolbar's subtitle and trailing controls itself.
       subtitle = <span ref={setSubtitleSlot} className="titlebar__slot" />;
       trailing = <div ref={setTrailingSlot} className="titlebar__slot" />;
@@ -421,14 +472,15 @@ export function Main() {
             key={key}
             ref={reviewCommands}
             period={selected}
-            toolbar={{ subtitle: subtitleSlot, trailing: trailingSlot }}
+            toolbar={toolbarSlots}
             status={status}
             runSummary={runSummary}
             moreActions={actions}
             onChanged={refresh}
+            onSaved={refreshSummary}
             onError={setMessage}
-            onAvailabilityChange={setReviewCan}
-            onRejectKindChange={setRejectKind}
+            onAvailabilityChange={reviewMenu.setCan}
+            onRejectKindChange={reviewMenu.setRejectKind}
           />
         </Suspense>
       );

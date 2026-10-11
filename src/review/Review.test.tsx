@@ -137,7 +137,11 @@ function scanRun() {
     onEvent = callback;
     return handle;
   });
-  return { result, cancel, push: (event: RunEvent) => act(() => onEvent(event)) };
+  return { result, cancel, push: (event: RunEvent) =>
+      act(async () => {
+        onEvent(event);
+        await vi.advanceTimersByTimeAsync(20);
+      }) };
 }
 
 /** Adding statements the test settles by hand. */
@@ -149,7 +153,11 @@ function addRun() {
     onEvent = callback;
     return { promise: result.promise, cancel };
   });
-  return { result, cancel, push: (event: RunEvent) => act(() => onEvent(event)) };
+  return { result, cancel, push: (event: RunEvent) =>
+      act(async () => {
+        onEvent(event);
+        await vi.advanceTimersByTimeAsync(20);
+      }) };
 }
 
 const ADDED: AddStatementsResult = {
@@ -202,16 +210,17 @@ function Window(props: Omit<ReviewProps, "toolbar" | "period" | "status" | "more
  */
 async function renderReview(props: Partial<ReviewProps> = {}, { opening = false } = {}) {
   const onChanged = vi.fn();
+  const onSaved = vi.fn();
   const onError = vi.fn();
   const onAvailabilityChange = vi.fn<(can: ReviewAvailability) => void>();
   const ref = createRef<ReviewCommands>();
-  const result = render(<Window onChanged={onChanged} onError={onError} onAvailabilityChange={onAvailabilityChange} ref={ref} {...props} />);
+  const result = render(<Window onChanged={onChanged} onSaved={onSaved} onError={onError} onAvailabilityChange={onAvailabilityChange} ref={ref} {...props} />);
   await settle();
   const all = screen.queryByRole("radio", { name: /^All/ });
   if (!opening && all) {
     fireEvent.click(all);
   }
-  return { ...result, onChanged, onError, onAvailabilityChange, commands: () => ref.current! };
+  return { ...result, onChanged, onSaved, onError, onAvailabilityChange, commands: () => ref.current! };
 }
 
 function button(name: string | RegExp, scope: HTMLElement = document.body): HTMLButtonElement {
@@ -294,7 +303,11 @@ function decideFirst() {
   fireEvent.click(details().querySelector<HTMLButtonElement>("button[data-details-action]")!);
 }
 
+/** The preview's source once the preview has settled on the focused receipt. */
 function previewSource(): string | null {
+  act(() => {
+    vi.advanceTimersByTime(200);
+  });
   const preview = within(details()).getByRole("region", { name: /^Preview of / });
   return preview.querySelector("iframe, img")?.getAttribute("src") ?? null;
 }
@@ -574,6 +587,9 @@ describe("details", () => {
     await renderReview();
     fireEvent.click(within(receiptItem("HOOLI")).getByRole("button", { pressed: false }));
     expect(within(receiptItem("HOOLI")).getByRole("button", { pressed: true })).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(within(details()).getByRole("img", { name: "hooli.jpg" }).getAttribute("src")).toBe("receipt://localhost/2030/03/receipts/hooli.jpg");
   });
 
@@ -1088,14 +1104,15 @@ describe("toolbar", () => {
   it("shows the status, pending count and save state in the subtitle", async () => {
     const save = deferred<void>();
     vi.mocked(saveDraft).mockReturnValue(save.promise);
-    const { onChanged } = await renderReview();
+    const { onSaved, onChanged } = await renderReview();
     expect(subtitle()).toBe("In review · 2 to decide");
     decideFirst();
     await advance(500);
     expect(subtitle()).toBe("In review · 1 to decide · Saving…");
     await act(async () => save.resolve());
     expect(subtitle()).toBe("In review · 1 to decide · Saved");
-    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(PERIOD);
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it("reports a failed save", async () => {

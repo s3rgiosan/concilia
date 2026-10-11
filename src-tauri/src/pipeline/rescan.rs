@@ -3,7 +3,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
-use super::{create_dir, io, PipelineError};
+use super::{create_dir, io, off_thread, PipelineError};
 use crate::error::ErrorKind;
 use crate::extract::{ExtractError, ReceiptExtractor};
 use crate::fsutil::{read_json_opt, write_json};
@@ -21,7 +21,8 @@ pub enum RescanKind {
     Reimbursement,
 }
 
-/// A file inside the period, checked: its stored path, and its canonical path for locking.
+/// A file inside the period, checked: its stored path, which records refer to it by, and its
+/// canonical path, which every read, open and lock uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeriodFile {
     pub stored: String,
@@ -29,7 +30,8 @@ pub struct PeriodFile {
 }
 
 /// Resolves a period-relative path (`YYYY/MM/receipts/...`) to a receipt file of `kind`,
-/// rejecting anything outside its folder, with another extension, or missing.
+/// rejecting anything outside its folder, missing, or whose name or real file has another
+/// extension. A symlink counts only when its target is a receipt inside the same folder.
 pub fn resolve_period_file(
     paths: &PeriodPaths,
     kind: RescanKind,
@@ -69,7 +71,14 @@ pub fn resolve_period_file(
         )
     })?;
     let folder_real = folder.canonicalize().map_err(|e| io(folder, e))?;
-    if !canonical.starts_with(&folder_real) || !canonical.is_file() {
+    let target_name = canonical
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    if !canonical.starts_with(&folder_real)
+        || !canonical.is_file()
+        || !is_receipt_name(&target_name)
+    {
         return Err(outside());
     }
     Ok(PeriodFile {
@@ -94,24 +103,38 @@ pub async fn rescan(
     file: &PeriodFile,
     write_lock: &tokio::sync::Mutex<()>,
 ) -> Result<ReceiptMeta, PipelineError> {
-    let extracted =
-        tokio::time::timeout(RESCAN_TIMEOUT, extractor.extract(Path::new(&file.stored)))
-            .await
-            .map_err(|_| {
-                PipelineError::coded(
-                    ErrorKind::Timeout,
-                    "read_timeout",
-                    "Gemini took too long to read the receipt",
-                )
-            })?;
+    let extracted = tokio::time::timeout(RESCAN_TIMEOUT, extractor.extract(&file.canonical))
+        .await
+        .map_err(|_| {
+            PipelineError::coded(
+                ErrorKind::Timeout,
+                "read_timeout",
+                "Gemini took too long to read the receipt",
+            )
+        })?;
     let mut meta = match extracted {
         Ok(meta) => meta,
         Err(ExtractError::Fatal(message)) => return Err(PipelineError::Unauthorized(message)),
         Err(ExtractError::Failed(message)) => return Err(PipelineError::Io(message)),
+        Err(ExtractError::Rejected { code, message }) => {
+            return Err(PipelineError::coded(ErrorKind::InvalidInput, code, message))
+        }
     };
     meta.file = file.stored.clone();
 
     let _writing = write_lock.lock().await;
+    let (paths, file, stored) = (paths.clone(), file.clone(), meta.clone());
+    off_thread(move || store_rescan(&paths, kind, &file, &stored)).await??;
+    Ok(meta)
+}
+
+/// Puts a rescanned receipt's metadata in the cache and, for a receipt, the match result.
+fn store_rescan(
+    paths: &PeriodPaths,
+    kind: RescanKind,
+    file: &PeriodFile,
+    meta: &ReceiptMeta,
+) -> Result<(), PipelineError> {
     let replace = |list: &mut Vec<ReceiptMeta>, append: bool| {
         let mut found = false;
         for entry in list.iter_mut().filter(|e| same_file(&e.file, file)) {
@@ -148,5 +171,5 @@ pub async fn rescan(
             write_json(&cache_path, &cache)?;
         }
     }
-    Ok(meta)
+    Ok(())
 }

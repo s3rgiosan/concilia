@@ -58,30 +58,48 @@ async fn blocking<T: Send + 'static>(
         .map_err(CommandError::internal)
 }
 
-#[tauri::command]
-pub fn get_app_state(state: State<'_, Arc<AppState>>) -> AppStateView {
-    state.view()
+/// The shared state, owned, for work moved off the command's thread.
+fn shared(state: &State<'_, Arc<AppState>>) -> Arc<AppState> {
+    Arc::clone(state.inner())
 }
 
+/// Reads the setup off the main thread: the first read may wait on the Keychain.
 #[tauri::command]
-pub fn save_settings(
+pub async fn get_app_state(state: State<'_, Arc<AppState>>) -> CommandResult<AppStateView> {
+    let state = shared(&state);
+    blocking(move || state.view()).await.map_err(fail)
+}
+
+/// Saves the settings. A new receipts folder must come from `pick_receipts_root`.
+#[tauri::command]
+pub async fn save_settings(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     settings: Settings,
 ) -> CommandResult<AppStateView> {
-    let view = state.save_settings(settings).map_err(fail)?;
+    let state = shared(&state);
+    let view = blocking(move || state.save_settings(settings))
+        .await
+        .and_then(|result| result)
+        .map_err(fail)?;
     Ok(changed(&app, view))
 }
 
 /// Asks for the receipts folder. Returns its path, or none when the dialog was cancelled.
+/// The folder picked may then be saved in the settings.
 #[tauri::command]
-pub async fn pick_receipts_root(app: AppHandle) -> CommandResult<Option<String>> {
+pub async fn pick_receipts_root(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> CommandResult<Option<String>> {
     let picked = blocking(move || app.dialog().file().blocking_pick_folder())
         .await
         .map_err(fail)?;
-    Ok(picked
-        .and_then(|p| p.into_path().ok())
-        .map(|p| p.to_string_lossy().into_owned()))
+    let Some(folder) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    state.grant_paths([folder.clone()]);
+    Ok(Some(folder.to_string_lossy().into_owned()))
 }
 
 /// Asks for a service account key file and stores it in the credential store. Returns none
@@ -104,22 +122,29 @@ pub async fn import_service_account(
     let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
         return Ok(None);
     };
-    let json = std::fs::read_to_string(&path).map_err(|e| {
-        fail(CommandError::new(
-            ErrorKind::InvalidInput,
-            format!("{}: {e}", path.display()),
-        ))
-    })?;
-    let view = state.import_service_account(&json).map_err(fail)?;
+    let state = shared(&state);
+    let view = blocking(move || {
+        let json = std::fs::read_to_string(&path).map_err(|e| {
+            CommandError::new(ErrorKind::InvalidInput, format!("{}: {e}", path.display()))
+        })?;
+        state.import_service_account(&json)
+    })
+    .await
+    .and_then(|result| result)
+    .map_err(fail)?;
     Ok(Some(changed(&app, view)))
 }
 
 #[tauri::command]
-pub fn remove_service_account(
+pub async fn remove_service_account(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> CommandResult<AppStateView> {
-    let view = state.remove_service_account().map_err(fail)?;
+    let state = shared(&state);
+    let view = blocking(move || state.remove_service_account())
+        .await
+        .and_then(|result| result)
+        .map_err(fail)?;
     Ok(changed(&app, view))
 }
 
@@ -145,19 +170,28 @@ pub fn get_rules(state: State<'_, Arc<AppState>>) -> Vec<Rule> {
 }
 
 #[tauri::command]
-pub fn save_rules(state: State<'_, Arc<AppState>>, rules: Vec<Rule>) -> CommandResult<Vec<Rule>> {
-    state.save_rules(rules).map_err(fail)
+pub async fn save_rules(
+    state: State<'_, Arc<AppState>>,
+    rules: Vec<Rule>,
+) -> CommandResult<Vec<Rule>> {
+    let state = shared(&state);
+    blocking(move || state.save_rules(rules))
+        .await
+        .and_then(|result| result)
+        .map_err(fail)
 }
 
 #[tauri::command]
-pub fn period_status(
+pub async fn period_status(
     state: State<'_, Arc<AppState>>,
     year: String,
     month: String,
 ) -> CommandResult<pipeline::PeriodStatus> {
     let period = period(&year, &month).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
-    Ok(pipeline::period_status(&paths))
+    blocking(move || pipeline::period_status(&paths))
+        .await
+        .map_err(fail)
 }
 
 /// The month folders under the receipts root, newest first.
@@ -186,8 +220,12 @@ pub async fn period_summary(
 }
 
 /// Asks for bank statement PDFs. Returns their paths; empty when the dialog was cancelled.
+/// The files picked may then be reconciled or added.
 #[tauri::command]
-pub async fn pick_statements(app: AppHandle) -> CommandResult<Vec<String>> {
+pub async fn pick_statements(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> CommandResult<Vec<String>> {
     let picked = blocking(move || {
         app.dialog()
             .file()
@@ -196,10 +234,14 @@ pub async fn pick_statements(app: AppHandle) -> CommandResult<Vec<String>> {
     })
     .await
     .map_err(fail)?;
-    Ok(picked
+    let files: Vec<PathBuf> = picked
         .unwrap_or_default()
         .into_iter()
         .filter_map(|p| p.into_path().ok())
+        .collect();
+    state.grant_paths(files.iter().cloned());
+    Ok(files
+        .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect())
 }
@@ -257,8 +299,12 @@ fn timed_out<T>(
     }
 }
 
-fn statement_files(statements: Vec<StatementInput>) -> CommandResult<Vec<StatementFile>> {
-    statements
+/// The statements to read, each one a file the user picked or dropped.
+fn statement_files(
+    state: &AppState,
+    statements: Vec<StatementInput>,
+) -> CommandResult<Vec<StatementFile>> {
+    let files = statements
         .into_iter()
         .map(|s| {
             Ok(StatementFile {
@@ -266,7 +312,9 @@ fn statement_files(statements: Vec<StatementInput>) -> CommandResult<Vec<Stateme
                 bank: s.bank.parse::<Bank>()?,
             })
         })
-        .collect()
+        .collect::<CommandResult<Vec<_>>>()?;
+    state.ensure_granted(files.iter().map(|f| f.path.as_path()))?;
+    Ok(files)
 }
 
 /// Runs `run` as the period's exclusive job of `kind`: takes the lock, builds the context from
@@ -310,7 +358,7 @@ pub async fn reconcile(
     on_event: Channel<RunEvent>,
 ) -> CommandResult<Summary> {
     let period = period(&year, &month).map_err(fail)?;
-    let files = statement_files(statements).map_err(fail)?;
+    let files = statement_files(&state, statements).map_err(fail)?;
     run_job(&state, &period, RunKind::Reconcile, on_event, |ctx| {
         Box::pin(async move { pipeline::reconcile(ctx, &files, clear_cache).await })
     })
@@ -343,7 +391,7 @@ pub async fn add_statements(
     on_event: Channel<RunEvent>,
 ) -> CommandResult<AddStatementsResult> {
     let period = period(&year, &month).map_err(fail)?;
-    let files = statement_files(statements).map_err(fail)?;
+    let files = statement_files(&state, statements).map_err(fail)?;
     run_job(&state, &period, RunKind::AddStatements, on_event, |ctx| {
         Box::pin(async move { pipeline::add_statements(ctx, &files).await })
     })
@@ -363,25 +411,31 @@ pub fn cancel_run(
 }
 
 #[tauri::command]
-pub fn get_review(
+pub async fn get_review(
     state: State<'_, Arc<AppState>>,
     year: String,
     month: String,
 ) -> CommandResult<ReviewData> {
     let period = period(&year, &month).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
-    pipeline::review_data(&paths).map_err(fail)
+    blocking(move || pipeline::review_data(&paths))
+        .await
+        .map_err(fail)?
+        .map_err(fail)
 }
 
 #[tauri::command]
-pub fn get_draft(
+pub async fn get_draft(
     state: State<'_, Arc<AppState>>,
     year: String,
     month: String,
 ) -> CommandResult<Draft> {
     let period = period(&year, &month).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
-    pipeline::read_draft(&paths).map_err(fail)
+    blocking(move || pipeline::read_draft(&paths))
+        .await
+        .map_err(fail)?
+        .map_err(fail)
 }
 
 fn ensure_not_finalizing(state: &AppState, period: &Period) -> CommandResult<()> {
@@ -396,7 +450,7 @@ fn ensure_not_finalizing(state: &AppState, period: &Period) -> CommandResult<()>
 }
 
 #[tauri::command]
-pub fn save_draft(
+pub async fn save_draft(
     state: State<'_, Arc<AppState>>,
     year: String,
     month: String,
@@ -405,7 +459,10 @@ pub fn save_draft(
     let period = period(&year, &month).map_err(fail)?;
     ensure_not_finalizing(&state, &period).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
-    pipeline::save_draft(&paths, &draft).map_err(fail)
+    blocking(move || pipeline::save_draft(&paths, &draft))
+        .await
+        .map_err(fail)?
+        .map_err(fail)
 }
 
 #[tauri::command]
@@ -507,13 +564,16 @@ pub async fn export_report(
     let Some(target) = target.and_then(|p| p.into_path().ok()) else {
         return Ok(None);
     };
-    std::fs::copy(&report, &target).map_err(|e| {
-        fail(CommandError::new(
-            ErrorKind::Io,
-            format!("{}: {e}", target.display()),
-        ))
-    })?;
-    Ok(Some(target.to_string_lossy().into_owned()))
+    let saved = target.to_string_lossy().into_owned();
+    blocking(move || {
+        std::fs::copy(&report, &target)
+            .map(|_| ())
+            .map_err(|e| CommandError::new(ErrorKind::Io, format!("{}: {e}", target.display())))
+    })
+    .await
+    .and_then(|result| result)
+    .map_err(fail)?;
+    Ok(Some(saved))
 }
 
 fn open(app: &AppHandle, path: &Path) -> CommandResult<()> {
@@ -535,9 +595,9 @@ pub async fn open_report(
     open(&app, &report)
 }
 
-/// Opens a receipt or reimbursement file in its default app.
+/// Opens a receipt or reimbursement file in its default app, by its checked real path.
 #[tauri::command]
-pub fn open_receipt(
+pub async fn open_receipt(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     year: String,
@@ -546,28 +606,39 @@ pub fn open_receipt(
 ) -> CommandResult<()> {
     let period = period(&year, &month).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
-    let file = pipeline::resolve_period_file(&paths, RescanKind::Receipt, &rel_path)
-        .or_else(|_| pipeline::resolve_period_file(&paths, RescanKind::Reimbursement, &rel_path))
-        .map_err(fail)?;
-    open(&app, &file.canonical)
+    blocking(move || {
+        let file = pipeline::resolve_period_file(&paths, RescanKind::Receipt, &rel_path)
+            .or_else(|_| {
+                pipeline::resolve_period_file(&paths, RescanKind::Reimbursement, &rel_path)
+            })
+            .map_err(fail)?;
+        open(&app, &file.canonical)
+    })
+    .await
+    .map_err(fail)?
 }
 
 /// Creates a month's folders and returns its entry for the month list.
 #[tauri::command]
-pub fn create_period(
+pub async fn create_period(
     state: State<'_, Arc<AppState>>,
     year: String,
     month: String,
 ) -> CommandResult<pipeline::PeriodSummary> {
     let period = period(&year, &month).map_err(fail)?;
     let root = receipts_root(&state).map_err(fail)?;
-    pipeline::ensure_period_dirs(&root, &period).map_err(fail)?;
-    Ok(pipeline::period_summary(&root, &period))
+    blocking(move || {
+        pipeline::ensure_period_dirs(&root, &period)?;
+        Ok::<_, PipelineError>(pipeline::period_summary(&root, &period))
+    })
+    .await
+    .map_err(fail)?
+    .map_err(fail)
 }
 
 /// Shows the period's folder in the file manager, creating it first when it is missing.
 #[tauri::command]
-pub fn reveal_period(
+pub async fn reveal_period(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     year: String,
@@ -575,10 +646,14 @@ pub fn reveal_period(
 ) -> CommandResult<()> {
     let root = receipts_root(&state).map_err(fail)?;
     let period = period(&year, &month).map_err(fail)?;
-    let paths = pipeline::ensure_period_dirs(&root, &period).map_err(fail)?;
-    app.opener()
-        .reveal_item_in_dir(&paths.dir)
-        .map_err(|e| fail(CommandError::new(ErrorKind::Io, e.to_string())))
+    blocking(move || {
+        let paths = pipeline::ensure_period_dirs(&root, &period).map_err(fail)?;
+        app.opener()
+            .reveal_item_in_dir(&paths.dir)
+            .map_err(|e| fail(CommandError::new(ErrorKind::Io, e.to_string())))
+    })
+    .await
+    .map_err(fail)?
 }
 
 /// Opens the help on creating a service account key in the browser.

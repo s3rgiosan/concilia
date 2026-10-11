@@ -11,6 +11,17 @@
     "core:event:allow-unlisten",
     "core:window:allow-set-size",
     "core:window:allow-set-title",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "allow-get-app-state",
+    "allow-save-settings",
+    "allow-pick-receipts-root",
+    "allow-import-service-account",
+    "allow-remove-service-account",
+    "allow-test-gemini-connection",
+    "allow-poppler-status",
+    "allow-get-rules",
+    "allow-save-rules",
+    "allow-check-for-updates",
+    "allow-install-update"
   ]
 }
