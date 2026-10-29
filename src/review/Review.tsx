@@ -17,12 +17,12 @@ import { fileName } from "../lib/paths";
 import { periodInSentence, periodLabel, type Period } from "../lib/period";
 import { popUpMenu } from "../lib/popUpMenu";
 import { isPdf, newStatements } from "../lib/statements";
-import { exportReport, finalize, openReceipt, openReport, openSettings, pickStatements, type ReceiptMeta, type Transaction } from "../lib/tauri";
+import { exportReport, finalize, openReceipt, openReport, openSettings, pickStatements, showAlert, type ReceiptMeta, type Transaction } from "../lib/tauri";
 import { rejectKindOf } from "./commands";
 import { assign, changedIds, confirm, forDraft, noReceipt, unmatch, type Decision } from "./decisions";
 import { finalizeCounts, FILTERS } from "./effective";
 import { Details, type DetailsHandlers } from "./Details";
-import { FinalizeSheet } from "./FinalizeSheet";
+import { finalizeAlert } from "./finalizeAlert";
 import { JobSheets, type Adding } from "./JobSheets";
 import type { Notice } from "./notices";
 import { QuickLook } from "./QuickLook";
@@ -204,6 +204,41 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       .catch(onError);
   }
 
+  /**
+   * Confirms Finalize in a native alert. While it shows, dropped files are refused; Review
+   * Remaining goes to the first transaction still to decide.
+   */
+  function askFinalize() {
+    if (!data || confirmFinalize) {
+      return;
+    }
+    setConfirmFinalize(true);
+    const request = finalizeAlert(
+      { period: periodLabel(period, t), counts: finalizeCounts(data, merged), pending, refused: refused.length },
+      t,
+      i18n.language,
+    );
+    showAlert(request).then(
+      (choice) => {
+        switch (choice) {
+          case "confirm":
+            runFinalize();
+            break;
+          case "alternate":
+            reviewRemaining();
+            break;
+          default:
+            setConfirmFinalize(false);
+            break;
+        }
+      },
+      (e) => {
+        setConfirmFinalize(false);
+        onError(e);
+      },
+    );
+  }
+
   function runFinalize() {
     setFinalizing(true);
     autosave
@@ -217,7 +252,10 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         onChanged?.();
       })
       .catch(onError)
-      .finally(() => setFinalizing(false));
+      .finally(() => {
+        setFinalizing(false);
+        setConfirmFinalize(false);
+      });
   }
 
   function focusList() {
@@ -284,13 +322,13 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     },
     scan: startScanning,
     exportReport: saveReport,
-    finalize: () => setConfirmFinalize(true),
+    finalize: askFinalize,
     addStatements: chooseStatements,
   });
 
   useImperativeHandle(ref, () => commands);
 
-  // Runs after the closing sheet hands focus back, so the list keeps it.
+  // Runs after the Finalize alert closes, so the list takes focus.
   const focusListAfterSheet = useRef(false);
   useEffect(() => {
     if (!confirmFinalize && focusListAfterSheet.current) {
@@ -456,7 +494,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     return subtitle;
   }
 
-  /** Closes the Finalize sheet and goes to the first transaction still to decide. */
+  /** Goes to the first transaction still to decide, from the Finalize alert. */
   function reviewRemaining() {
     focusListAfterSheet.current = true;
     setConfirmFinalize(false);
@@ -599,20 +637,6 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
         onAdd={() => adding && startAdding(adding.files)}
       />
 
-      <Presence>
-        {confirmFinalize ? (
-          <FinalizeSheet
-            period={periodLabel(period, t)}
-            counts={finalizeCounts(data, merged)}
-            pending={pending}
-            refused={refused.length}
-            busy={finalizing}
-            onCancel={() => setConfirmFinalize(false)}
-            onConfirm={runFinalize}
-            onReviewRemaining={reviewRemaining}
-          />
-        ) : null}
-      </Presence>
     </section>
   );
 }

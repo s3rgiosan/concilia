@@ -22,6 +22,7 @@ import {
   pickStatements,
   requestAttention,
   revealPeriod,
+  showAlert,
   setDockProgress,
   setMenu,
   setMenuState,
@@ -60,6 +61,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   revealPeriod: vi.fn(),
   requestAttention: vi.fn(),
   saveSettings: vi.fn(),
+  showAlert: vi.fn(),
   setDockProgress: vi.fn(),
   setMenu: vi.fn(),
   setMenuItemText: vi.fn(),
@@ -170,6 +172,7 @@ beforeEach(() => {
   localStorage.clear();
   resizeWindow(1200);
   uuid = 0;
+  vi.mocked(showAlert).mockResolvedValue("cancel");
   vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
     uuid += 1;
     return `00000000-0000-4000-8000-${String(uuid).padStart(12, "0")}`;
@@ -548,7 +551,7 @@ describe("sidebar", () => {
     expect(revealPeriod).toHaveBeenCalledWith("2030", "02");
     fireEvent.contextMenu(february);
     fireEvent.click(screen.getByRole("menuitem", { name: "Reconcile Again…" }));
-    expect(screen.getByRole("alertdialog", { name: "Reconcile February 2030 again?" })).toBeTruthy();
+    expect(showAlert).toHaveBeenCalledWith(expect.objectContaining({ title: "Reconcile February 2030 again?" }));
   });
 
   it("offers Open Report for a month with a report, and not for one without", async () => {
@@ -807,15 +810,18 @@ describe("month in review", () => {
     await renderMain();
     selectMonth(/February/);
     await screen.findByText("Review 2030-02");
-    moreAction("Reconcile Again…");
-    const sheet = screen.getByRole("alertdialog", { name: "Reconcile February 2030 again?" });
-    fireEvent.click(button("Cancel", sheet));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    vi.mocked(showAlert).mockResolvedValue("cancel");
+    await act(async () => moreAction("Reconcile Again…"));
+    expect(showAlert).toHaveBeenCalledWith({
+      title: "Reconcile February 2030 again?",
+      message: "Receipts that were sorted move back to the receipts folder, and Concilia reads every receipt again. This can take a while.",
+      confirm: "Reconcile Again",
+      cancel: "Cancel",
+    });
     expect(startReconcile).not.toHaveBeenCalled();
 
-    moreAction("Reconcile Again…");
-    fireEvent.click(button("Reconcile Again", screen.getByRole("alertdialog")));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    vi.mocked(showAlert).mockResolvedValue("confirm");
+    await act(async () => moreAction("Reconcile Again…"));
     expect(startReconcile).toHaveBeenCalledWith("2030", "02", [], true, expect.any(Function));
     await run.push({ step: "parsing", count: 0 });
     expect(steps()[0]).toBe("running: Reading statements · using the saved transactions");
@@ -1066,7 +1072,7 @@ describe("app menu", () => {
     act(() => pushMenu("open_report"));
     expect(openReport).toHaveBeenCalledWith("2030", "02");
     act(() => pushMenu("rerun"));
-    expect(screen.getByRole("alertdialog", { name: "Reconcile February 2030 again?" })).toBeTruthy();
+    expect(showAlert).toHaveBeenCalledWith(expect.objectContaining({ title: "Reconcile February 2030 again?" }));
   });
 });
 

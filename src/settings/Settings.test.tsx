@@ -18,6 +18,7 @@ import {
   removeServiceAccount,
   saveRules,
   saveSettings,
+  showAlert,
   setWindowSize,
   setWindowTitle,
   testGeminiConnection,
@@ -46,6 +47,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   removeServiceAccount: vi.fn(),
   saveRules: vi.fn(),
   saveSettings: vi.fn(),
+  showAlert: vi.fn(),
   setWindowSize: vi.fn(),
   setWindowTitle: vi.fn(),
   testGeminiConnection: vi.fn(),
@@ -620,41 +622,39 @@ describe("Gemini pane", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Details: Not a service account key.");
   });
 
-  it("removes the key after confirmation", async () => {
+  it("removes the key after confirmation in a native alert", async () => {
     const removed = deferred<AppStateView>();
     vi.mocked(removeServiceAccount).mockReturnValue(removed.promise);
+    vi.mocked(showAlert).mockResolvedValue("confirm");
     await renderSettings(makeView(), "gemini");
-    fireEvent.click(button("Remove…"));
-    const sheet = screen.getByRole("alertdialog", { name: "Remove the service account key?" });
-    expect(sheet.textContent).toContain("Concilia can't read receipts until you import a key again.");
-
-    fireEvent.click(within(sheet).getByRole("button", { name: "Remove Key" }));
+    await act(async () => fireEvent.click(button("Remove…")));
+    expect(showAlert).toHaveBeenCalledWith({
+      title: "Remove the service account key?",
+      message: "Concilia can't read receipts until you import a key again.",
+      confirm: "Remove Key",
+      cancel: "Cancel",
+    });
     expect(removeServiceAccount).toHaveBeenCalledTimes(1);
-    expect((within(sheet).getByRole("button", { name: "Working…" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(button("Remove…").disabled).toBe(true);
 
     await act(async () => removed.resolve(makeView({ service_account: null })));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.getByText("No key imported")).toBeTruthy();
   });
 
   it("keeps the key when removal is cancelled", async () => {
+    vi.mocked(showAlert).mockResolvedValue("cancel");
     await renderSettings(makeView(), "gemini");
-    fireEvent.click(button("Remove…"));
-    const sheet = screen.getByRole("alertdialog");
-    fireEvent.click(within(sheet).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await act(async () => fireEvent.click(button("Remove…")));
     expect(removeServiceAccount).not.toHaveBeenCalled();
   });
 
-  it("reports a failed removal and keeps the sheet open", async () => {
+  it("reports a failed removal and offers Remove again", async () => {
     vi.mocked(removeServiceAccount).mockRejectedValue({ kind: "keychain", message: "locked" });
+    vi.mocked(showAlert).mockResolvedValue("confirm");
     await renderSettings(makeView(), "gemini");
-    fireEvent.click(button("Remove…"));
-    const sheet = screen.getByRole("alertdialog");
-    fireEvent.click(within(sheet).getByRole("button", { name: "Remove Key" }));
+    await act(async () => fireEvent.click(button("Remove…")));
     expect((await screen.findByRole("alert")).textContent).toContain("Details: locked");
-    expect(screen.getByRole("alertdialog")).toBeTruthy();
-    expect((within(sheet).getByRole("button", { name: "Remove Key" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(button("Remove…").disabled).toBe(false);
   });
 
   it("saves a trimmed project", async () => {
@@ -785,10 +785,9 @@ describe("Gemini pane", () => {
     await renderSettings(makeView(), "gemini");
     fireEvent.click(button("Test Connection"));
     await screen.findByText("Failed");
-    fireEvent.click(button("Remove…"));
-    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove Key" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    expect(screen.queryByText("Failed")).toBeNull();
+    vi.mocked(showAlert).mockResolvedValue("confirm");
+    await act(async () => fireEvent.click(button("Remove…")));
+    await waitFor(() => expect(screen.queryByText("Failed")).toBeNull());
     expect(screen.getByRole("status").getAttribute("title")).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ import { useMenu } from "../lib/hooks/useMenu";
 import { useAppState } from "../lib/hooks/useAppState";
 import { useRun, useRunEvents } from "../lib/hooks/useRun";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
+import { useStableCallback } from "../lib/hooks/useStableCallback";
 import { useWindowTitle } from "../lib/hooks/useWindowTitle";
 import {
   defaultPeriod,
@@ -41,6 +42,7 @@ import {
   openReport,
   openSettings,
   revealPeriod,
+  showAlert,
   startReconcile,
   type AppStateView,
   type PeriodSummary,
@@ -48,7 +50,7 @@ import {
   type Summary,
 } from "../lib/tauri";
 import { NewMonthSheet } from "./NewMonthSheet";
-import { RerunSheet } from "./RerunSheet";
+import { rerunAlert } from "./rerunAlert";
 import { RunPanel } from "./RunPanel";
 import { Sidebar, type RunningMonth } from "./Sidebar";
 import type { Statement } from "../lib/statements";
@@ -77,7 +79,7 @@ function isCompact(): boolean {
   return window.innerWidth < COMPACT_WIDTH;
 }
 
-type SheetKind = "new-month" | "rerun";
+type SheetKind = "new-month";
 
 /** The listing with `summary` in place of the month's entry. */
 function withSummary(listed: PeriodSummary[], summary: PeriodSummary): PeriodSummary[] {
@@ -293,6 +295,15 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
     return () => window.clearTimeout(timer);
   }, [setUp]);
 
+  /** Confirms Reconcile Again in a native alert, then re-runs the month. */
+  const askRerun = useStableCallback(() => {
+    showAlert(rerunAlert(label, t)).then((choice) => {
+      if (choice === "confirm") {
+        reconcile(true);
+      }
+    }, setMessage);
+  });
+
   function reconcile(clearCache: boolean) {
     const target = selected;
     const files = (statements[periodKey(target)] ?? []).map(({ path, bank }) => ({ path, bank }));
@@ -374,7 +385,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
         }
       },
       reconcile: () => reconcile(false),
-      rerun: () => setSheet("rerun"),
+      rerun: askRerun,
       openReport: () => {
         openReport(selected.year, selected.month).catch(setMessage);
       },
@@ -397,10 +408,10 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
       { label: t("month.showInFinder"), onSelect: () => revealPeriod(selected.year, selected.month).catch(setMessage) },
     ];
     if (reviewable) {
-      entries.push({ label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
+      entries.push({ label: t("month.rerun"), onSelect: askRerun, disabled: running });
     }
     return entries;
-  }, [t, selected, reviewable, running]);
+  }, [t, selected, reviewable, running, askRerun]);
   const toolbarSlots = useMemo(() => ({ subtitle: subtitleSlot, trailing: trailingSlot }), [subtitleSlot, trailingSlot]);
 
   /** A month's context menu in the sidebar. */
@@ -411,7 +422,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
     }
     entries.push({ label: t("month.showInFinder"), onSelect: () => revealMonth(month) });
     if (isReviewable(month)) {
-      entries.push("separator", { label: t("month.rerun"), onSelect: () => setSheet("rerun"), disabled: running });
+      entries.push("separator", { label: t("month.rerun"), onSelect: askRerun, disabled: running });
     }
     return entries;
   }
@@ -633,7 +644,6 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
           />
         ) : null}
       </Presence>
-      <Presence>{sheet === "rerun" ? <RerunSheet period={label} onCancel={() => setSheet(null)} onConfirm={() => reconcile(true)} /> : null}</Presence>
     </div>
   );
 }

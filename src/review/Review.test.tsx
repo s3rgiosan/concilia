@@ -21,6 +21,8 @@ import {
   revealPeriod,
   saveDraft,
   saveRules,
+  showAlert,
+  type AlertRequest,
   startAddStatements,
   startScan,
   type AddStatementsResult,
@@ -51,6 +53,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   revealPeriod: vi.fn(),
   saveDraft: vi.fn(),
   saveRules: vi.fn(),
+  showAlert: vi.fn(),
   setDockProgress: vi.fn(() => Promise.resolve()),
   openSettings: vi.fn(() => Promise.resolve()),
   pickStatements: vi.fn(),
@@ -335,7 +338,17 @@ beforeEach(() => {
   vi.mocked(receiptUrl).mockImplementation((path) => `receipt://localhost/${path}`);
   vi.mocked(openReceipt).mockResolvedValue(undefined);
   vi.mocked(exportReport).mockResolvedValue("/Users/example/Reports/2030-03.xlsx");
+  vi.mocked(showAlert).mockResolvedValue("cancel");
 });
+
+/** The request of the latest native alert. */
+function lastAlert(): AlertRequest {
+  const call = vi.mocked(showAlert).mock.lastCall;
+  if (!call) {
+    throw new Error("no alert shown");
+  }
+  return call[0];
+}
 
 afterEach(() => {
   cleanup();
@@ -489,7 +502,7 @@ describe("empty list", () => {
     const finalizeHere = within(list().parentElement!).getByRole("button", { name: "Finalize…" });
     expect(finalizeHere.classList.contains("default")).toBe(true);
     fireEvent.click(finalizeHere);
-    expect(screen.getByRole("alertdialog", { name: "Finalize March 2030?" })).toBeTruthy();
+    expect(lastAlert().title).toBe("Finalize March 2030?");
   });
 
   it("points to the transactions still to decide from another filter", async () => {
@@ -1412,10 +1425,10 @@ describe("scan for new receipts", () => {
       expect(screen.getByText(/Concilia can't read 1 file in this month's receipts folder:/)).toBeTruthy();
     });
 
-    it("adds a line to the Finalize sheet", async () => {
+    it("adds a line to the Finalize alert", async () => {
       await renderReview();
       fireEvent.click(button("Finalize…", toolbar()));
-      expect(within(screen.getByRole("alertdialog")).getByText("2 files stay in the receipts folder because Concilia can't read them.")).toBeTruthy();
+      expect(lastAlert().message).toContain("2 files stay in the receipts folder because Concilia can't read them.");
     });
 
     it("shows no banner when every file can be read", async () => {
@@ -1525,37 +1538,35 @@ describe("export report", () => {
 });
 
 describe("finalize", () => {
-  it("asks with the counts of the receipts that move and what is left", async () => {
+  it("asks in a native alert with the counts of the receipts that move and what is left", async () => {
     await renderReview();
-    fireEvent.click(button("Finalize…", toolbar()));
-    const sheet = screen.getByRole("alertdialog", { name: "Finalize March 2030?" });
-    expect(sheet.textContent).toContain("4 receipts will be sorted: 1 matched, 2 still to review, and 1 unmatched.");
-    expect(sheet.textContent).toContain("To change decisions later, use Reconcile Again.");
-    expect(sheet.textContent).toContain("2 transactions still need a decision. They will be sorted as they are now.");
-    expect(within(sheet).queryByRole("checkbox")).toBeNull();
-    expect(document.activeElement).toBe(button("Cancel", sheet));
-    fireEvent.click(button("Cancel", sheet));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await act(async () => fireEvent.click(button("Finalize…", toolbar())));
+    const request = lastAlert();
+    expect(request.title).toBe("Finalize March 2030?");
+    expect(request.message).toContain("4 receipts will be sorted: 1 matched, 2 still to review, and 1 unmatched.");
+    expect(request.message).toContain("To change decisions later, use Reconcile Again.");
+    expect(request.message).toContain("2 transactions still need a decision. They will be sorted as they are now.");
+    expect(request).toMatchObject({ confirm: "Finalize", cancel: "Cancel", alternate: "Review Remaining" });
     expect(finalize).not.toHaveBeenCalled();
   });
 
   it("leaves out the pending line when every transaction is decided", async () => {
     vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [TX_ACME] }));
     const { commands } = await renderReview();
-    act(() => commands().finalize());
-    const sheet = screen.getByRole("alertdialog");
-    expect(sheet.textContent).toContain("1 receipt will be sorted: 1 matched.");
-    expect(sheet.textContent).not.toContain("still need");
-    expect(within(sheet).queryByRole("button", { name: "Review Remaining" })).toBeNull();
+    await act(async () => commands().finalize());
+    const request = lastAlert();
+    expect(request.message).toContain("1 receipt will be sorted: 1 matched.");
+    expect(request.message).not.toContain("still need");
+    expect(request.alternate).toBeUndefined();
   });
 
   it("goes to the first transaction still to decide from Review Remaining", async () => {
     await renderReview();
     select("ACME CORP");
     search("corp");
-    fireEvent.click(button("Finalize…", toolbar()));
-    fireEvent.click(button("Review Remaining", screen.getByRole("alertdialog")));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    vi.mocked(showAlert).mockResolvedValue("alternate");
+    await act(async () => fireEvent.click(button("Finalize…", toolbar())));
+    await settle();
     expect(filterButton("To Decide").getAttribute("aria-checked")).toBe("true");
     expect((screen.getByRole("searchbox", { name: "Search Transactions" }) as HTMLInputElement).value).toBe("");
     expect(selected()).toBe("GLOBEX SHOP");
@@ -1565,12 +1576,10 @@ describe("finalize", () => {
   it("saves pending changes, finalizes and reloads", async () => {
     const done = deferred<void>();
     vi.mocked(finalize).mockReturnValue(done.promise);
+    vi.mocked(showAlert).mockResolvedValue("confirm");
     const { onChanged } = await renderReview();
     decideFirst();
-    fireEvent.click(button("Finalize…", toolbar()));
-    const sheet = screen.getByRole("alertdialog");
-    fireEvent.click(button("Finalize", sheet));
-    expect(button("Working…", sheet).disabled).toBe(true);
+    await act(async () => fireEvent.click(button("Finalize…", toolbar())));
     await settle();
     expect(finalize).toHaveBeenCalledWith("2030", "03");
     expect(vi.mocked(saveDraft).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(finalize).mock.invocationCallOrder[0]);
@@ -1578,7 +1587,6 @@ describe("finalize", () => {
     vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus({ applied: true }));
     await act(async () => done.resolve());
     await settle();
-    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(getReview).toHaveBeenCalledTimes(2);
     expect(onChanged).toHaveBeenCalled();
     expect(subtitle()).toBe("Finalized");
@@ -1595,17 +1603,15 @@ describe("finalize", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("reports a failed finalize and keeps the sheet open", async () => {
+  it("reports a failed finalize and offers Finalize again", async () => {
     const error = { kind: "busy", message: "scan running" };
     vi.mocked(finalize).mockRejectedValue(error);
+    vi.mocked(showAlert).mockResolvedValue("confirm");
     const { onError } = await renderReview();
-    fireEvent.click(button("Finalize…", toolbar()));
-    const sheet = screen.getByRole("alertdialog");
-    fireEvent.click(button("Finalize", sheet));
+    await act(async () => fireEvent.click(button("Finalize…", toolbar())));
     await settle();
     expect(onError).toHaveBeenCalledWith(error);
-    expect(screen.getByRole("alertdialog")).toBe(sheet);
-    expect(button("Finalize", sheet).disabled).toBe(false);
+    expect(button("Finalize…", toolbar()).disabled).toBe(false);
     expect(getReview).toHaveBeenCalledTimes(1);
   });
 });

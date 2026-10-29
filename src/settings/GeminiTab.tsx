@@ -3,10 +3,9 @@ import { useTranslation } from "react-i18next";
 import { ErrorText } from "../components/ErrorText";
 import { FormRow, FormSection } from "../components/Form";
 import { Icon } from "../components/Icon";
-import { Sheet } from "../components/Sheet";
 import { TextSetting } from "../components/TextSetting";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
-import { importServiceAccount, removeServiceAccount, testGeminiConnection, type AppStateView } from "../lib/tauri";
+import { importServiceAccount, removeServiceAccount, showAlert, testGeminiConnection, type AppStateView } from "../lib/tauri";
 import type { PaneProps } from "./types";
 
 const REGIONS = ["europe-west1", "europe-west4", "europe-west9", "us-central1", "us-east4", "asia-southeast1"];
@@ -16,7 +15,6 @@ type TestState = { kind: "idle" } | { kind: "testing" } | { kind: "ok" } | { kin
 
 export function GeminiTab({ state, save, replace, onError }: PaneProps & { replace: (view: AppStateView) => void }) {
   const { t } = useTranslation();
-  const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [test, setTest] = useState<TestState>({ kind: "idle" });
   const account = state.service_account;
@@ -35,12 +33,25 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
     }, onError);
   }
 
+  /** Confirms removing the key in a native alert, then removes it. */
+  function askRemove() {
+    showAlert({
+      title: t("settings.gemini.removeTitle"),
+      message: t("settings.gemini.removeMessage"),
+      confirm: t("settings.gemini.removeConfirm"),
+      cancel: t("common.cancel"),
+    }).then((choice) => {
+      if (choice === "confirm") {
+        remove();
+      }
+    }, onError);
+  }
+
   function remove() {
     setRemoving(true);
     removeServiceAccount()
       .then((view) => {
         replace(view);
-        setConfirmRemove(false);
         setTest({ kind: "idle" });
       }, onError)
       .finally(() => setRemoving(false));
@@ -78,7 +89,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
       <FormSection footer={t("settings.gemini.keyHint")}>
         <FormRow label={t("settings.gemini.key")} description={keyDescription}>
           {account ? (
-            <button type="button" className="destructive" onClick={() => setConfirmRemove(true)} disabled={locked}>
+            <button type="button" className="destructive" onClick={askRemove} disabled={locked || removing}>
               {t("settings.gemini.remove")}
             </button>
           ) : null}
@@ -156,17 +167,6 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
           </div>
         ) : null}
       </section>
-      {confirmRemove ? (
-        <Sheet
-          title={t("settings.gemini.removeTitle")}
-          message={t("settings.gemini.removeMessage")}
-          submitLabel={t("settings.gemini.removeConfirm")}
-          destructive
-          busy={removing}
-          onCancel={() => setConfirmRemove(false)}
-          onSubmit={remove}
-        />
-      ) : null}
     </>
   );
 }

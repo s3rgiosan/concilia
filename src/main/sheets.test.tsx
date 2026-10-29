@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import i18n from "../i18n";
 import { NewMonthSheet } from "./NewMonthSheet";
-import { RerunSheet } from "./RerunSheet";
+import { rerunAlert } from "./rerunAlert";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -81,35 +82,13 @@ describe("NewMonthSheet", () => {
   });
 });
 
-describe("RerunSheet", () => {
-  function renderSheet() {
-    const onCancel = vi.fn();
-    const onConfirm = vi.fn();
-    render(<RerunSheet period="March 2030" onCancel={onCancel} onConfirm={onConfirm} />);
-    return { onCancel, onConfirm };
-  }
-
+describe("rerunAlert", () => {
   it("asks before re-running and explains what happens", () => {
-    renderSheet();
-    const sheet = screen.getByRole("alertdialog", { name: "Reconcile March 2030 again?" });
-    expect(sheet.getAttribute("aria-describedby")).toBeTruthy();
-    expect(within(sheet).getByText("Receipts that were sorted move back to the receipts folder, and Concilia reads every receipt again. This can take a while.")).toBeTruthy();
-  });
-
-  it("makes Cancel the default button", () => {
-    const { onCancel, onConfirm } = renderSheet();
-    const cancel = screen.getByRole("button", { name: "Cancel" });
-    expect(cancel.className).toBe("default");
-    expect(document.activeElement).toBe(cancel);
-    expect(screen.getByRole("button", { name: "Reconcile Again" }).className).toBe("destructive");
-    fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Enter" });
-    expect(onCancel).toHaveBeenCalledTimes(1);
-    expect(onConfirm).not.toHaveBeenCalled();
-  });
-
-  it("re-runs on confirm", () => {
-    const { onConfirm } = renderSheet();
-    fireEvent.click(screen.getByRole("button", { name: "Reconcile Again" }));
-    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(rerunAlert("March 2030", i18n.t)).toEqual({
+      title: "Reconcile March 2030 again?",
+      message: "Receipts that were sorted move back to the receipts folder, and Concilia reads every receipt again. This can take a while.",
+      confirm: "Reconcile Again",
+      cancel: "Cancel",
+    });
   });
 });
