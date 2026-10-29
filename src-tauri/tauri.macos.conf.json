@@ -1,5 +1,24 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Concilia",
+        "url": "index.html?view=main",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "dragDropEnabled": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 20, "y": 29 },
+        "transparent": true,
+        "windowEffects": { "effects": ["sidebar"], "state": "followsWindowActiveState" }
+      }
+    ]
+  },
   "bundle": {
     "targets": [
       "dmg"

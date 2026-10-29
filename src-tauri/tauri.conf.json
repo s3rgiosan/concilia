@@ -19,15 +19,9 @@
         "height": 800,
         "minWidth": 960,
         "minHeight": 640,
-        "dragDropEnabled": true,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "trafficLightPosition": { "x": 20, "y": 29 },
-        "transparent": true,
-        "windowEffects": { "effects": ["sidebar"], "state": "followsWindowActiveState" }
+        "dragDropEnabled": true
       }
     ],
-    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: receipt: http://receipt.localhost; frame-src receipt: http://receipt.localhost; connect-src ipc: http://ipc.localhost"
     }

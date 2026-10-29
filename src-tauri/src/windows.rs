@@ -1,6 +1,6 @@
 //! The Settings window, created on demand and focused when it already exists.
 
-use tauri::{AppHandle, Manager, TitleBarStyle, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::menu::MenuState;
 
@@ -10,6 +10,7 @@ pub const SETTINGS_LABEL: &str = "settings";
 const SETTINGS_WIDTH: f64 = 640.0;
 const SETTINGS_HEIGHT: f64 = 420.0;
 /// Centres the traffic lights in the 62 px pane switcher; AppKit places their centre 3 pt above `y`.
+#[cfg(target_os = "macos")]
 const SETTINGS_LIGHTS: (f64, f64) = (20.0, 34.0);
 
 /// Whether the window `label` exists and has focus.
@@ -38,23 +39,26 @@ pub fn open_settings(app: &AppHandle) {
     // Windows must be built on the main thread.
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let built = WebviewWindowBuilder::new(
+        let builder = WebviewWindowBuilder::new(
             &handle,
             SETTINGS_LABEL,
             WebviewUrl::App("index.html?view=settings".into()),
         )
         .title("Settings")
         .inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
-        .title_bar_style(TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(
-            SETTINGS_LIGHTS.0,
-            SETTINGS_LIGHTS.1,
-        ))
+        .center()
         .resizable(false)
         .minimizable(false)
-        .maximizable(false)
-        .build();
+        .maximizable(false);
+        #[cfg(target_os = "macos")]
+        let builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(
+                SETTINGS_LIGHTS.0,
+                SETTINGS_LIGHTS.1,
+            ));
+        let built = builder.build();
         match built {
             Ok(window) => {
                 // While Settings has focus, Edit › Undo and Redo stay enabled and reach it.

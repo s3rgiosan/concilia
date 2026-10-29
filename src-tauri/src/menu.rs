@@ -13,11 +13,17 @@ use tauri::{AppHandle, Wry};
 
 use crate::error::{fail, CommandError, CommandResult};
 use crate::windows;
+use crate::zoom;
 
 /// Event sent to the main window when a menu item is chosen; the payload is `{ "id": … }`.
 pub const MENU_EVENT: &str = "menu";
 
 pub const HELP_URL: &str = "https://github.com/s3rgiosan/concilia#readme";
+
+/// The About panel's copyright and credits lines: `bundle.copyright` and `bundle.shortDescription`
+/// in tauri.conf.json, which the runtime config leaves out.
+const COPYRIGHT: &str = "© 2026 Sérgio Santos";
+const CREDITS: &str = "Bank statement reconciliation";
 
 /// The README section on creating a Gemini service account key.
 pub const KEY_HELP_URL: &str =
@@ -32,11 +38,15 @@ pub const OPEN_REPORT: &str = "open_report";
 pub const REVEAL_PERIOD: &str = "reveal_period";
 pub const UNDO: &str = "undo";
 pub const REDO: &str = "redo";
+pub const DELETE: &str = "delete";
 pub const FIND: &str = "find";
 pub const FILTER_PENDING: &str = "filter_pending";
 pub const FILTER_MATCHED: &str = "filter_matched";
 pub const FILTER_ALL: &str = "filter_all";
 pub const TOGGLE_SIDEBAR: &str = "toggle_sidebar";
+pub const ACTUAL_SIZE: &str = "actual_size";
+pub const ZOOM_IN: &str = "zoom_in";
+pub const ZOOM_OUT: &str = "zoom_out";
 pub const RECONCILE: &str = "reconcile";
 pub const SCAN: &str = "scan";
 pub const RERUN: &str = "rerun";
@@ -77,6 +87,7 @@ pub const PASTE: &str = "paste";
 pub const SELECT_ALL: &str = "select_all";
 pub const MINIMIZE: &str = "minimize";
 pub const ZOOM: &str = "zoom";
+pub const FULL_SCREEN: &str = "full_screen";
 pub const BRING_ALL_TO_FRONT: &str = "bring_all_to_front";
 pub const CLOSE_WINDOW: &str = "close_window";
 
@@ -91,11 +102,15 @@ pub const ITEM_IDS: &[&str] = &[
     REVEAL_PERIOD,
     UNDO,
     REDO,
+    DELETE,
     FIND,
     FILTER_PENDING,
     FILTER_MATCHED,
     FILTER_ALL,
     TOGGLE_SIDEBAR,
+    ACTUAL_SIZE,
+    ZOOM_IN,
+    ZOOM_OUT,
     RECONCILE,
     SCAN,
     RERUN,
@@ -138,6 +153,7 @@ pub const EXTRA_LABEL_KEYS: &[&str] = &[
     SELECT_ALL,
     MINIMIZE,
     ZOOM,
+    FULL_SCREEN,
     BRING_ALL_TO_FRONT,
     CLOSE_WINDOW,
 ];
@@ -154,11 +170,15 @@ fn english(key: &str) -> &'static str {
         REVEAL_PERIOD => "Show in Finder",
         UNDO => "Undo",
         REDO => "Redo",
+        DELETE => "Delete",
         FIND => "Find",
         FILTER_PENDING => "To Decide",
         FILTER_MATCHED => "Matched",
         FILTER_ALL => "All",
         TOGGLE_SIDEBAR => "Show Sidebar",
+        ACTUAL_SIZE => "Actual Size",
+        ZOOM_IN => "Zoom In",
+        ZOOM_OUT => "Zoom Out",
         RECONCILE => "Reconcile",
         SCAN => "Scan for New Receipts",
         RERUN => "Reconcile Again…",
@@ -197,6 +217,7 @@ fn english(key: &str) -> &'static str {
         SELECT_ALL => "Select All",
         MINIMIZE => "Minimize",
         ZOOM => "Zoom",
+        FULL_SCREEN => "Enter Full Screen",
         BRING_ALL_TO_FRONT => "Bring All to Front",
         CLOSE_WINDOW => "Close Window",
         _ => "",
@@ -232,6 +253,7 @@ pub enum Route {
     Settings,
     CheckUpdates,
     Help,
+    Zoom(zoom::Step),
     /// Sent to the main window as a `menu` event.
     Frontend,
 }
@@ -241,15 +263,18 @@ pub fn route(id: &str) -> Route {
         SETTINGS => Route::Settings,
         CHECK_UPDATES => Route::CheckUpdates,
         HELP => Route::Help,
+        ACTUAL_SIZE => Route::Zoom(zoom::Step::Actual),
+        ZOOM_IN => Route::Zoom(zoom::Step::In),
+        ZOOM_OUT => Route::Zoom(zoom::Step::Out),
         _ => Route::Frontend,
     }
 }
 
-/// The window that receives a `menu` event for `id`: Undo and Redo go to the Settings window
-/// while it has focus, everything else to the main window.
+/// The window that receives a `menu` event for `id`: Undo, Redo and Delete go to the Settings
+/// window while it has focus, everything else to the main window.
 pub fn event_target(id: &str, settings_focused: bool) -> &'static str {
     match id {
-        UNDO | REDO if settings_focused => windows::SETTINGS_LABEL,
+        UNDO | REDO | DELETE if settings_focused => windows::SETTINGS_LABEL,
         _ => windows::MAIN_LABEL,
     }
 }
@@ -401,9 +426,13 @@ fn build(
         handles: HashMap::new(),
     };
 
+    // An empty short version keeps AppKit from repeating the version in parentheses.
     let about = AboutMetadata {
         name: Some(name.clone()),
         version: Some(app.package_info().version.to_string()),
+        short_version: Some(String::new()),
+        copyright: Some(COPYRIGHT.to_string()),
+        credits: Some(CREDITS.to_string()),
         ..Default::default()
     };
     let check_updates = b.item(CHECK_UPDATES, None)?;
@@ -444,6 +473,7 @@ fn build(
 
     let undo = b.item(UNDO, Some("CmdOrCtrl+Z"))?;
     let redo = b.item(REDO, Some("CmdOrCtrl+Shift+Z"))?;
+    let delete = b.item(DELETE, None)?;
     let find = b.item(FIND, Some("CmdOrCtrl+F"))?;
     let edit_menu = b.submenu(
         MENU_EDIT,
@@ -454,6 +484,7 @@ fn build(
             &PredefinedMenuItem::cut(app, Some(&b.text(CUT)))?,
             &PredefinedMenuItem::copy(app, Some(&b.text(COPY)))?,
             &PredefinedMenuItem::paste(app, Some(&b.text(PASTE)))?,
+            &delete,
             &PredefinedMenuItem::select_all(app, Some(&b.text(SELECT_ALL)))?,
             &b.separator()?,
             &find,
@@ -464,6 +495,9 @@ fn build(
     let filter_matched = b.item(FILTER_MATCHED, Some("CmdOrCtrl+2"))?;
     let filter_all = b.item(FILTER_ALL, Some("CmdOrCtrl+3"))?;
     let toggle_sidebar = b.item(TOGGLE_SIDEBAR, Some("Ctrl+Cmd+S"))?;
+    let actual_size = b.item(ACTUAL_SIZE, Some("CmdOrCtrl+0"))?;
+    let zoom_in = b.item(ZOOM_IN, Some("CmdOrCtrl+="))?;
+    let zoom_out = b.item(ZOOM_OUT, Some("CmdOrCtrl+-"))?;
     let view_menu = b.submenu(
         MENU_VIEW,
         &[
@@ -472,6 +506,11 @@ fn build(
             &filter_all,
             &b.separator()?,
             &toggle_sidebar,
+            &PredefinedMenuItem::fullscreen(app, Some(&b.text(FULL_SCREEN)))?,
+            &b.separator()?,
+            &actual_size,
+            &zoom_in,
+            &zoom_out,
         ],
     )?;
 
@@ -480,7 +519,7 @@ fn build(
     let rerun = b.item(RERUN, None)?;
     let finalize = b.item(FINALIZE, None)?;
     let open_report = b.item(OPEN_REPORT, None)?;
-    let export_report = b.item(EXPORT_REPORT, Some("CmdOrCtrl+Shift+E"))?;
+    let export_report = b.item(EXPORT_REPORT, None)?;
     let month_menu = b.submenu(
         MENU_MONTH,
         &[
@@ -667,6 +706,8 @@ mod tests {
     fn undo_and_redo_go_to_the_focused_settings_window() {
         assert_eq!(event_target(UNDO, true), windows::SETTINGS_LABEL);
         assert_eq!(event_target(REDO, true), windows::SETTINGS_LABEL);
+        assert_eq!(event_target(DELETE, true), windows::SETTINGS_LABEL);
+        assert_eq!(event_target(DELETE, false), windows::MAIN_LABEL);
         assert_eq!(event_target(UNDO, false), windows::MAIN_LABEL);
         assert_eq!(event_target(RECONCILE, true), windows::MAIN_LABEL);
     }
@@ -679,10 +720,21 @@ mod tests {
     }
 
     #[test]
+    fn about_lines_match_the_bundle_config() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(config["bundle"]["copyright"], COPYRIGHT);
+        assert_eq!(config["bundle"]["shortDescription"], CREDITS);
+    }
+
+    #[test]
     fn routes_rust_handled_ids() {
         assert_eq!(route(SETTINGS), Route::Settings);
         assert_eq!(route(CHECK_UPDATES), Route::CheckUpdates);
         assert_eq!(route(HELP), Route::Help);
+        assert_eq!(route(ACTUAL_SIZE), Route::Zoom(zoom::Step::Actual));
+        assert_eq!(route(ZOOM_IN), Route::Zoom(zoom::Step::In));
+        assert_eq!(route(ZOOM_OUT), Route::Zoom(zoom::Step::Out));
         assert_eq!(route(RECONCILE), Route::Frontend);
         assert_eq!(route("anything"), Route::Frontend);
     }

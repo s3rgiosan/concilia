@@ -1,4 +1,6 @@
+pub mod alert;
 pub mod app;
+pub mod appearance;
 pub mod bank;
 pub mod bank_fees;
 pub mod commands;
@@ -26,23 +28,28 @@ pub mod secrets;
 pub mod text;
 pub mod updates;
 pub mod windows;
+pub mod zoom;
 
 use std::sync::Arc;
 
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, WindowEvent};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_window_state::StateFlags;
 
 use crate::app::{AppState, BUSY_CHANGED_EVENT};
+use crate::appearance::AppearanceState;
 use crate::config::{ConfigStore, RulesStore};
 use crate::menu::{MenuLabels, MenuState, Route};
 use crate::poppler::Poppler;
 use crate::secrets::{SecretStore, ServiceAccountStore};
 use crate::updates::{UpdateCheckResult, UpdateManager, UPDATE_CHECK_RESULT_EVENT};
+use crate::zoom::ZoomState;
 
 fn handle_menu_event(app: &AppHandle, id: &str) {
     match menu::route(id) {
         Route::Settings => windows::open_settings(app),
         Route::CheckUpdates => check_for_updates_from_menu(app),
+        Route::Zoom(step) => zoom::apply(app, step),
         Route::Help => {
             if let Err(error) = app.opener().open_url(menu::HELP_URL, None::<&str>) {
                 log::warn!("could not open the help page: {error}");
@@ -117,6 +124,18 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // The main window opens where it was and at its last size; Settings opens centred.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    StateFlags::SIZE
+                        | StateFlags::POSITION
+                        | StateFlags::MAXIMIZED
+                        | StateFlags::FULLSCREEN,
+                )
+                .with_denylist(&[windows::SETTINGS_LABEL])
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .register_asynchronous_uri_scheme_protocol(protocol::SCHEME, protocol::handle)
         .invoke_handler(tauri::generate_handler![
@@ -156,12 +175,23 @@ pub fn run() {
             commands::check_for_updates,
             commands::pending_update,
             commands::install_update,
+            appearance::get_appearance,
+            alert::show_alert,
         ])
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
-        .on_window_event(|window, event| {
-            if let WindowEvent::DragDrop(drop) = event {
-                grant_dropped(window.app_handle(), drop);
+        .on_window_event(|window, event| match event {
+            WindowEvent::DragDrop(drop) => grant_dropped(window.app_handle(), drop),
+            // The accent colour and Reduce Transparency change in System Settings, so they are
+            // read again when the app comes back to the front or the theme changes.
+            WindowEvent::Focused(true) | WindowEvent::ThemeChanged(_) => {
+                appearance::refresh(window.app_handle());
             }
+            WindowEvent::Destroyed => {
+                if let Some(zoom) = window.try_state::<ZoomState>() {
+                    zoom.forget(window.label());
+                }
+            }
+            _ => {}
         })
         .on_webview_event(|webview, event| {
             if let tauri::WebviewEvent::DragDrop(drop) = event {
@@ -217,6 +247,8 @@ pub fn run() {
 
             app.manage(state);
             app.manage(updates);
+            app.manage(AppearanceState::default());
+            app.manage(ZoomState::default());
 
             let menu_state = MenuState::default();
             if let Err(error) = menu::apply(&handle, &menu_state, &MenuLabels::default()) {

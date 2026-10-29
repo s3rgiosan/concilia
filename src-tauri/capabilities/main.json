@@ -47,6 +47,8 @@
     "allow-install-update",
     "allow-set-menu",
     "allow-set-menu-state",
-    "allow-set-menu-item-text"
+    "allow-set-menu-item-text",
+    "allow-get-appearance",
+    "allow-show-alert"
   ]
 }

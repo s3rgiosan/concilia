@@ -37,6 +37,8 @@ const COMMANDS: &[&str] = &[
     "check_for_updates",
     "pending_update",
     "install_update",
+    "get_appearance",
+    "show_alert",
 ];
 
 fn main() {
