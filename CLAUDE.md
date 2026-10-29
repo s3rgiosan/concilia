@@ -366,3 +366,7 @@ Add regex to the `noReceiptPatterns` array in `worker/lib/bank-fees.mjs`. Use `/
 - No persistence between runs — each execution starts fresh
 - Parser accuracy depends on consistent PDF formatting from the bank
 - Bank description abbreviations (e.g., "SHOPCO MKT") may not match vendor names extracted by Gemini
+
+## Mac app UI
+- Platforms: macOS, Linux, Windows
+- Shape: windowed
