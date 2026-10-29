@@ -5,7 +5,8 @@
 // update, read-only, load-error, run-error, slow, refused (a month in review with two files Concilia
 // can't read). run-error fails every reconcile, scan and added
 // statement; slow reads one receipt every two seconds. `?lang=en|pt` saves that language in the
-// settings.
+// settings. `?accent=<rrggbb>` and `?reduce-transparency=1` stand in for the system settings the
+// app reads natively.
 
 import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
@@ -359,6 +360,15 @@ export function install(): void {
         case "open_settings":
           window.open(`${window.location.pathname}?view=settings&mock=${scenario}`, "settings", "width=640,height=560");
           return null;
+        case "get_appearance":
+          return {
+            accent: /^[0-9a-f]{6}$/i.test(params.get("accent") ?? "") ? `#${params.get("accent")}` : null,
+            reduce_transparency: params.get("reduce-transparency") === "1",
+          };
+        case "show_alert": {
+          const request = a.request as { title: string; message: string };
+          return window.confirm(`${request.title}\n\n${request.message}`) ? "confirm" : "cancel";
+        }
         case "plugin:app|version":
           return "2.0.0";
         case "pending_update":

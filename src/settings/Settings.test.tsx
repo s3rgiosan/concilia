@@ -40,6 +40,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   onMenu: vi.fn(),
   onSettingsChanged: vi.fn(),
   onUpdateProgress: vi.fn(),
+  onZoomChanged: vi.fn(() => Promise.resolve(() => undefined)),
   pickReceiptsRoot: vi.fn(),
   popplerStatus: vi.fn(),
   removeServiceAccount: vi.fn(),

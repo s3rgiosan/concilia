@@ -48,7 +48,7 @@ describe("ReviewToolbar", () => {
     expect(within(filter()).getAllByRole("radio").map((b) => b.textContent)).toEqual(["To Decide2", "Matched2", "All4"]);
     fireEvent.click(within(filter()).getByRole("radio", { name: /^To Decide/ }));
     expect(props.onFilter).toHaveBeenCalledWith("pending");
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), { target: { value: "acme" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search Transactions" }), { target: { value: "acme" } });
     expect(props.onSearch).toHaveBeenCalledWith("acme");
     fireEvent.click(screen.getByRole("button", { name: "Scan for New Receipts" }));
     fireEvent.click(screen.getByRole("button", { name: "Export Report…" }));
@@ -59,7 +59,7 @@ describe("ReviewToolbar", () => {
     const order = Array.from(document.querySelectorAll("[role=radiogroup], button, input")).map(
       (el) => el.getAttribute("aria-label") ?? el.textContent,
     );
-    expect(order.slice(4)).toEqual(["Scan for New Receipts", "Export Report…", "More Actions", "Finalize…", "Search"]);
+    expect(order.slice(4)).toEqual(["Scan for New Receipts", "Export Report…", "More Actions", "Finalize…", "Search Transactions"]);
     expect(menuItems()).toEqual(["Add Statements…", "Open Report"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Add Statements…" }));
     expect(props.onAddStatements).toHaveBeenCalledTimes(1);

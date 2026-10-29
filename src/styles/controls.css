@@ -108,8 +108,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  outline-offset: 1px;
+  outline: auto;
 }
 
 /* Text field. */
@@ -132,12 +131,6 @@ textarea:focus-visible {
   color: var(--placeholder);
 }
 
-.field:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
-}
-
 .field:disabled {
   opacity: 0.55;
 }
@@ -156,9 +149,9 @@ textarea:focus-visible {
   color: var(--label-secondary);
 }
 
+/* The ring goes around the whole field; the borderless input inside draws none of its own. */
 .search:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  outline: auto;
 }
 
 .search input {
@@ -219,8 +212,7 @@ textarea:focus-visible {
 }
 
 .popup-button:has(select:focus-visible) {
-  outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  outline-offset: 1px;
+  outline: auto;
 }
 
 .popup-button--disabled {
@@ -308,7 +300,7 @@ input[type="checkbox"].toggle::after {
   width: 18px;
   height: 14px;
   border-radius: 7px;
-  background: #fff;
+  background: var(--knob);
   box-shadow:
     0 0 0 0.5px rgb(0 0 0 / 8%),
     0 1px 3px rgb(0 0 0 / 22%);

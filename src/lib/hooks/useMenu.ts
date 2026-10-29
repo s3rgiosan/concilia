@@ -69,6 +69,10 @@ const LABEL_KEYS = [
   "select_all",
   "minimize",
   "zoom",
+  "full_screen",
+  "actual_size",
+  "zoom_in",
+  "zoom_out",
   "bring_all_to_front",
   "close_window",
   "settings",
@@ -80,6 +84,7 @@ const LABEL_KEYS = [
   "reveal_period",
   "undo",
   "redo",
+  "delete",
   "find",
   "filter_pending",
   "filter_matched",
@@ -246,7 +251,7 @@ export function useMenu(inputs: MenuInputs, actions: MenuActions, reviewCommands
         const current = modelNow();
         const monthActions = latestActions.current;
 
-        if ((id === "undo" || id === "redo") && isTextField(document.activeElement)) {
+        if ((id === "undo" || id === "redo" || id === "delete") && isTextField(document.activeElement)) {
           document.execCommand(id);
           return;
         }

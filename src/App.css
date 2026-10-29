@@ -29,6 +29,15 @@ html.vibrant .detail {
   background: var(--window-bg);
 }
 
+/* Reduce Transparency: the window paints itself and the sidebar takes its solid tint. */
+html.vibrant.reduce-transparency {
+  --sidebar-bg: var(--sidebar-tint);
+}
+
+html.vibrant.reduce-transparency body {
+  background: var(--window-solid);
+}
+
 /* Closes the subpixel seam between the heading and the trailing controls. */
 html.vibrant .titlebar__heading {
   box-shadow: 1px 0 0 var(--window-bg);
@@ -163,8 +172,9 @@ code {
 
 .error-state__title {
   margin: 4px 0 0;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 22px;
 }
 
 .error-state__message {

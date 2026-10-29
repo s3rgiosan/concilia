@@ -56,7 +56,7 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
     }
     return subscribe(
       onMenu((id) => {
-        if (id !== "undo" && id !== "redo") {
+        if (id !== "undo" && id !== "redo" && id !== "delete") {
           return;
         }
         if (isTextField(document.activeElement)) {

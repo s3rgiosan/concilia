@@ -138,7 +138,7 @@
 }
 
 /*
- * Toolbar items: 28 pt tall capsules. Icon buttons and the group of secondary actions sit on the
+ * Toolbar items: capsules of the toolbar item height. Icon buttons and the group of secondary actions sit on the
  * same translucent fill; the items inside a group are borderless and show a fill on hover.
  */
 .titlebar__trailing button:not([class]),
@@ -147,11 +147,17 @@
 .titlebar__trailing .search,
 .titlebar__trailing .popup-button {
   height: var(--toolbar-item-height);
-  border-radius: 14px;
+  border-radius: calc(var(--toolbar-item-height) / 2);
+}
+
+/* Segments sit inset in the track, so the selected one reads as a capsule inside it. */
+.titlebar__trailing .segmented {
+  box-sizing: border-box;
+  padding: 2px;
 }
 
 .titlebar__trailing .segmented__item {
-  border-radius: 14px;
+  border-radius: calc(var(--toolbar-item-height) / 2 - 2px);
 }
 
 .titlebar__trailing button:not([class]),
@@ -164,9 +170,9 @@
 }
 
 button.icon.titlebar__button {
-  width: 34px;
+  width: var(--toolbar-item-height);
   height: var(--toolbar-item-height);
-  border-radius: 14px;
+  border-radius: calc(var(--toolbar-item-height) / 2);
   background: var(--toolbar-glass);
   color: var(--label);
 }
@@ -185,13 +191,13 @@ button.icon.titlebar__button:active:not(:disabled) {
   align-items: center;
   height: var(--toolbar-item-height);
   padding: 0 2px;
-  border-radius: 14px;
+  border-radius: calc(var(--toolbar-item-height) / 2);
   background: var(--toolbar-glass);
 }
 
 .toolbar-group .toolbar-group__item {
-  height: 24px;
-  border-radius: 12px;
+  height: calc(var(--toolbar-item-height) - 4px);
+  border-radius: calc(var(--toolbar-item-height) / 2 - 2px);
   color: var(--label);
 }
 
@@ -217,10 +223,14 @@ button.icon.toolbar-group__item {
 }
 
 /* Reduce Transparency: no soft shadow under the toolbar, only its hairline. */
-@media (prefers-reduced-transparency: reduce) {
-  .titlebar--scrolled .titlebar__leading:not(.titlebar__leading--sidebar)::after,
-  .titlebar--scrolled .titlebar__heading::after,
-  .titlebar--scrolled .titlebar__trailing::after {
-    opacity: 0;
-  }
+:root.reduce-transparency .titlebar--scrolled .titlebar__leading:not(.titlebar__leading--sidebar)::after,
+:root.reduce-transparency .titlebar--scrolled .titlebar__heading::after,
+:root.reduce-transparency .titlebar--scrolled .titlebar__trailing::after {
+  opacity: 0;
+}
+
+/* An inactive window greys its toolbar title and item symbols. */
+:root.window-inactive .titlebar__title,
+:root.window-inactive .titlebar button.icon {
+  color: var(--label-tertiary);
 }

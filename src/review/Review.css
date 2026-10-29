@@ -181,7 +181,7 @@
   }
 }
 
-.review-list:focus .list-row--selected {
+:root:not(.window-inactive) .review-list:focus .list-row--selected {
   background: var(--selected-bg);
   color: var(--selected-text);
 }
@@ -220,7 +220,7 @@
   color: var(--label-tertiary);
 }
 
-.review-list:focus .list-row--selected .list-row__edited {
+:root:not(.window-inactive) .review-list:focus .list-row--selected .list-row__edited {
   color: var(--selected-text-secondary);
 }
 
@@ -229,8 +229,8 @@
   white-space: nowrap;
 }
 
-.review-list:focus .list-row--selected .list-row__status,
-.review-list:focus .list-row--selected .list-row__date {
+:root:not(.window-inactive) .review-list:focus .list-row--selected .list-row__status,
+:root:not(.window-inactive) .review-list:focus .list-row--selected .list-row__date {
   color: var(--selected-text-secondary);
 }
 
@@ -252,7 +252,7 @@
   white-space: nowrap;
 }
 
-.review-list:focus .list-row--selected .dot {
+:root:not(.window-inactive) .review-list:focus .list-row--selected .dot {
   box-shadow: 0 0 0 1px rgb(255 255 255 / 85%);
 }
 
@@ -318,16 +318,17 @@
 .details__title {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 400;
+  line-height: 20px;
   overflow-wrap: anywhere;
   user-select: text;
 }
 
 .details__amount {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 26px;
 }
 
 .details__meta {
@@ -358,9 +359,9 @@
 
 .details__heading {
   margin: 0 0 6px 2px;
-  color: var(--label-secondary);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
 }
 
 .details__note {
@@ -594,7 +595,7 @@
   flex: none;
   max-width: 100%;
   max-height: 100%;
-  background: #fff;
+  background: var(--paper);
   box-shadow:
     0 0 0 0.5px rgb(0 0 0 / 12%),
     0 1px 4px rgb(0 0 0 / 25%);
@@ -711,12 +712,10 @@
 }
 
 /* Reduce Transparency: the sticky header is solid. */
-@media (prefers-reduced-transparency: reduce) {
-  .review-list__header {
-    background: var(--content-bg);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+:root.reduce-transparency .review-list__header {
+  background: var(--content-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Narrower padding so the decisions fit on one line in the details column's default width. */

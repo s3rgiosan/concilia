@@ -273,7 +273,7 @@ function counts(): Record<string, string> {
 }
 
 function search(value: string) {
-  fireEvent.change(screen.getByRole("searchbox", { name: "Search" }), { target: { value } });
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search Transactions" }), { target: { value } });
 }
 
 function details(): HTMLElement {
@@ -459,13 +459,13 @@ describe("list", () => {
     fireEvent.keyDown(window, { key: "]", metaKey: true });
     expect(selected()).toBe("GLOBEX SHOP");
     fireEvent.keyDown(window, { key: "f", metaKey: true });
-    expect(document.activeElement).not.toBe(screen.getByRole("searchbox", { name: "Search" }));
+    expect(document.activeElement).not.toBe(screen.getByRole("searchbox", { name: "Search Transactions" }));
   });
 
   it("focuses the search field", async () => {
     const { commands } = await renderReview();
     act(() => commands().focusSearch());
-    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search" }));
+    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search Transactions" }));
   });
 
   it("says when nothing is listed", async () => {
@@ -555,7 +555,7 @@ describe("filters and search", () => {
   it("clears the search with Escape, then returns to the list", async () => {
     await renderReview();
     search("hooli");
-    const field = screen.getByRole("searchbox", { name: "Search" });
+    const field = screen.getByRole("searchbox", { name: "Search Transactions" });
     fireEvent.keyDown(field, { key: "Escape" });
     expect((field as HTMLInputElement).value).toBe("");
     expect(options()).toHaveLength(5);
@@ -968,7 +968,7 @@ describe("commands", () => {
     act(() => commands().setFilter("matched"));
     expect(filterButton("Matched").getAttribute("aria-checked")).toBe("true");
     act(() => commands().focusSearch());
-    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search" }));
+    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search Transactions" }));
   });
 
   it("opens the focused receipt in Preview", async () => {
@@ -1557,7 +1557,7 @@ describe("finalize", () => {
     fireEvent.click(button("Review Remaining", screen.getByRole("alertdialog")));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(filterButton("To Decide").getAttribute("aria-checked")).toBe("true");
-    expect((screen.getByRole("searchbox", { name: "Search" }) as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("searchbox", { name: "Search Transactions" }) as HTMLInputElement).value).toBe("");
     expect(selected()).toBe("GLOBEX SHOP");
     expect(document.activeElement).toBe(list());
   });

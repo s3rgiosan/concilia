@@ -28,16 +28,14 @@
   color: var(--green);
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .banner--error {
-    background: color-mix(in srgb, var(--red) 14%, var(--surface));
-  }
+:root.reduce-transparency .banner--error {
+  background: color-mix(in srgb, var(--red) 14%, var(--surface));
+}
 
-  .banner--warn {
-    background: color-mix(in srgb, var(--orange) 16%, var(--surface));
-  }
+:root.reduce-transparency .banner--warn {
+  background: color-mix(in srgb, var(--orange) 16%, var(--surface));
+}
 
-  .banner--success {
-    background: color-mix(in srgb, var(--green) 14%, var(--surface));
-  }
+:root.reduce-transparency .banner--success {
+  background: color-mix(in srgb, var(--green) 14%, var(--surface));
 }

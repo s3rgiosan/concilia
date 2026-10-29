@@ -114,12 +114,10 @@
   }
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .sidebar--overlay {
-    background: var(--window-solid);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+:root.reduce-transparency .sidebar--overlay {
+  background: var(--window-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .sidebar__list {
@@ -153,7 +151,7 @@
   background: var(--selected-bg-inactive);
 }
 
-.sidebar__list:focus .sidebar__row--selected {
+:root:not(.window-inactive) .sidebar__list:focus .sidebar__row--selected {
   background: var(--selected-bg);
   color: var(--selected-text);
 }
@@ -173,13 +171,13 @@
   font-size: 11px;
 }
 
-.sidebar__list:focus .sidebar__row--selected .sidebar__status {
+:root:not(.window-inactive) .sidebar__list:focus .sidebar__row--selected .sidebar__status {
   color: var(--selected-text-secondary);
 }
 
 /* On the accent background a white ring keeps every status colour, blue included, visible. */
-.sidebar__list:focus .sidebar__row--selected .dot {
-  box-shadow: 0 0 0 1.5px #fff;
+:root:not(.window-inactive) .sidebar__list:focus .sidebar__row--selected .dot {
+  box-shadow: 0 0 0 1.5px var(--selected-text);
 }
 
 /* Update card: an available release in the sidebar, above its footer. */
@@ -414,7 +412,8 @@
 .run__title {
   margin: 0;
   font-size: 17px;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 22px;
 }
 
 .run__actions {
@@ -512,8 +511,8 @@
 .welcome__title {
   margin: 0;
   font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: 700;
+  line-height: 26px;
   text-align: center;
 }
 

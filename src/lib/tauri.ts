@@ -213,6 +213,27 @@ export const BUSY_CHANGED_EVENT = "busy-changed";
 export const MENU_EVENT = "menu";
 export const UPDATE_PROGRESS_EVENT = "update-progress";
 export const UPDATE_CHECK_RESULT_EVENT = "update-check-result";
+export const APPEARANCE_CHANGED_EVENT = "appearance-changed";
+export const ZOOM_CHANGED_EVENT = "zoom-changed";
+
+/** System settings the webview can't read itself. */
+export interface Appearance {
+  /** The user's accent colour as `#rrggbb`, or null where the platform has none to read. */
+  accent: string | null;
+  reduce_transparency: boolean;
+}
+
+/** A native alert's text and button titles; `confirm` is the default button. */
+export interface AlertRequest {
+  title: string;
+  message: string;
+  confirm: string;
+  cancel: string;
+  /** A third button between the default button and Cancel. */
+  alternate?: string;
+}
+
+export type AlertChoice = "confirm" | "alternate" | "cancel";
 
 export function getAppState(): Promise<AppStateView> {
   return invoke<AppStateView>("get_app_state");
@@ -432,6 +453,29 @@ export function setMenuItemText(id: string, text: string): Promise<void> {
 /** Enables or disables menu items by id; ids not in the map keep their state. */
 export function setMenuState(enabled: Record<string, boolean>): Promise<void> {
   return invoke("set_menu_state", { enabled });
+}
+
+export function getAppearance(): Promise<Appearance> {
+  return invoke<Appearance>("get_appearance");
+}
+
+export function onAppearanceChanged(handler: (appearance: Appearance) => void): Promise<UnlistenFn> {
+  return listen<Appearance>(APPEARANCE_CHANGED_EVENT, (event) => handler(event.payload));
+}
+
+/** Calls `handler` with this window's zoom factor after View › Zoom In, Zoom Out or Actual Size. */
+export function onZoomChanged(handler: (factor: number) => void): Promise<UnlistenFn> {
+  return getCurrentWindow().listen<{ factor?: unknown }>(ZOOM_CHANGED_EVENT, (event) => {
+    const factor = event.payload?.factor;
+    if (typeof factor === "number" && factor > 0) {
+      handler(factor);
+    }
+  });
+}
+
+/** Shows a native alert as a sheet on this window and resolves with the button chosen. */
+export function showAlert(request: AlertRequest): Promise<AlertChoice> {
+  return invoke<AlertChoice>("show_alert", { request: { alternate: null, ...request } });
 }
 
 export function appVersion(): Promise<string> {

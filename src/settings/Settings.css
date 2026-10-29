@@ -129,7 +129,7 @@
   background: var(--selected-bg-inactive);
 }
 
-.rules__table:focus-within .rules__row--selected td {
+:root:not(.window-inactive) .rules__table:focus-within .rules__row--selected td {
   background: var(--selected-bg);
   color: var(--selected-text);
 }

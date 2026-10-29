@@ -31,7 +31,8 @@
    */
   --surface: #f5f5f7;
   /* The sidebar, a shade off the window background. */
-  --sidebar-bg: rgb(0 0 0 / 4%);
+  --sidebar-tint: rgb(0 0 0 / 4%);
+  --sidebar-bg: var(--sidebar-tint);
   /*
    * The window background as a solid color, for the areas a transparent window paints itself.
    * The system window background color renders as clear in the webview.
@@ -56,7 +57,11 @@
 
   /* The window toolbar's height and the height of the items in it. */
   --toolbar-height: 52px;
-  --toolbar-item-height: 28px;
+  --toolbar-item-height: 36px;
+
+  /* The switch knob and the page behind a receipt image, white in both appearances. */
+  --knob: #fff;
+  --paper: #fff;
 
   /* Secondary text on a selected row. */
   --selected-text-secondary: rgb(255 255 255 / 85%);
@@ -112,7 +117,7 @@
     --toolbar-glass-strong: rgb(255 255 255 / 16%);
     --toolbar-glass-pressed: rgb(255 255 255 / 24%);
     --surface: #2b2b2e;
-    --sidebar-bg: rgb(255 255 255 / 4%);
+    --sidebar-tint: rgb(255 255 255 / 4%);
     --window-solid: #232325;
     --scroll-edge: rgb(0 0 0 / 30%);
     --content-bg: #1e1e1e;
@@ -143,6 +148,7 @@
       --green: -apple-system-green;
     --blue: -apple-system-blue;
     --gray: -apple-system-gray;
+    --accent: -apple-system-control-accent;
   }
 }
 
@@ -156,13 +162,6 @@
   :root {
     --selected-bg: -apple-system-selected-content-background;
     --selected-bg-inactive: -apple-system-unemphasized-selected-content-background;
-  }
-}
-
-/* AccentColorText resolves to black in the webview, so labels on the accent stay white. */
-@supports (color: AccentColor) {
-  :root {
-    --accent: AccentColor;
   }
 }
 
@@ -197,16 +196,17 @@
   }
 }
 
-/* Reduce Transparency: translucent surfaces become opaque. */
-@media (prefers-reduced-transparency: reduce) {
-  :root {
-    --group-bg: #fff;
-    --field-bg: #fff;
-  }
+/*
+ * Reduce Transparency: translucent surfaces become opaque. The `reduce-transparency` class on the
+ * root follows the system setting (see `lib/appearance.ts`).
+ */
+:root.reduce-transparency {
+  --group-bg: #fff;
+  --field-bg: #fff;
 }
 
-@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  :root {
+@media (prefers-color-scheme: dark) {
+  :root.reduce-transparency {
     --group-bg: #38383a;
     --field-bg: #1c1c1e;
   }

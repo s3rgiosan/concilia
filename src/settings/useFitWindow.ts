@@ -1,6 +1,6 @@
 import { useEffect, type RefObject } from "react";
 import { isPreview } from "../lib/preview";
-import { setWindowSize } from "../lib/tauri";
+import { onZoomChanged, setWindowSize, subscribe } from "../lib/tauri";
 
 /** Width of the Settings window; src-tauri/src/windows.rs creates it with the same value. */
 const SETTINGS_WIDTH = 640;
@@ -14,7 +14,8 @@ function easeOut(t: number): number {
 
 /**
  * Sizes the Settings window to its content: the pane switcher plus the pane's own height, within
- * limits (a taller pane scrolls). The first size applies at once and later ones animate.
+ * limits (a taller pane scrolls). The first size applies at once and later ones animate. The
+ * window grows and shrinks with View › Zoom, so the zoomed pane keeps its layout.
  */
 export function useFitWindow(
   bar: RefObject<HTMLElement | null>,
@@ -31,16 +32,18 @@ export function useFitWindow(
     }
     let current: number | null = null;
     let frame = 0;
+    /** The window's zoom factor; the page measures in unzoomed pixels. */
+    let zoom = 1;
 
     function target(): number {
       const style = getComputedStyle(paneEl as HTMLElement);
       const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
       const total = (barEl as HTMLElement).offsetHeight + padding + (contentEl as HTMLElement).offsetHeight;
-      return Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.ceil(total)));
+      return Math.min(MAX_HEIGHT * zoom, Math.max(MIN_HEIGHT * zoom, Math.ceil(total * zoom)));
     }
 
     function apply(height: number) {
-      setWindowSize(SETTINGS_WIDTH, height).catch((e) => console.error("could not resize the window", e));
+      setWindowSize(Math.round(SETTINGS_WIDTH * zoom), height).catch((e) => console.error("could not resize the window", e));
     }
 
     function fit() {
@@ -71,8 +74,17 @@ export function useFitWindow(
     observer.observe(contentEl);
     observer.observe(barEl);
     fit();
+    const stopZoom = subscribe(
+      onZoomChanged((factor) => {
+        zoom = factor;
+        cancelAnimationFrame(frame);
+        current = null;
+        fit();
+      }),
+    );
     return () => {
       observer.disconnect();
+      stopZoom();
       cancelAnimationFrame(frame);
     };
   }, [bar, pane, content, ready]);

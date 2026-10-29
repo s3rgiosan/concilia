@@ -22,8 +22,9 @@ async function start() {
       break;
   }
   // The saved language applies before the first render, so the window never flashes English.
-  const [{ IS_MACOS }, { applyLanguage }, state] = await Promise.all([
+  const [{ IS_MACOS }, { installAppearance }, { applyLanguage }, state] = await Promise.all([
     import("./lib/platform"),
+    import("./lib/appearance"),
     import("./i18n"),
     import("./lib/tauri").then(({ getAppState }) =>
       getAppState().catch((e) => {
@@ -37,6 +38,7 @@ async function start() {
   if (inTauri && IS_MACOS && view === "main") {
     document.documentElement.classList.add("vibrant");
   }
+  installAppearance();
   await applyLanguage(state?.settings.language ?? null);
   const { default: App } = await app;
 
