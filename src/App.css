@@ -180,7 +180,8 @@ code {
 .error-state__message {
   margin: 0;
   color: var(--label-secondary);
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 20px;
 }
 
 .error-state__actions {

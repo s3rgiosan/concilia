@@ -165,6 +165,7 @@ textarea:focus-visible {
   background: transparent;
   color: var(--label);
   font-size: 13px;
+  text-overflow: ellipsis;
   cursor: text;
 }
 
