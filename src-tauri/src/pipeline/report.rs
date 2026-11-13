@@ -102,6 +102,7 @@ pub fn export_report(
             transactions,
             receipts_by_status: result.receipts_by_status,
             unmatched_receipts: result.unmatched_receipts,
+            original_paths: result.original_paths,
         },
         Err(error) => {
             log::warn!("report without the review draft: {error}");

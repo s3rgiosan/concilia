@@ -65,6 +65,7 @@ impl Fixture {
             },
             transactions,
             unmatched_receipts: unmatched,
+            ..Default::default()
         };
         write_json_file(&self.paths.match_result(), &result);
     }

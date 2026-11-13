@@ -1,15 +1,15 @@
 //! Month folders: listing, summaries, creation and reset, plus the period's statement list.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::Value;
 
-use super::apply::pin_moves;
+use super::apply::{create_target_dirs, pin_moves};
 use super::{io, PipelineError};
 use crate::error::ErrorKind;
-use crate::finalize::{self, folded, Move};
+use crate::finalize::{self, folded, relative_text, Move};
 use crate::fsutil::{read_json_lenient, remove_if_exists};
 use crate::model::{Draft, MatchResult, StatementRecord, Status};
 use crate::period::{Period, PeriodPaths};
@@ -200,11 +200,27 @@ fn restored_name(name: &str, n: usize) -> String {
     }
 }
 
-/// The moves that bring every sorted receipt back into `receipts/`, sorted by source. Only
-/// regular files move: hidden files such as `.DS_Store`, subfolders, symlinks and status
-/// folders that are symlinks stay where they are. Name clashes get a `-restored` suffix; a
-/// file with no free name is left out and reported in `warnings`.
+/// `original` as a place inside `receipts/` to restore a receipt to: a relative path of plain
+/// parts outside the status folders. Any other path gives none.
+fn restorable(original: &str) -> Option<&Path> {
+    let path = Path::new(original);
+    let first = path.components().next()?;
+    let plain = path.components().all(|c| matches!(c, Component::Normal(_)));
+    let sorted = STATUS_FOLDERS
+        .iter()
+        .any(|folder| first.as_os_str() == *folder);
+    (plain && !sorted).then_some(path)
+}
+
+/// The moves that bring every sorted receipt back into `receipts/`, sorted by source. A receipt
+/// goes back to the path the match result records for it, else to the top of `receipts/` with
+/// its current name. Only regular files move: hidden files such as `.DS_Store`, subfolders,
+/// symlinks and status folders that are symlinks stay where they are. Name clashes get a
+/// `-restored` suffix; a file with no free name is left out and reported in `warnings`.
 pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> Vec<Move> {
+    let original_paths = read_json_lenient::<MatchResult>(&paths.match_result())
+        .map(|result| result.original_paths)
+        .unwrap_or_default();
     let mut sources: Vec<PathBuf> = Vec::new();
     for folder in STATUS_FOLDERS {
         let dir = paths.receipts.join(folder);
@@ -228,15 +244,23 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
     let mut reserved: HashSet<String> = HashSet::new();
     let mut moves = Vec::new();
     for from in sources {
-        let name = from
+        let original = relative_text(&from, &paths.receipts)
+            .and_then(|sorted| original_paths.get(&sorted))
+            .and_then(|original| restorable(original));
+        let wanted = match original {
+            Some(original) => paths.receipts.join(original),
+            None => paths.receipts.join(from.file_name().unwrap_or_default()),
+        };
+        let dir = wanted.parent().unwrap_or(&paths.receipts).to_path_buf();
+        let name = wanted
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let taken = |path: &Path| path.exists() || reserved.contains(&folded(path));
-        let mut target = paths.receipts.join(&name);
+        let mut target = wanted.clone();
         let mut n = 1;
         while taken(&target) && n <= 10_000 {
-            target = paths.receipts.join(restored_name(&name, n));
+            target = dir.join(restored_name(&name, n));
             n += 1;
         }
         if taken(&target) {
@@ -249,9 +273,9 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
     moves
 }
 
-/// Moves finalized receipts back into `receipts/` and deletes the extraction cache, the match
-/// result and the finalized marker. Transactions, reimbursements, the draft and the report
-/// stay. Name clashes get a `-restored` suffix.
+/// Moves finalized receipts back to where Finalize took them from and deletes the extraction
+/// cache, the match result and the finalized marker. Transactions, reimbursements, the draft
+/// and the report stay. Name clashes get a `-restored` suffix.
 ///
 /// A receipt that cannot move back stops the reset with an error. The moves already made are
 /// undone, and nothing is deleted, so no receipt is left behind in a status folder.
@@ -266,6 +290,7 @@ pub fn reset_period(paths: &PeriodPaths) -> Result<ResetReport, PipelineError> {
     }
     if !moves.is_empty() {
         let pinned = pin_moves(paths, &moves)?;
+        create_target_dirs(paths, &pinned)?;
         finalize::execute(&pinned).map_err(|e| io(&paths.receipts, e))?;
     }
     let mut report = ResetReport {
@@ -427,6 +452,53 @@ mod tests {
     fn serializes_states_in_snake_case() {
         let json = serde_json::to_value(PeriodState::InReview).unwrap();
         assert_eq!(json, serde_json::json!("in_review"));
+    }
+
+    #[test]
+    fn restores_only_to_plain_paths_outside_the_status_folders() {
+        assert_eq!(restorable("sub/acme.pdf"), Some(Path::new("sub/acme.pdf")));
+        assert_eq!(restorable("acme.pdf"), Some(Path::new("acme.pdf")));
+        for refused in [
+            "",
+            "/acme.pdf",
+            "../acme.pdf",
+            "sub/../acme.pdf",
+            "_matched/acme.pdf",
+        ] {
+            assert_eq!(restorable(refused), None, "{refused}");
+        }
+    }
+
+    #[test]
+    fn restores_a_recorded_path_and_falls_back_to_the_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Period::parse("2030", "03").unwrap().paths(dir.path());
+        write(&paths.receipts.join("_matched/acme-1.pdf"), "a");
+        write(&paths.receipts.join("_matched/globex.pdf"), "g");
+        write(&paths.receipts.join("_unmatched/escape.pdf"), "e");
+        write(
+            &paths.match_result(),
+            &serde_json::json!({
+                "transactions": [],
+                "originalPaths": {
+                    "_matched/acme-1.pdf": "2030-03/acme.pdf",
+                    "_unmatched/escape.pdf": "../escape.pdf"
+                }
+            })
+            .to_string(),
+        );
+        let mut warnings = Vec::new();
+        let moves = restore_moves(&paths, &mut warnings);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let targets: Vec<PathBuf> = moves.into_iter().map(|m| m.to).collect();
+        assert_eq!(
+            targets,
+            [
+                paths.receipts.join("2030-03/acme.pdf"),
+                paths.receipts.join("globex.pdf"),
+                paths.receipts.join("escape.pdf"),
+            ]
+        );
     }
 
     #[test]

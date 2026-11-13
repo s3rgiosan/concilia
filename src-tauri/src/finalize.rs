@@ -5,7 +5,7 @@
 //! references it (MATCHED, then REVIEW, then UNMATCHED), and every reference is rewritten to
 //! it. Name clashes get a numeric suffix; existing files are never overwritten.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::fsutil::rename_no_replace;
@@ -27,6 +27,9 @@ pub struct FinalizePlan {
     pub transactions: Vec<Transaction>,
     pub unmatched_receipts: Vec<ReceiptMeta>,
     pub receipts_by_status: ReceiptsByStatus,
+    /// The original path of each moved receipt, keyed by its new path, both relative to the
+    /// receipts folder.
+    pub original_paths: BTreeMap<String, String>,
 }
 
 fn folder(status: Status) -> &'static str {
@@ -57,6 +60,17 @@ fn suffixed(name: &str, n: usize) -> String {
 /// case-insensitive volume treats names that differ only in case as one file.
 pub(crate) fn folded(path: &Path) -> String {
     path.to_string_lossy().to_lowercase()
+}
+
+/// `path` relative to `base`, with `/` between the parts, or none when `path` is not inside
+/// `base`.
+pub(crate) fn relative_text(path: &Path, base: &Path) -> Option<String> {
+    let rest = path.strip_prefix(base).ok()?;
+    let parts: Vec<String> = rest
+        .iter()
+        .map(|part| part.to_string_lossy().into_owned())
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("/"))
 }
 
 /// `meta` stored at `file`, without the fields added for display.
@@ -119,6 +133,7 @@ pub fn plan(
     }
 
     let mut moves = Vec::new();
+    let mut original_paths = BTreeMap::new();
     let mut destinations: HashMap<String, String> = HashMap::new();
     let mut reserved: HashSet<String> = HashSet::new();
     for file in &order {
@@ -137,6 +152,13 @@ pub fn plan(
         }
         reserved.insert(folded(&target));
         if target != source {
+            let relative = (
+                relative_text(&target, receipts_dir),
+                relative_text(&source, receipts_dir),
+            );
+            if let (Some(to), Some(from)) = relative {
+                original_paths.insert(to, from);
+            }
             moves.push(Move {
                 from: source,
                 to: target.clone(),
@@ -182,6 +204,7 @@ pub fn plan(
         transactions,
         unmatched_receipts,
         receipts_by_status,
+        original_paths,
     }
 }
 
@@ -298,6 +321,23 @@ mod tests {
         assert_eq!(
             p.receipts_by_status.unmatched,
             ["/p/receipts/_unmatched/c.pdf"]
+        );
+    }
+
+    #[test]
+    fn records_where_each_moved_receipt_came_from() {
+        let txs = [tx(
+            "t1",
+            Status::Matched,
+            &["/p/receipts/x/a.pdf", "/p/receipts/y/a.pdf"],
+        )];
+        let p = plan_with(&txs, &[], &["/p/receipts/x/a.pdf", "/p/receipts/y/a.pdf"]);
+        assert_eq!(
+            p.original_paths,
+            BTreeMap::from([
+                ("_matched/a.pdf".to_string(), "x/a.pdf".to_string()),
+                ("_matched/a-1.pdf".to_string(), "y/a.pdf".to_string()),
+            ])
         );
     }
 

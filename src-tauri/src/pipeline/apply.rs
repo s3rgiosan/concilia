@@ -52,6 +52,7 @@ pub fn finalize(
         transactions: plan.transactions,
         receipts_by_status: plan.receipts_by_status,
         unmatched_receipts: plan.unmatched_receipts,
+        original_paths: plan.original_paths,
     };
 
     let result_tmp = paths.docs.join("match-result.json.tmp");
@@ -133,6 +134,44 @@ pub(super) fn pin_moves(paths: &PeriodPaths, moves: &[Move]) -> Result<Vec<Move>
         .collect()
 }
 
+/// Creates the folders that the `moves` targets need, one level at a time inside the real
+/// `receipts/` folder. A folder on the way that leads outside, such as a symlink, fails the
+/// call before anything is created through it.
+pub(super) fn create_target_dirs(paths: &PeriodPaths, moves: &[Move]) -> Result<(), PipelineError> {
+    let receipts_real = paths
+        .receipts
+        .canonicalize()
+        .map_err(|e| io(&paths.receipts, e))?;
+    let outside = |path: &Path| {
+        PipelineError::InvalidInput(format!(
+            "{} is not inside the receipts folder",
+            path.display()
+        ))
+    };
+    for step in moves {
+        let parent = step.to.parent().unwrap_or(&receipts_real);
+        let rest = parent
+            .strip_prefix(&receipts_real)
+            .map_err(|_| outside(parent))?;
+        let mut dir = receipts_real.clone();
+        for part in rest.components() {
+            dir.push(part);
+            match dir.canonicalize() {
+                Ok(real) if real.starts_with(&receipts_real) && real.is_dir() => {}
+                Ok(_) => return Err(outside(&dir)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if dir.symlink_metadata().is_ok() {
+                        return Err(outside(&dir));
+                    }
+                    std::fs::create_dir(&dir).map_err(|e| io(&dir, e))?;
+                }
+                Err(error) => return Err(io(&dir, error)),
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The contents of a file before Finalize or Reopen replaces it, to put back if a later step
 /// fails.
 pub(super) struct Backup<'a> {
@@ -205,6 +244,30 @@ mod tests {
         let real = paths.receipts.canonicalize().unwrap();
         assert_eq!(pinned[0].from, real.join("acme.pdf"));
         assert_eq!(pinned[0].to, real.join("_matched").join("acme.pdf"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_create_a_target_folder_through_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), paths.receipts.join("sub")).unwrap();
+        let real = paths.receipts.canonicalize().unwrap();
+        let step = Move {
+            from: real.join("_matched").join("acme.pdf"),
+            to: real.join("sub").join("deeper").join("acme.pdf"),
+        };
+        let error = create_target_dirs(&paths, &[step]).unwrap_err();
+        assert!(matches!(error, PipelineError::InvalidInput(_)), "{error:?}");
+        assert!(!outside.path().join("deeper").exists());
+
+        let step = Move {
+            from: real.join("_matched").join("acme.pdf"),
+            to: real.join("a").join("b").join("acme.pdf"),
+        };
+        create_target_dirs(&paths, &[step]).unwrap();
+        assert!(real.join("a/b").is_dir());
     }
 
     #[cfg(unix)]

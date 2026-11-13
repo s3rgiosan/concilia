@@ -1,6 +1,8 @@
 //! Data shared by the reconciliation steps, in the JSON shapes stored under each period's
 //! `docs/` folder. Unknown fields are kept in `extra` so files round-trip unchanged.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -174,6 +176,11 @@ pub struct MatchResult {
     pub receipts_by_status: ReceiptsByStatus,
     #[serde(default)]
     pub unmatched_receipts: Vec<ReceiptMeta>,
+    /// Where Finalize took each sorted receipt from: the sorted path maps to the original
+    /// path, both relative to the period's `receipts/` folder. Reopen and Reconcile Again put
+    /// each receipt back there.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub original_paths: BTreeMap<String, String>,
 }
 
 /// The reason that stays in every list. Transactions marked with a deleted reason show as this one.

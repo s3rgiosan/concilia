@@ -636,6 +636,7 @@ pub fn match_transactions(
             unmatched: unmatched_receipts.iter().map(|r| r.file.clone()).collect(),
         },
         unmatched_receipts,
+        ..Default::default()
     }
 }
 

@@ -2735,6 +2735,64 @@ async fn reopening_never_gives_an_old_reading_to_a_new_file_with_the_same_name()
     assert_eq!(new.amount_cents, Some(2000));
 }
 
+/// A reconciled and finalized period with two unreadable receipts of the same name in two
+/// subfolders, so Finalize gives one of them a suffix.
+async fn finalized_with_subfolders(h: &Harness) -> (String, String) {
+    let statement = h.standard();
+    let first = h.receipt("2030-03/scan.png");
+    let second = h.receipt("other/scan.png");
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+    assert!(h.paths.receipts.join("_unmatched/scan.png").is_file());
+    assert!(h.paths.receipts.join("_unmatched/scan-1.png").is_file());
+    (first, second)
+}
+
+#[tokio::test]
+async fn reopening_puts_receipts_back_in_their_folders_with_their_names() {
+    let h = Harness::new();
+    let (first, second) = finalized_with_subfolders(&h).await;
+    std::fs::remove_dir(h.paths.receipts.join("other")).unwrap();
+
+    pipeline::reopen(&h.paths, &[]).unwrap();
+
+    assert!(Path::new(&first).is_file());
+    assert!(Path::new(&second).is_file());
+    assert!(h.paths.receipts.join("acme.pdf").is_file());
+    assert!(!h.paths.receipts.join("scan.png").exists());
+    assert!(!h.paths.receipts.join("scan-1.png").exists());
+}
+
+#[tokio::test]
+async fn reconciling_again_puts_receipts_back_in_their_folders_with_their_names() {
+    let h = Harness::new();
+    let (first, second) = finalized_with_subfolders(&h).await;
+
+    pipeline::reconcile(&h.ctx(), &[], true).await.unwrap();
+
+    assert!(Path::new(&first).is_file());
+    assert!(Path::new(&second).is_file());
+    assert!(!h.paths.receipts.join("scan.png").exists());
+    assert!(!h.paths.receipts.join("scan-1.png").exists());
+}
+
+#[tokio::test]
+async fn a_restored_receipt_whose_place_is_taken_gets_a_suffix_in_its_folder() {
+    let h = Harness::new();
+    let (first, _) = finalized_with_subfolders(&h).await;
+    write_file(Path::new(&first), b"a newer file in the same place");
+
+    pipeline::reopen(&h.paths, &[]).unwrap();
+
+    assert_eq!(
+        std::fs::read(&first).unwrap(),
+        b"a newer file in the same place"
+    );
+    assert!(h.paths.receipts.join("2030-03/scan-restored.png").is_file());
+}
+
 #[tokio::test]
 async fn reopening_leaves_hidden_files_in_the_sorted_folders() {
     let h = Harness::new();

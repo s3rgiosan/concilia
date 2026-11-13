@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use super::apply::{pin_moves, Backup};
+use super::apply::{create_target_dirs, pin_moves, Backup};
 use super::draft::match_with_draft;
 use super::periods::restore_moves;
 use super::{io, read_cache, readable, PipelineError};
@@ -103,6 +103,10 @@ pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, Pipel
     );
 
     let staged = Staged::write(paths, &reopened)?;
+    if let Err(error) = create_target_dirs(paths, &pinned) {
+        staged.discard();
+        return Err(error);
+    }
     if let Err(error) = finalize::execute(&pinned) {
         staged.discard();
         return Err(io(&paths.receipts, error));
@@ -254,6 +258,7 @@ fn relocated(result: &MatchResult, moved: &HashMap<String, String>) -> MatchResu
             unmatched: paths(&result.receipts_by_status.unmatched),
         },
         unmatched_receipts: meta(&result.unmatched_receipts),
+        original_paths: Default::default(),
     }
 }
 
