@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    tags: ['[0-9]+.[0-9]+.[0-9]+']
+    # A tag with a suffix, such as 2.0.0-rc.1, publishes a prerelease for testing.
+    tags: ['[0-9]+.[0-9]+.[0-9]+', '[0-9]+.[0-9]+.[0-9]+-*']
 
 permissions:
   contents: read
@@ -53,13 +54,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') }}
           BODY: 'Build for macOS on Apple silicon, with poppler included. See the README for first-launch steps.'
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
             --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" | head -n1)
           if [ -z "$id" ]; then
             id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
-              -f tag_name="$TAG" -f name="$TAG" -f body="$BODY" -F draft=true --jq .id)
+              -f tag_name="$TAG" -f name="$TAG" -f body="$BODY" -F draft=true -F prerelease="$PRERELEASE" --jq .id)
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
@@ -100,5 +102,6 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.id }}
           # The notes of latest.json; the release body comes from create-release.
           releaseBody: 'Build for macOS on Apple silicon, with poppler included. See the README for first-launch steps.'
-          uploadUpdaterJson: true
+          # A prerelease has no latest.json, so installed apps never update to it.
+          uploadUpdaterJson: ${{ !contains(github.ref_name, '-') }}
           args: --config '{"bundle":{"createUpdaterArtifacts":true,"targets":["app","dmg"],"resources":{"../build/poppler":"poppler"}}}'
