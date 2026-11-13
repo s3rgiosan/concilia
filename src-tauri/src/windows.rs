@@ -1,5 +1,7 @@
 //! The Settings window, created on demand and focused when it already exists.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::menu::MenuState;
@@ -12,6 +14,29 @@ const SETTINGS_HEIGHT: f64 = 420.0;
 /// Centres the traffic lights in the 62 px pane switcher; AppKit places their centre 3 pt above `y`.
 #[cfg(target_os = "macos")]
 const SETTINGS_LIGHTS: (f64, f64) = (20.0, 34.0);
+
+/// Set while a Settings window is being built.
+static BUILDING_SETTINGS: AtomicBool = AtomicBool::new(false);
+
+/// Holds a build flag until it drops, so only one build runs at a time.
+struct BuildGuard<'a>(&'a AtomicBool);
+
+impl<'a> BuildGuard<'a> {
+    /// Takes the flag, or returns None when a build already holds it.
+    fn try_start(flag: &'a AtomicBool) -> Option<BuildGuard<'a>> {
+        if flag.swap(true, Ordering::SeqCst) {
+            None
+        } else {
+            Some(BuildGuard(flag))
+        }
+    }
+}
+
+impl Drop for BuildGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
 
 /// Whether the window `label` exists and has focus.
 pub fn is_focused(app: &AppHandle, label: &str) -> bool {
@@ -36,9 +61,14 @@ pub fn open_settings(app: &AppHandle) {
     if focus(app, SETTINGS_LABEL) {
         return;
     }
-    // Windows must be built on the main thread.
+    let Some(building) = BuildGuard::try_start(&BUILDING_SETTINGS) else {
+        return;
+    };
+    // Windows must be built on the main thread. The guard moves into the closure and releases the
+    // flag when the build ends.
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
+        let _building = building;
         let builder = WebviewWindowBuilder::new(
             &handle,
             SETTINGS_LABEL,
@@ -75,4 +105,19 @@ pub fn open_settings(app: &AppHandle) {
             Err(error) => log::error!("could not open Settings: {error}"),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_one_build_runs_at_a_time() {
+        let flag = AtomicBool::new(false);
+        let first = BuildGuard::try_start(&flag);
+        assert!(first.is_some());
+        assert!(BuildGuard::try_start(&flag).is_none());
+        drop(first);
+        assert!(BuildGuard::try_start(&flag).is_some());
+    }
 }
