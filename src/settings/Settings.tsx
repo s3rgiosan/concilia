@@ -77,6 +77,7 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
 
   // Saves run one after another. Each change is applied to the last settings the backend
   // confirmed when its turn comes, so a failed change never reaches a later save.
+  // The backend returns the stored settings, and the next change builds on them.
   const confirmed = useRef<SettingsData | null>(null);
   const pending = useRef(0);
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -100,7 +101,7 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
         return saveSettings(next)
           .then(
             (view) => {
-              confirmed.current = next;
+              confirmed.current = view.settings;
               replace(view);
             },
             (e) => {

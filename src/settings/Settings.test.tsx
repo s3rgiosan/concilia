@@ -728,9 +728,27 @@ describe("Gemini pane", () => {
     commitText("Region", "us-central1");
     // The second save waits for the first, then builds on it.
     expect(saveSettings).toHaveBeenCalledTimes(1);
-    await act(async () => first.resolve(makeView()));
+    const sent = vi.mocked(saveSettings).mock.calls[0][0];
+    await act(async () => first.resolve(makeView({ settings: sent })));
     await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2));
     expect(lastSaved().gemini).toEqual({ project: "acme-billing", location: "us-central1", model: "gemini-2.5-flash" });
+  });
+
+  it("builds a queued save on the settings the backend returns", async () => {
+    const first = deferred<AppStateView>();
+    vi.mocked(saveSettings).mockReturnValueOnce(first.promise);
+    await renderSettings(makeView(), "gemini");
+    commitText("Project", "acme-billing");
+    commitText("Region", "us-central1");
+    const sent = vi.mocked(saveSettings).mock.calls[0][0];
+    const stored = { ...sent, gemini: { ...sent.gemini, project: "acme-billing-normalized" } };
+    await act(async () => first.resolve(makeView({ settings: stored })));
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2));
+    expect(lastSaved().gemini).toEqual({
+      project: "acme-billing-normalized",
+      location: "us-central1",
+      model: "gemini-2.5-flash",
+    });
   });
 
   it.each([

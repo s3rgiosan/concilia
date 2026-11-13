@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- A queued Settings save builds on the settings that the previous save stored, so a value that the app normalizes is not overwritten by the next change.
 - A year such as 2030 in a receipt file name and in a transaction description no longer counts as a shared name. Every year from 1900 to 2099 is ignored when Concilia compares names.
 - A rule match note with nested parentheses, such as a vendor named `ACME (EU)`, shows the whole vendor name in the report and in the review.
 - A rules or reasons file that does not parse is no longer moved aside and replaced by an empty or default list. Settings shows an error and refuses to save it, and reconcile, scan, finalize, reopen and report stop with an error until you fix or remove the file.
