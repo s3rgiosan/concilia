@@ -1,0 +1,236 @@
+/* Window toolbar ---------------------------------------------------------- */
+
+/*
+ * 52 pt unified title bar. On macOS the leading area starts after the
+ * traffic lights, which tauri.conf.json centres in this height.
+ */
+.titlebar {
+  position: relative;
+  z-index: var(--z-titlebar);
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  height: var(--toolbar-height);
+}
+
+/*
+ * The toolbar's edge shows only while content scrolls under it: a hairline over a soft shadow,
+ * fading in with the scroll.
+ */
+.titlebar__leading,
+.titlebar__heading,
+.titlebar__trailing {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  border-bottom: 0.5px solid transparent;
+  transition: border-color 150ms ease-out;
+}
+
+.titlebar__leading:not(.titlebar__leading--sidebar)::after,
+.titlebar__heading::after,
+.titlebar__trailing::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 6px;
+  background: linear-gradient(var(--scroll-edge), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+}
+
+.titlebar--scrolled .titlebar__leading:not(.titlebar__leading--sidebar),
+.titlebar--scrolled .titlebar__heading,
+.titlebar--scrolled .titlebar__trailing {
+  border-bottom-color: var(--separator);
+}
+
+.titlebar--scrolled .titlebar__leading:not(.titlebar__leading--sidebar)::after,
+.titlebar--scrolled .titlebar__heading::after,
+.titlebar--scrolled .titlebar__trailing::after {
+  opacity: 1;
+}
+
+/*
+ * The leading area follows the sidebar's width, and shrinks to its own controls (its max-content
+ * width) when the sidebar hides, in step with the sidebar.
+ */
+.titlebar__leading {
+  flex: none;
+  gap: 4px;
+  min-width: max-content;
+  padding: 0 8px 0 12px;
+  transition:
+    width var(--pane-duration) var(--ease-settle),
+    background-color var(--pane-duration) ease-out;
+}
+
+:root.is-resizing .titlebar__leading {
+  transition: none;
+}
+
+.titlebar--inset .titlebar__leading {
+  padding-left: 92px;
+}
+
+.titlebar__leading--sidebar {
+  border-right: 0.5px solid var(--separator);
+  background: var(--sidebar-bg);
+}
+
+.titlebar__heading {
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  min-width: 220px;
+  padding: 0 8px 0 16px;
+}
+
+.titlebar__leading:not(.titlebar__leading--sidebar) + .titlebar__heading {
+  padding-left: 4px;
+}
+
+.titlebar__title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar__subtitle {
+  margin: 0;
+  overflow: hidden;
+  color: var(--label-secondary);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The trailing controls give way (a search field shrinks) before the title does. */
+.titlebar__trailing {
+  flex: 0 1 auto;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 16px 0 8px;
+}
+
+.titlebar__trailing > *,
+.titlebar__slot > * {
+  flex-shrink: 0;
+}
+
+.titlebar__trailing .search {
+  flex-shrink: 1;
+}
+
+/* A toolbar element a pane fills with a portal; its children take part in the toolbar's layout. */
+.titlebar__slot {
+  display: contents;
+}
+
+/*
+ * Toolbar items: capsules of the toolbar item height. Icon buttons and the group of secondary actions sit on the
+ * same translucent fill; the items inside a group are borderless and show a fill on hover.
+ */
+.titlebar__trailing button:not([class]),
+.titlebar__trailing button.default,
+.titlebar__trailing .segmented,
+.titlebar__trailing .search,
+.titlebar__trailing .popup-button {
+  height: var(--toolbar-item-height);
+  border-radius: calc(var(--toolbar-item-height) / 2);
+}
+
+/* Segments sit inset in the track, so the selected one reads as a capsule inside it. */
+.titlebar__trailing .segmented {
+  box-sizing: border-box;
+  padding: 2px;
+}
+
+.titlebar__trailing .segmented__item {
+  border-radius: calc(var(--toolbar-item-height) / 2 - 2px);
+}
+
+.titlebar__trailing button:not([class]),
+.titlebar__trailing button.default {
+  padding: 0 14px;
+}
+
+.titlebar__trailing .search {
+  padding: 0 8px 0 9px;
+}
+
+button.icon.titlebar__button {
+  width: var(--toolbar-item-height);
+  height: var(--toolbar-item-height);
+  border-radius: calc(var(--toolbar-item-height) / 2);
+  background: var(--toolbar-glass);
+  color: var(--label);
+}
+
+button.icon.titlebar__button:hover:not(:disabled) {
+  background: var(--toolbar-glass-strong);
+}
+
+button.icon.titlebar__button:active:not(:disabled) {
+  background: var(--toolbar-glass-pressed);
+}
+
+.toolbar-group {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: var(--toolbar-item-height);
+  padding: 0 2px;
+  border-radius: calc(var(--toolbar-item-height) / 2);
+  background: var(--toolbar-glass);
+}
+
+.toolbar-group .toolbar-group__item {
+  height: calc(var(--toolbar-item-height) - 4px);
+  border-radius: calc(var(--toolbar-item-height) / 2 - 2px);
+  color: var(--label);
+}
+
+button.icon.toolbar-group__item {
+  width: 32px;
+}
+
+.toolbar-group .action-popup:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+@media (prefers-contrast: more) {
+  .toolbar-group,
+  button.icon.titlebar__button {
+    border: 1px solid var(--field-border);
+  }
+
+  .titlebar--scrolled .titlebar__leading:not(.titlebar__leading--sidebar)::after,
+  .titlebar--scrolled .titlebar__heading::after,
+  .titlebar--scrolled .titlebar__trailing::after {
+    opacity: 0;
+  }
+}
+
+/* Reduce Transparency: no soft shadow under the toolbar, only its hairline. */
+:root.reduce-transparency .titlebar--scrolled .titlebar__leading:not(.titlebar__leading--sidebar)::after,
+:root.reduce-transparency .titlebar--scrolled .titlebar__heading::after,
+:root.reduce-transparency .titlebar--scrolled .titlebar__trailing::after {
+  opacity: 0;
+}
+
+/* An inactive window greys its toolbar title and item symbols. */
+:root.window-inactive .titlebar__title,
+:root.window-inactive .titlebar button.icon {
+  color: var(--label-tertiary);
+}

@@ -1,0 +1,95 @@
+import { useEffect, type RefObject } from "react";
+import { isPreview } from "../lib/preview";
+import { onZoomChanged, setWindowSize, subscribe } from "../lib/tauri";
+
+/** Width of the Settings window; src-tauri/src/windows.rs creates it with the same value. */
+const SETTINGS_WIDTH = 640;
+/**
+ * The shortest window that shows every Settings sheet without a scroll bar: the tallest one
+ * (Add Rule with its warning, 230 px) plus the 12 px gap above and below a sheet.
+ */
+const MIN_HEIGHT = 260;
+const MAX_HEIGHT = 640;
+const DURATION_MS = 160;
+
+function easeOut(t: number): number {
+  return 1 - (1 - t) ** 3;
+}
+
+/**
+ * Sizes the Settings window to its content: the pane switcher plus the pane's own height, within
+ * limits (a taller pane scrolls). The first size applies at once and later ones animate. The
+ * window grows and shrinks with View › Zoom, so the zoomed pane keeps its layout.
+ */
+export function useFitWindow(
+  bar: RefObject<HTMLElement | null>,
+  pane: RefObject<HTMLElement | null>,
+  content: RefObject<HTMLElement | null>,
+  ready: boolean,
+) {
+  useEffect(() => {
+    const barEl = bar.current;
+    const paneEl = pane.current;
+    const contentEl = content.current;
+    if (!ready || !barEl || !paneEl || !contentEl || isPreview() || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    let current: number | null = null;
+    let frame = 0;
+    /** The window's zoom factor; the page measures in unzoomed pixels. */
+    let zoom = 1;
+
+    function target(): number {
+      const style = getComputedStyle(paneEl as HTMLElement);
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const total = (barEl as HTMLElement).offsetHeight + padding + (contentEl as HTMLElement).offsetHeight;
+      return Math.min(MAX_HEIGHT * zoom, Math.max(MIN_HEIGHT * zoom, Math.ceil(total * zoom)));
+    }
+
+    function apply(height: number) {
+      setWindowSize(Math.round(SETTINGS_WIDTH * zoom), height).catch((e) => console.error("could not resize the window", e));
+    }
+
+    function fit() {
+      const to = target();
+      cancelAnimationFrame(frame);
+      if (current === null) {
+        current = to;
+        apply(to);
+        return;
+      }
+      const from = current;
+      if (from === to) {
+        return;
+      }
+      const start = performance.now();
+      const step = (now: number) => {
+        const progress = Math.min(1, (now - start) / DURATION_MS);
+        current = Math.round(from + (to - from) * easeOut(progress));
+        apply(current);
+        if (progress < 1) {
+          frame = requestAnimationFrame(step);
+        }
+      };
+      frame = requestAnimationFrame(step);
+    }
+
+    const observer = new ResizeObserver(fit);
+    observer.observe(contentEl);
+    observer.observe(barEl);
+    fit();
+    const stopZoom = subscribe(
+      onZoomChanged((factor) => {
+        zoom = factor;
+        cancelAnimationFrame(frame);
+        current = null;
+        fit();
+      }),
+    );
+    return () => {
+      observer.disconnect();
+      stopZoom();
+      cancelAnimationFrame(frame);
+    };
+  }, [bar, pane, content, ready]);
+}

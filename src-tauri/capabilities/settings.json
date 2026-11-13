@@ -1,0 +1,33 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Permissions for the settings window",
+  "windows": [
+    "settings"
+  ],
+  "permissions": [
+    "core:app:allow-version",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:menu:allow-new",
+    "core:menu:allow-popup",
+    "core:resources:allow-close",
+    "core:window:allow-set-size",
+    "core:window:allow-set-title",
+    "core:window:allow-start-dragging",
+    "allow-get-app-state",
+    "allow-save-settings",
+    "allow-pick-receipts-root",
+    "allow-import-service-account",
+    "allow-remove-service-account",
+    "allow-test-gemini-connection",
+    "allow-poppler-status",
+    "allow-get-rules",
+    "allow-save-rules",
+    "allow-save-reasons",
+    "allow-check-for-updates",
+    "allow-install-update",
+    "allow-get-appearance",
+    "allow-show-alert"
+  ]
+}

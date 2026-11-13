@@ -1,0 +1,780 @@
+/* Segmented control: a grey track; the selected segment is a darker grey. */
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  height: 24px;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+}
+
+.segmented__item {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--label);
+  font-size: 13px;
+}
+
+.segmented__item:active:not(.segmented__item--on) {
+  background: var(--fill-strong);
+}
+
+.segmented__item--on {
+  background: var(--control-fill-strong);
+}
+
+@media (prefers-contrast: more) {
+  .segmented {
+    border: 1px solid var(--field-border);
+  }
+}
+
+/* Layout: the list fills the detail area, the details column sits on its right. */
+
+.review {
+  display: flex;
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.review--message {
+  flex-direction: column;
+  padding: 16px 20px;
+}
+
+.review__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--content-bg);
+}
+
+.review__banner {
+  margin: 10px 12px 0;
+}
+
+/* Each refused file on its own line under the banner's lead sentence. */
+.review__refused-file {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.review__list {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  container: review-list / inline-size;
+}
+
+/* An empty list's message, centred over it, with a button that leads on when there is one. */
+.review__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 24px;
+  color: var(--label-tertiary);
+  font-size: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.review__empty-title {
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.review__empty-message {
+  max-width: 360px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.review__empty button {
+  margin-top: 6px;
+  pointer-events: auto;
+}
+
+/* Toolbar controls ---------------------------------------------------------- */
+
+.titlebar__trailing:has(.review-filter) {
+  gap: 6px;
+}
+
+.review-filter {
+  flex: none;
+  align-self: center;
+}
+
+.review-filter .segmented__item {
+  padding: 0 9px;
+}
+
+.segmented__count {
+  min-width: 10px;
+  color: var(--label-secondary);
+  font-size: 11px;
+}
+
+.review-search {
+  flex: 0 1 200px;
+  min-width: 110px;
+  max-width: 200px;
+}
+
+.review-save--failed {
+  color: var(--red);
+}
+
+/* List ---------------------------------------------------------------------- */
+
+.review-list {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0 12px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.list-row {
+  display: grid;
+  grid-template-columns: 200px 48px minmax(0, 1fr) 12px 100px;
+  gap: 10px;
+  align-items: center;
+  height: 28px;
+  margin: 0 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+}
+
+.list-row--selected {
+  background: var(--selected-bg-inactive);
+}
+
+/* A row that just left the list collapses where it was, so the rows below close the gap. */
+.list-row--leaving {
+  overflow: hidden;
+  pointer-events: none;
+  animation: row-leave 180ms var(--ease-leave) forwards;
+}
+
+@keyframes row-leave {
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+:root:not(.window-inactive) .review-list:focus .list-row--selected {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.list-row__status,
+.list-row__date {
+  min-width: 0;
+  color: var(--label-secondary);
+}
+
+/* In a narrow list the status shows as its dot; the label stays for assistive technology. */
+@container review-list (max-width: 700px) {
+  .list-row {
+    grid-template-columns: 8px 48px minmax(0, 1fr) 12px 100px;
+  }
+
+  .list-row__status .status-label__text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.list-row__description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pencil of a transaction the user decided. */
+.list-row__edited {
+  display: inline-flex;
+  color: var(--label-tertiary);
+}
+
+:root:not(.window-inactive) .review-list:focus .list-row--selected .list-row__edited {
+  color: var(--selected-text-secondary);
+}
+
+.list-row__amount {
+  text-align: right;
+  white-space: nowrap;
+}
+
+:root:not(.window-inactive) .review-list:focus .list-row--selected .list-row__status,
+:root:not(.window-inactive) .review-list:focus .list-row--selected .list-row__date {
+  color: var(--selected-text-secondary);
+}
+
+.details__note--finalized {
+  margin-top: 10px;
+}
+
+.status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.status-label__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root:not(.window-inactive) .review-list:focus .list-row--selected .dot {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 85%);
+}
+
+.review-list__group {
+  margin-top: 10px;
+}
+
+.review-list__header {
+  position: sticky;
+  top: -6px;
+  z-index: var(--z-sticky);
+  margin-bottom: 2px;
+  padding: 6px 20px 5px;
+  border-bottom: 0.5px solid var(--separator);
+  background: color-mix(in srgb, var(--content-bg) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: var(--label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Details ------------------------------------------------------------------- */
+
+/* The details column's width is the --details-width custom property. */
+.details {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  box-sizing: border-box;
+  width: var(--details-width, 300px);
+  min-height: 0;
+  overflow: hidden;
+  border-left: 0.5px solid var(--separator);
+}
+
+.details--empty {
+  justify-content: center;
+  padding: 0 16px;
+  color: var(--label-tertiary);
+  font-size: 15px;
+  text-align: center;
+}
+
+.details__info {
+  flex: 0 1 auto;
+  max-height: 60%;
+  padding: 16px 14px;
+  overflow-y: auto;
+}
+
+.details__info:only-child {
+  max-height: none;
+}
+
+.details__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.details__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.details__amount {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 26px;
+}
+
+.details__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 2px 0 0;
+  color: var(--label-secondary);
+  font-size: 12px;
+}
+
+.details__meta > * + *::before {
+  content: "·";
+  content: "·" / "";
+  margin-right: 8px;
+}
+
+.details__reason {
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: 12px;
+}
+
+.details__section {
+  margin-top: 18px;
+}
+
+.details__heading {
+  margin: 0 0 6px 2px;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.details__note {
+  margin: 0 2px;
+  color: var(--label-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.details__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* The sum of a matched transaction's receipts, with the difference from its amount. */
+.details__total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 6px 2px 0;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.details__more {
+  display: flex;
+  margin-top: 8px;
+}
+
+.details__more button:not([class]) {
+  padding: 0 10px;
+}
+
+.details__edited {
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.details__preview {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 200px;
+  border-top: 0.5px solid var(--separator);
+}
+
+.details__preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 16px;
+}
+
+.details__preview-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--label-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Receipts in the details column -------------------------------------------------- */
+
+.receipt-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-row);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+}
+
+.receipt-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+}
+
+.receipt-row + .receipt-row {
+  border-top: 0.5px solid var(--separator);
+}
+
+.receipt-row__main {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  flex: 1 1 220px;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 5px 7px 5px 3px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.receipt-row__main:active {
+  background: var(--fill-strong);
+}
+
+.receipt-row__marker {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 12px;
+  padding-top: 2px;
+  color: var(--accent);
+}
+
+.receipt-row__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.receipt-row__line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.receipt-row__title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.receipt-row__amount {
+  flex: none;
+}
+
+.receipt-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+  color: var(--label-secondary);
+  font-size: 11px;
+}
+
+.receipt-row__meta > * {
+  flex: none;
+  white-space: nowrap;
+}
+
+.receipt-row__meta > * + *::before {
+  content: "·";
+  content: "·" / "";
+  margin-right: 6px;
+}
+
+.receipt-row__meta > .receipt-row__file {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.receipt-row__mismatch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.receipt-row__warning {
+  color: var(--orange);
+}
+
+.receipt-row__actions {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Under a receipt Gemini couldn't read: what went wrong and the button that reads it again. */
+.receipt-row__problem {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 4px 22px;
+  font-size: 11px;
+}
+
+.receipt-row__problem button:not([class]) {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.receipt-row__spinner {
+  margin: 0 4px;
+}
+
+/* Previews -------------------------------------------------------------------- */
+
+/* The receipt sits on a recessed well, and an image shows as a page with its own shadow. */
+.receipt-preview {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  background: var(--fill);
+}
+
+.receipt-preview:has(.receipt-preview__image) {
+  box-sizing: border-box;
+  padding: 12px;
+}
+
+.receipt-preview--empty {
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--label-tertiary);
+  font-size: 13px;
+}
+
+.receipt-preview__frame {
+  flex: 1;
+  align-self: stretch;
+  width: 100%;
+  border: 0;
+}
+
+.receipt-preview__image {
+  flex: none;
+  max-width: 100%;
+  max-height: 100%;
+  background: var(--paper);
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 12%),
+    0 1px 4px rgb(0 0 0 / 25%);
+}
+
+.quicklook-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-quicklook);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--backdrop-dim);
+  transition: opacity 160ms ease-out;
+}
+
+.quicklook {
+  display: flex;
+  flex-direction: column;
+  width: min(880px, calc(100vw - 80px));
+  height: calc(100vh - 80px);
+  overflow: hidden;
+  border-radius: var(--radius-group);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 25%),
+    0 20px 50px rgb(0 0 0 / 35%);
+  outline: none;
+  transition:
+    transform 260ms var(--ease-settle),
+    opacity 140ms ease-out;
+}
+
+/*
+ * Quick Look grows out of the receipt it shows and shrinks back into it: --quicklook-origin is
+ * the transform that lays the panel over the details column's preview (or the selected row).
+ */
+@starting-style {
+  .presence[data-presence="enter"] .quicklook-backdrop {
+    opacity: 0;
+  }
+
+  .presence[data-presence="enter"] .quicklook {
+    transform: var(--quicklook-origin, scale(0.96));
+    opacity: 0;
+  }
+}
+
+.presence[data-presence="exit"] .quicklook-backdrop {
+  opacity: 0;
+  transition: opacity 160ms ease-in;
+}
+
+.presence[data-presence="exit"] .quicklook {
+  transform: var(--quicklook-origin, scale(0.96));
+  opacity: 0;
+  transition:
+    transform 200ms var(--ease-leave),
+    opacity 160ms ease-in 40ms;
+}
+
+.quicklook__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.quicklook__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Scan progress sheet ----------------------------------------------------------- */
+
+.sheet--wide {
+  width: min(560px, calc(100vw - 48px));
+}
+
+/* Reduce Motion: Quick Look fades in and out in place, and rows leave without collapsing. */
+@media (prefers-reduced-motion: reduce) {
+  .presence[data-presence] .quicklook {
+    transform: none;
+  }
+
+  @starting-style {
+    .presence[data-presence="enter"] .quicklook {
+      transform: none;
+    }
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .quicklook {
+    box-shadow:
+      inset 0 0.5px 0 rgb(255 255 255 / 12%),
+      0 0 0 0.5px rgb(255 255 255 / 10%),
+      0 20px 50px rgb(0 0 0 / 50%);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .quicklook {
+    box-shadow:
+      0 0 0 1px var(--field-border),
+      0 20px 50px rgb(0 0 0 / 35%);
+  }
+}
+
+/* Reduce Transparency: the sticky header is solid. */
+:root.reduce-transparency .review-list__header {
+  background: var(--content-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Narrower padding so the decisions fit on one line in the details column's default width. */
+.details__actions button:not([class]) {
+  padding: 0 10px;
+}
+
+.details__actions button.pull-down {
+  gap: 6px;
+  padding: 0 7px 0 10px;
+}
+
+/* Add Statements sheet ----------------------------------------------------- */
+
+.add-statements__list {
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.add-statements__count {
+  white-space: nowrap;
+}
+
+.add-statements__empty {
+  margin: 0 8px;
+  font-size: 12px;
+}
+
+/* Files dragged over the review: the whole review takes them as statements to add. */
+.review__drop {
+  position: absolute;
+  inset: 8px;
+  z-index: var(--z-drop-overlay);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--label-secondary);
+  font-size: 15px;
+  pointer-events: none;
+}
+
+.review__drop p {
+  margin: 0;
+}

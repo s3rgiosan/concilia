@@ -1,0 +1,188 @@
+/* Sheets ------------------------------------------------------------------ */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-sheet);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12px;
+  background: var(--backdrop-dim);
+  transition: opacity 140ms ease-out;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-sizing: border-box;
+  max-height: calc(100vh - 24px);
+  padding: 20px 22px 18px;
+  overflow: hidden;
+  border-radius: var(--radius-sheet);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 25%),
+    0 16px 40px rgb(0 0 0 / 30%);
+  transition:
+    transform 200ms var(--ease-settle),
+    opacity 160ms ease-out;
+}
+
+/* A sheet drops from under the toolbar and rises back the same way. */
+@starting-style {
+  .presence[data-presence="enter"] .sheet-backdrop {
+    opacity: 0;
+  }
+
+  .presence[data-presence="enter"] .sheet {
+    transform: translateY(-14px);
+    opacity: 0;
+  }
+}
+
+.presence[data-presence="exit"] .sheet-backdrop {
+  opacity: 0;
+  transition: opacity 150ms ease-in;
+}
+
+.presence[data-presence="exit"] .sheet {
+  transform: translateY(-14px);
+  opacity: 0;
+  transition:
+    transform 150ms var(--ease-leave),
+    opacity 150ms ease-in;
+}
+
+.sheet__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sheet__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* The body scrolls so the action row stays visible; the padding keeps focus rings unclipped. */
+  min-height: 0;
+  margin: -4px;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.sheet__text {
+  margin: 0;
+  color: var(--label-secondary);
+  line-height: 1.45;
+}
+
+.sheet__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--label);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.sheet__note-icon {
+  margin-top: 1px;
+}
+
+.sheet__note--error .sheet__note-icon {
+  color: var(--red);
+}
+
+.sheet__note--warning .sheet__note-icon {
+  color: var(--orange);
+}
+
+/* Labelled controls in two columns: labels right-aligned before their control. */
+.sheet__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.sheet__grid > label {
+  text-align: right;
+}
+
+.sheet__grid > label::after {
+  content: ":";
+  content: ":" / "";
+}
+
+.sheet__line {
+  display: block;
+}
+
+.sheet__line + .sheet__line {
+  margin-top: 6px;
+}
+
+.sheet__grid > .field {
+  width: 100%;
+  min-width: 0;
+}
+
+.sheet__grid > .popup-button {
+  justify-self: start;
+  min-width: 150px;
+}
+
+.sheet__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.sheet__accessory {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Dark surfaces: a lit rim and a deeper shadow keep floating panels apart from the window. */
+@media (prefers-color-scheme: dark) {
+  .sheet {
+    box-shadow:
+      inset 0 0.5px 0 rgb(255 255 255 / 12%),
+      0 0 0 0.5px rgb(255 255 255 / 10%),
+      0 16px 40px rgb(0 0 0 / 45%);
+  }
+
+  .main .sheet-backdrop {
+    background: rgb(0 0 0 / 22%);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .sheet {
+    box-shadow:
+      0 0 0 1px var(--field-border),
+      0 16px 40px rgb(0 0 0 / 30%);
+  }
+}
+
+/* Reduce Motion: sheets fade in and out in place; spinners keep turning, as status. */
+@media (prefers-reduced-motion: reduce) {
+  .presence[data-presence] .sheet {
+    transform: none;
+  }
+
+  @starting-style {
+    .presence[data-presence="enter"] .sheet {
+      transform: none;
+    }
+  }
+}

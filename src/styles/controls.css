@@ -1,0 +1,509 @@
+/*
+ * Controls: 24 pt push buttons, pop-ups and segmented controls with a 6 pt radius and a flat
+ * fill; 26 pt text and search fields with a 1 pt border; 16 pt checkboxes. Every control is
+ * styled explicitly because WebKit's built-in form styles differ from the macOS look.
+ */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+
+button:not([class]),
+button.default,
+button.destructive,
+button.banner__action {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+  color: var(--label);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+button:not([class]):active:not(:disabled),
+button.destructive:active:not(:disabled),
+button.banner__action:active:not(:disabled) {
+  background: var(--control-fill-strong);
+}
+
+button.default {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+button.default:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+button:not([class]):disabled,
+button.destructive:disabled,
+button.banner__action:disabled {
+  opacity: 0.45;
+}
+
+button.default:disabled {
+  background: var(--control-fill);
+  color: var(--label-tertiary);
+}
+
+button.destructive {
+  color: var(--red);
+}
+
+/* Icon-only button: a borderless glyph that shows a fill on hover and press. */
+button.icon {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--label-secondary);
+}
+
+button.icon:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+button.icon:active:not(:disabled) {
+  background: var(--fill-strong);
+}
+
+button.icon:disabled {
+  opacity: 0.4;
+}
+
+.symbol {
+  display: inline-block;
+  flex: none;
+  background-color: currentcolor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: auto;
+}
+
+/* Text field. */
+.field {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: 180px;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-control);
+  background: var(--field-bg);
+  color: var(--label);
+  font-size: 13px;
+  cursor: text;
+}
+
+.field::placeholder {
+  color: var(--placeholder);
+}
+
+.field:disabled {
+  opacity: 0.55;
+}
+
+/* Search field: a text field with a magnifying glass. */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 26px;
+  padding: 0 7px 0 6px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-control);
+  background: var(--field-bg);
+  color: var(--label-secondary);
+}
+
+/* The ring goes around the whole field; the borderless input inside draws none of its own. */
+.search:focus-within {
+  outline: auto;
+}
+
+.search input {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--label);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.search input::placeholder {
+  color: var(--placeholder);
+}
+
+.search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* Pop-up button: a push button showing the choice, with a native <select> laid over it. */
+.popup-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 24px;
+  min-width: 100px;
+  padding: 0 8px 0 11px;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+  font-size: 13px;
+}
+
+.popup-button__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-button__chevron {
+  flex: none;
+  color: var(--label-secondary);
+}
+
+.popup-button select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.popup-button:has(select:focus-visible) {
+  outline: auto;
+}
+
+.popup-button--disabled {
+  opacity: 0.45;
+}
+
+/* Checkbox: 16 pt rounded square, accent with a white mark when on. */
+input[type="checkbox"]:not(.toggle) {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border-radius: 4px;
+  background: var(--control-fill-check);
+  box-shadow: inset 0 0 0 0.5px var(--field-border);
+}
+
+input[type="checkbox"]:not(.toggle):checked,
+input[type="checkbox"]:not(.toggle):indeterminate {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+input[type="checkbox"]:not(.toggle):checked::after {
+  content: "";
+  position: absolute;
+  left: 5.5px;
+  top: 2.5px;
+  width: 3.5px;
+  height: 7.5px;
+  border: solid var(--accent-text);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(42deg);
+}
+
+input[type="checkbox"]:not(.toggle):indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 7.1px;
+  width: 8px;
+  height: 1.8px;
+  border-radius: 1px;
+  background: var(--accent-text);
+}
+
+input[type="checkbox"]:not(.toggle):disabled {
+  background: var(--fill);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--field-border) 50%, transparent);
+}
+
+input[type="checkbox"]:not(.toggle):disabled:checked,
+input[type="checkbox"]:not(.toggle):disabled:indeterminate {
+  background: var(--accent);
+  box-shadow: none;
+  opacity: 0.45;
+}
+
+input[type="checkbox"]:not(.toggle):disabled::after {
+  opacity: 0.5;
+}
+
+/* Switch: AppKit's track with a wide pill knob; WebKit's own switch is smaller than NSSwitch. */
+input[type="checkbox"].toggle {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--control-fill-strong);
+  transition: background-color 160ms ease-out;
+}
+
+input[type="checkbox"].toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--knob);
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 8%),
+    0 1px 3px rgb(0 0 0 / 22%);
+  transition: transform 160ms cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+input[type="checkbox"].toggle:checked {
+  background: var(--accent);
+}
+
+input[type="checkbox"].toggle:checked::after {
+  transform: translateX(10px);
+}
+
+input[type="checkbox"].toggle:disabled {
+  opacity: 0.45;
+}
+
+/* Search field's clear button: a filled circle with an ×, inside the field's trailing edge. */
+.search__clear {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: -3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--label-tertiary);
+}
+
+.search__clear:hover {
+  color: var(--label-secondary);
+}
+
+/* Grouped form ------------------------------------------------------------ */
+
+.form-section__title {
+  margin: 0 0 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form-group {
+  border-radius: var(--radius-group);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+}
+
+.form-section__footer {
+  margin: 6px 8px 0;
+  color: var(--label-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 24px;
+  padding: 8px 12px;
+}
+
+.form-row + .form-row {
+  border-top: 0.5px solid var(--separator);
+}
+
+.form-row__label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.form-row__label > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-row__help {
+  color: var(--label-secondary);
+  font-size: 11px;
+}
+
+.form-row__description {
+  color: var(--label-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.form-row__control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The HTML menu the browser preview and the tests show. */
+.html-menu {
+  position: fixed;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 25%),
+    0 10px 30px rgb(0 0 0 / 25%);
+  font-size: 13px;
+}
+
+.html-menu__item {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--label);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.html-menu__item[aria-haspopup="menu"]::after {
+  content: "›";
+  content: "›" / "";
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--label-secondary);
+}
+
+.html-menu__item:focus {
+  outline: none;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.html-menu__item:focus::after {
+  color: inherit;
+}
+
+.html-menu__item:disabled {
+  color: var(--label-tertiary);
+}
+
+.html-menu__separator {
+  height: 1px;
+  margin: 5px 10px;
+  background: var(--separator);
+}
+
+/* Dark surfaces: a lit rim and a deeper shadow keep floating panels apart from the window. */
+@media (prefers-color-scheme: dark) {
+  .html-menu {
+    box-shadow:
+      inset 0 0.5px 0 rgb(255 255 255 / 12%),
+      0 0 0 0.5px rgb(255 255 255 / 10%),
+      0 16px 40px rgb(0 0 0 / 45%);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .html-menu {
+    box-shadow:
+      0 0 0 1px var(--field-border),
+      0 16px 40px rgb(0 0 0 / 30%);
+  }
+}
+
+@media (prefers-contrast: more) {
+  button:not([class]),
+  button.default,
+  button.destructive,
+  .popup-button {
+    border: 1px solid var(--field-border);
+  }
+
+  button.default {
+    border-color: transparent;
+  }
+
+  .field,
+  .search {
+    border-width: 1px;
+  }
+}
+
+/* Reduce Motion: the switch's knob jumps, and its track still fades to the new color. */
+@media (prefers-reduced-motion: reduce) {
+  input[type="checkbox"].toggle::after {
+    transition: none;
+  }
+}

@@ -1,0 +1,90 @@
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Icon } from "../components/Icon";
+import { useInstallUpdate } from "../lib/hooks/useInstallUpdate";
+import { useLatest } from "../lib/hooks/useLatest";
+import { onUpdateCheckResult, pendingUpdate, showAlert, subscribe, type UpdateInfo } from "../lib/tauri";
+
+/** The version the user put off with Later; its banner stays hidden until the app quits. */
+let postponed: string | null = null;
+
+/**
+ * Announces an available release and installs it on request, or hides it until the next launch
+ * with Later. In the sidebar it is a compact card above the footer; in the detail area, a banner.
+ */
+export function UpdateBanner({
+  placement,
+  appBusy,
+  onError,
+}: {
+  placement: "sidebar" | "detail";
+  /** True while a job runs; the install restarts the app, so it waits. */
+  appBusy: boolean;
+  onError: (e: unknown) => void;
+}) {
+  const { t } = useTranslation();
+  const report = useLatest(onError);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [hidden, setHidden] = useState<string | null>(postponed);
+  const { busy, label, install } = useInstallUpdate(onError);
+
+  useEffect(() => {
+    pendingUpdate().then(setUpdate, () => undefined);
+    return subscribe(
+      onUpdateCheckResult((result) => {
+        if (result.update) {
+          setUpdate(result.update);
+          if (result.manual) {
+            postponed = null;
+            setHidden(null);
+          }
+        } else if (result.manual) {
+          showAlert(
+            result.error === null
+              ? { title: t("update.upToDate"), message: t("update.upToDateMessage"), confirm: t("common.ok") }
+              : { title: t("update.checkFailed"), message: `${t("update.checkFailedMessage")}\n\n${result.error}`, confirm: t("common.ok") },
+          ).catch((e) => report.current(e));
+        }
+      }),
+    );
+  }, [t, report]);
+
+  if (!update || hidden === update.version) {
+    return null;
+  }
+  const later = () => {
+    postponed = update.version;
+    setHidden(update.version);
+  };
+  const text = t("update.available", { version: update.version });
+  if (placement === "sidebar") {
+    return (
+      <div className="update-card" role="status">
+        <p className="update-card__text">
+          <Icon name="refresh" size={13} />
+          <span>{text}</span>
+        </p>
+        <div className="update-card__actions">
+          <button type="button" className="default" onClick={install} disabled={busy || appBusy}>
+            {label}
+          </button>
+          <button type="button" disabled={busy} onClick={later}>
+            {t("update.later")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="banner banner--info update-banner" role="status">
+      <Icon name="refresh" size={14} />
+      <span className="grow">{text}</span>
+      <button type="button" className="banner__action" disabled={busy} onClick={later}>
+        {t("update.later")}
+      </button>
+      <button type="button" className="banner__action" onClick={install} disabled={busy || appBusy}>
+        {label}
+      </button>
+    </div>
+  );
+}

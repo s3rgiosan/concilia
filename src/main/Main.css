@@ -1,0 +1,606 @@
+.main {
+  --sidebar-width: 220px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main__body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Sheets in the main window drop from under the toolbar over a light dim. */
+.main .sheet-backdrop {
+  padding-top: var(--toolbar-height);
+  background: rgb(0 0 0 / 10%);
+}
+
+.main .sheet {
+  max-height: calc(100vh - 64px);
+}
+
+/* Sidebar ----------------------------------------------------------------- */
+
+/*
+ * The sidebar's width is the --sidebar-width custom property. Showing and hiding it animates that
+ * width; its content keeps the full width, pinned to the trailing edge, so it slides out to the
+ * left without reflowing.
+ */
+.sidebar {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  box-sizing: border-box;
+  width: var(--sidebar-width);
+  min-height: 0;
+  overflow: hidden;
+  border-right: 0.5px solid var(--separator);
+  background: var(--sidebar-bg);
+  transition: width var(--pane-duration) var(--ease-settle);
+}
+
+.sidebar > * {
+  box-sizing: border-box;
+  width: var(--sidebar-width);
+}
+
+@starting-style {
+  .presence[data-presence="enter"] .sidebar {
+    width: 0;
+  }
+}
+
+.presence[data-presence="exit"] .sidebar {
+  width: 0;
+}
+
+:root.is-resizing .sidebar {
+  transition: none;
+}
+
+/*
+ * In a narrow window the sidebar lies over the content, on a translucent material, and slides in
+ * from the leading edge and back out the same way.
+ */
+.sidebar--overlay {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: var(--z-sidebar-overlay);
+  border-right-color: var(--separator);
+  background: color-mix(in srgb, var(--window-solid) 82%, transparent);
+  box-shadow: 0 0 24px rgb(0 0 0 / 18%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  transition: transform var(--pane-duration) var(--ease-settle);
+}
+
+@starting-style {
+  .presence[data-presence="enter"] .sidebar--overlay {
+    width: var(--sidebar-width);
+    transform: translateX(-100%);
+  }
+}
+
+.presence[data-presence="exit"] .sidebar--overlay {
+  width: var(--sidebar-width);
+  transform: translateX(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+
+  /* Reduce Motion: the overlay fades in and out in place. */
+  .sidebar--overlay {
+    transition: opacity 150ms ease-out;
+  }
+
+  @starting-style {
+    .presence[data-presence="enter"] .sidebar--overlay {
+      transform: none;
+      opacity: 0;
+    }
+  }
+
+  .presence[data-presence="exit"] .sidebar--overlay {
+    transform: none;
+    opacity: 0;
+  }
+}
+
+:root.reduce-transparency .sidebar--overlay {
+  background: var(--window-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.sidebar__list {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 10px 8px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.sidebar__group + .sidebar__group {
+  margin-top: 12px;
+}
+
+.sidebar__year {
+  padding: 4px 8px;
+  color: var(--label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sidebar__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 8px 6px;
+  border-radius: var(--radius-control);
+}
+
+.sidebar__row--selected {
+  background: var(--selected-bg-inactive);
+}
+
+:root:not(.window-inactive) .sidebar__list:focus .sidebar__row--selected {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.sidebar__month {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--label-secondary);
+  font-size: 11px;
+}
+
+:root:not(.window-inactive) .sidebar__list:focus .sidebar__row--selected .sidebar__status {
+  color: var(--selected-text-secondary);
+}
+
+/* On the accent background a white ring keeps every status colour, blue included, visible. */
+:root:not(.window-inactive) .sidebar__list:focus .sidebar__row--selected .dot {
+  box-shadow: 0 0 0 1.5px var(--selected-text);
+}
+
+/* Update card: an available release in the sidebar, above its footer. */
+.sidebar > .update-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: calc(var(--sidebar-width) - 20px);
+  margin: 0 10px 8px;
+  padding: 10px;
+  border-radius: var(--radius-group);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.update-card__text {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+}
+
+.update-card__text .symbol {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+/* The buttons stack at full width so the card keeps one layout at every sidebar width and in every language. */
+.update-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__spinner {
+  width: 8px;
+  height: 8px;
+  margin: 0;
+}
+
+.sidebar > .sidebar__error {
+  flex-direction: column;
+  width: calc(var(--sidebar-width) - 20px);
+  margin: 0 10px 8px;
+}
+
+.sidebar__footer {
+  display: flex;
+  padding: 6px 10px 8px;
+}
+
+/* Detail area ------------------------------------------------------------- */
+
+.detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+}
+
+.detail--review {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.detail--review > .banner {
+  margin: 10px 12px;
+}
+
+/* Month inputs: receipts, then bank statements ----------------------------- */
+
+.month-inputs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+}
+
+.month-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.month-section__title {
+  margin: 0 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.receipts-hint__count {
+  color: var(--label);
+}
+
+/* What a disabled Reconcile still needs, beside it in the toolbar. */
+.titlebar__trailing > .toolbar-hint {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--label-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Statements -------------------------------------------------------------- */
+
+.statements {
+  flex: 1;
+}
+
+.dropzone {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 220px;
+  border: 1.5px dashed var(--field-border);
+  border-radius: var(--radius-panel);
+  background: var(--group-bg);
+}
+
+.dropzone--over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--group-bg));
+}
+
+.dropzone__empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.dropzone__icon {
+  color: var(--label-tertiary);
+}
+
+.dropzone__hint {
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: 15px;
+}
+
+.dropzone__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--separator);
+  font-size: 12px;
+}
+
+.statements__list {
+  flex: 1;
+  margin: 0;
+  padding: 6px 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.statements__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+}
+
+.statements__row + .statements__row {
+  border-top: 0.5px solid var(--separator);
+}
+
+.statements__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statements__note {
+  margin: 0 8px;
+  font-size: 11px;
+}
+
+.receipts-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--radius-group);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+  color: var(--label-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.receipts-hint__icon {
+  color: var(--label-tertiary);
+}
+
+/* Run --------------------------------------------------------------------- */
+
+.run-panel,
+.run {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.run__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+.run__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.run-panel > .banner {
+  margin-top: -4px;
+}
+
+.steps-list {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+}
+
+.step + .step {
+  border-top: 0.5px solid var(--separator);
+}
+
+.step--pending .step__label {
+  color: var(--label-secondary);
+}
+
+.step__marker {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.step__spinner {
+  margin: 0;
+}
+
+.step__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--label-tertiary);
+}
+
+.step__icon--done {
+  color: var(--green);
+}
+
+.step__icon--failed {
+  color: var(--red);
+}
+
+/* The fill scales to --progress (0 to 1) and glides between updates. */
+.step__progress {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--fill-strong);
+}
+
+.step__progress-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform: scaleX(var(--progress, 0));
+  transform-origin: left center;
+  transition: transform 300ms ease-out;
+}
+
+/* Welcome ----------------------------------------------------------------- */
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 520px;
+  margin: auto;
+  padding: 24px 0;
+}
+
+.welcome__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 26px;
+  text-align: center;
+}
+
+.welcome__intro {
+  margin: -8px 0 0;
+  color: var(--label-secondary);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.status-line__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.welcome__layout {
+  margin: 0;
+}
+
+.welcome__caption {
+  margin: 0 0 6px 8px;
+  color: var(--label-secondary);
+  font-size: 12px;
+}
+
+.tree,
+.tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree {
+  padding: 10px 14px;
+  border-radius: var(--radius-group);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+}
+
+.tree ul {
+  padding-left: 20px;
+}
+
+.tree__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.tree__item .symbol {
+  color: var(--accent);
+}
+
+.tree__item--target {
+  font-weight: 600;
+}
+
+.tree__note {
+  margin-left: 4px;
+  color: var(--label-secondary);
+  font-weight: 400;
+}
+
+.tree__note::before {
+  content: "← " / "";
+}
+
+/* Text link styled button; links are the only place a hand cursor appears. */
+button.link {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+button.link:hover {
+  text-decoration: underline;
+}

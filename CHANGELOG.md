@@ -4,6 +4,83 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- After the app stops during Finalize or Reopen, opening the review or rescanning a receipt moves the receipts back and restores the match result, report, cache and draft that the step had replaced, instead of showing the half-done month until the next job.
+- When Gemini answers HTTP 400 or 413 for one receipt, such as a damaged or very large PDF, Concilia lists that file as unreadable with its HTTP status and the run continues. The run still stops for an unknown model (HTTP 404) and for a rate limit or server error that retries do not clear.
+- The main-window menu items are disabled while Settings has focus, so shortcuts such as Cmd+Backspace edit text in the Settings fields.
+- A no-receipt rule ignores spaces around its keyword, and a keyword with only spaces matches no transaction, as for receipt rules.
+- A queued Settings save builds on the settings that the previous save stored, so a value that the app normalizes is not overwritten by the next change.
+- A year such as 2030 in a receipt file name and in a transaction description no longer counts as a shared name. Every year from 1900 to 2099 is ignored when Concilia compares names.
+- A rule match note with nested parentheses, such as a vendor named `ACME (EU)`, shows the whole vendor name in the report and in the review.
+- A rules or reasons file that does not parse is no longer moved aside and replaced by an empty or default list. Settings shows an error and refuses to save it, and reconcile, scan, finalize, reopen and report stop with an error until you fix or remove the file.
+- A receipt rule with an empty vendor or description keyword, which could come from an edited rules file, no longer matches every receipt or transaction. Concilia ignores such rules when it loads them.
+- Reconcile no longer drops a transaction from a second statement that has the same date and amount as one in the first. Transactions are numbered across all statements, and a row is skipped only when its date, amount and description already occur, as Add Statements does. The IDs of a month with several statements change on the next Reconcile Again, so review decisions on its later statements need to be made again.
+- A receipt that one transaction takes no longer stays offered to a transaction in review. The review transaction keeps its other candidates, or becomes unmatched when none is left, and no receipt counts twice in the summary.
+- Export Report lists a receipt you assigned in the review only on the Matched sheet, and a receipt you removed from a match on the Unmatched sheet. The Unmatched total follows the same decisions.
+- The amount warning in the review uses the same whole-cent 10% band as the matcher for foreign-currency receipts, so the two agree at the band edges.
+- A foreign-currency receipt matches a transaction only when its amount is within 10% of the transaction amount, counted in whole cents. A receipt 11% above the amount no longer matches.
+- Reconcile Again stops with an error when it cannot delete the finalized marker, the match result or the extraction cache, so the month no longer stays Finalized after a run that looked successful.
+- The message for a finalized month names the Reopen Month action and no longer says Concilia is scanning, because it also shows for a refused review save and a refused rescan.
+- A Gemini rate limit, server error or unknown model name stops the run with an error that names the HTTP status, instead of finishing with every receipt unread. Concilia first tries again with a short wait, and sends no second request for the page image after an HTTP error.
+- A busy Google sign-in service (HTTP 429 or 5xx) no longer stops a run with a rejected service account: Concilia tries again a few times, waits as long as Google asks within a limit, and reports a network error when the problem continues.
+- Gemini requests recover after the Mac wakes from sleep: an expired access token is replaced, and a request that Google refuses with 401 is sent again once with a new token.
+- A statement row with a date that does not exist, such as 31/04/2030, is rejected as an invalid date instead of becoming a transaction with a broken date.
+- A receipt date that does not exist in its month, such as 2030-02-31, is discarded instead of kept.
+- Finalize, Reopen Month and Reconcile Again keep both receipts when two file names differ only in letter case, and a move never replaces a file that already exists.
+- Reconcile and Reconcile Again keep a receipt assigned by hand in the review away from other transactions, so one receipt no longer ends up on two transactions.
+- Reconcile Again stops with an error when a sorted receipt cannot move back to the receipts folder, and leaves the month as it was, so no receipt is left behind in a sorted folder.
+- A review decision cannot be lost to a job that runs on the month at the same time: a save that a running job refuses is tried again until the job ends, Reconcile Again saves pending decisions before it starts, and a finalized month refuses draft saves.
+- Reopen Month and Reconcile Again put each sorted receipt back in its original subfolder with its original name, without the suffix Finalize added on a name clash.
+- Finalize, Reopen Month and Reconcile Again can recover when the app stops while receipts move: the next job on the month moves them back first. When a receipt cannot move back after a failed step, the error names it.
+- Reconcile Again on a finalized month keeps the review decisions (receipts assigned by hand, no-receipt reasons and rejected matches), as Reopen Month does.
+- Moving or renaming the receipts folder keeps the review decisions and the extraction cache, because the month's files store receipt paths relative to the month folder.
+- A receipt file replaced by another file with the same name is read again, also after Reopen Month, so the new receipt no longer gets the old receipt's amount, vendor and date.
+- The Settings window holds the menu permissions that its pop-up menus need, such as the Language menu.
+- Menu shortcuts for the main window, such as Accept, Reject and Reconcile, do nothing while the Settings window has focus.
+- Install and Relaunch is disabled while a job runs, and the install command refuses with a busy error, so an update cannot restart the app during a job.
+- The update banner appears when the daily background check finds an update, without a restart or a manual check.
+- Check for Updates in the menu now says when Concilia is up to date or when the check fails, and shows the update banner again for a version you put off with Later.
+- A double click on the main window title bar zooms the window.
+- Pressing Escape in a text setting puts the saved value back and no longer saves the typed text.
+- The Gemini connection status resets when you change the project, region or model.
+- A settings change that fails to save is no longer saved with the next change you make.
+- Review decisions are saved again when you leave a month after a failed save, and a failure then shows an error. The sidebar count for the month updates after that save.
+- Settings reads the match rules again when the main window adds a rule, so adding a rule in Settings no longer removes it. A rule whose reason was deleted opens with Other chosen.
+- The Add Rule and Edit Rule sheets refuse a rule that has the same keywords as another rule, even when the case differs, and say so.
+- The reimbursements header adds amounts only when they share one currency and shows that currency. With mixed currencies it shows no total.
+- Portuguese text uses the plural form for a count of 0, such as "0 transações".
+- The Details pane shows the full vendor and file name of a receipt, wrapping long names and giving a tooltip. The status column of the review list is wide enough for Portuguese labels such as "Sem recibo · Comissão bancária".
+- The Settings window title reads Settings when the settings fail to load.
+
+### Changed
+
+- The Open item for a receipt is named "Open" instead of "Open in Preview", because it opens the file in the default app.
+
+## [2.0.0] - 2026-11-13
+
+### Changed
+
+- Concilia is a native Tauri app with a Rust backend. Matching, statement parsing, Gemini extraction, the Excel report and the reconcile, scan, rescan and finalize flows run in Rust.
+- The main window has a month sidebar, a toolbar and native macOS menus with keyboard shortcuts. Each month goes from receipts and statements to review, and the review is a transaction list with a details column.
+- Settings is a separate window with Folder, Gemini, Rules, Reasons and General panes. Changes save at once.
+- Finalize, Reconcile Again and removing the service account key ask for confirmation in native alerts.
+- The app follows the macOS accent colour and appearance, supports zoom, and remembers the main window's size and position.
+- Updates download and install from the app. Release builds sign the update and include poppler.
+
+### Added
+
+- A month in review accepts more bank statements. New transactions merge with the ones already there, duplicates are skipped, and review decisions are kept.
+- The review lists receipt files Concilia refuses to read (over 50 MB, or not a real PDF or image) with the reason. These files stay in the receipts folder on Finalize.
+- A matched transaction can hold more than one receipt. Add Receipt… lists the unmatched receipts, and each receipt of a transaction with several has a Remove button. The details show the receipts' total and how it differs from the transaction's amount.
+- Rules can mark a transaction as needing no receipt. A no-receipt rule pairs a transaction keyword with a no-receipt reason and runs before the bank fee check and the receipt rules. Add one in Settings › Rules or with Always Mark from a transaction's context menu.
+- Settings › Reasons edits the no-receipt reasons. Add, rename, delete or reorder them, with a name in English and in Portuguese. Concilia ships with Bank Fee, Salary, Transfer, Refund and Other; Other cannot be deleted, and rules and transactions that use a deleted reason show as Other.
+- Reopen Month returns a finalized month to review. The sorted receipts move back to the receipts folder, every decision is kept, and no receipt is read again, so Scan for New Receipts can add a late receipt to the review.
+
+### Removed
+
+- The Electron app and the Express server.
+
 ## [1.3.1] - 2026-08-28
 
 ### Fixed
@@ -151,3 +228,12 @@ Initial release.
 - Single-threaded matching: transaction processing order can affect which receipt binds first when amounts are tied.
 - No persistence between runs beyond per-period `<year>/<month>/docs/` JSON artifacts; each reconciliation starts fresh.
 - Bank description abbreviations (e.g. `SHOPCO MKT`) may not match vendor names extracted by Gemini.
+
+[Unreleased]: https://github.com/s3rgiosan/concilia/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/s3rgiosan/concilia/compare/1.3.1...2.0.0
+[1.3.1]: https://github.com/s3rgiosan/concilia/compare/1.3.0...1.3.1
+[1.3.0]: https://github.com/s3rgiosan/concilia/compare/1.2.0...1.3.0
+[1.2.0]: https://github.com/s3rgiosan/concilia/compare/1.1.0...1.2.0
+[1.1.0]: https://github.com/s3rgiosan/concilia/compare/1.0.1...1.1.0
+[1.0.1]: https://github.com/s3rgiosan/concilia/compare/1.0.0...1.0.1
+[1.0.0]: https://github.com/s3rgiosan/concilia/releases/tag/1.0.0

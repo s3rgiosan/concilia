@@ -1,0 +1,213 @@
+/*
+ * Shared tokens. Inside the app (WebKit on macOS) they resolve to the system's semantic colors,
+ * so text, separators and the accent follow light/dark mode, Increase Contrast and the user's
+ * accent choice. The plain values are fallbacks for the browser preview.
+ */
+:root {
+  color-scheme: light dark;
+
+  --label: #1d1d1f;
+  --label-secondary: rgb(60 60 67 / 72%);
+  --label-tertiary: rgb(60 60 67 / 45%);
+  --placeholder: var(--label-tertiary);
+  --separator: rgb(0 0 0 / 10%);
+  --fill: rgb(0 0 0 / 5%);
+  --fill-strong: rgb(0 0 0 / 9%);
+  --window-bg: #ececec;
+  --group-bg: rgb(255 255 255 / 75%);
+  --accent: #0a84ff;
+  --accent-text: #fff;
+  /* Selected rows: the accent with white text in a focused list, a grey fill otherwise. */
+  --selected-bg: var(--accent);
+  --selected-text: #fff;
+  --selected-bg-inactive: rgb(0 0 0 / 9%);
+  /* Toolbar items share one translucent fill. */
+  --toolbar-glass: rgb(0 0 0 / 6%);
+  --toolbar-glass-strong: rgb(0 0 0 / 12%);
+  --toolbar-glass-pressed: rgb(0 0 0 / 18%);
+  /*
+   * Solid surface for sheets. The system window background color renders as clear inside the
+   * webview, so sheets need an explicit color or the pane behind shows through.
+   */
+  --surface: #f5f5f7;
+  /* The sidebar, a shade off the window background. */
+  --sidebar-tint: rgb(0 0 0 / 4%);
+  --sidebar-bg: var(--sidebar-tint);
+  /*
+   * The window background as a solid color, for the areas a transparent window paints itself.
+   * The system window background color renders as clear in the webview.
+   */
+  --window-solid: #ececec;
+  /* The soft shadow under the toolbar while content scrolls beneath it. */
+  --scroll-edge: rgb(0 0 0 / 6%);
+  /* Lists and other content views. */
+  --content-bg: #fff;
+
+  /* AppKit control geometry and fills on macOS 26 and 27. */
+  --radius-control: 6px;
+  --control-fill: rgb(0 0 0 / 8%);
+  --control-fill-strong: rgb(0 0 0 / 19%);
+  --control-fill-check: rgb(0 0 0 / 10%);
+  --field-bg: #fff;
+  --field-border: rgb(0 0 0 / 15%);
+  --radius-row: 8px;
+  --radius-group: 12px;
+  --radius-panel: 18px;
+  --radius-sheet: 22px;
+
+  /* The window toolbar's height and the height of the items in it. */
+  --toolbar-height: 52px;
+  --toolbar-item-height: 36px;
+
+  /* The switch knob and the page behind a receipt image, white in both appearances. */
+  --knob: #fff;
+  --paper: #fff;
+
+  /* Secondary text on a selected row. */
+  --selected-text-secondary: rgb(255 255 255 / 85%);
+
+  /* The dim behind a sheet or Quick Look. */
+  --backdrop-dim: rgb(0 0 0 / 28%);
+
+  --red: #ff3b30;
+  --orange: #ff9500;
+  --green: #34c759;
+  --blue: #007aff;
+  --gray: #8e8e93;
+
+  /* Stacking order, lowest first. */
+  --z-sticky: 1;
+  --z-resize-handle: 2;
+  --z-titlebar: 3;
+  --z-drop-overlay: 5;
+  --z-sidebar-overlay: 8;
+  --z-sheet: 10;
+  --z-quicklook: 20;
+  --z-menu: 50;
+
+  /*
+   * Motion. Panes, sheets and Quick Look settle along a fast-out curve with no overshoot; they
+   * leave along its mirror image, so the way out retraces the way in.
+   */
+  --ease-settle: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --ease-leave: cubic-bezier(0.7, 0, 0.8, 0.1);
+  --pane-duration: 250ms;
+
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--label);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --label: #f5f5f7;
+    --label-secondary: rgb(235 235 245 / 65%);
+    --label-tertiary: rgb(235 235 245 / 38%);
+    --separator: rgb(255 255 255 / 12%);
+    --fill: rgb(255 255 255 / 7%);
+    --fill-strong: rgb(255 255 255 / 12%);
+      --window-bg: #232325;
+    --group-bg: rgb(255 255 255 / 5%);
+      --selected-bg-inactive: rgb(255 255 255 / 12%);
+    --toolbar-glass: rgb(255 255 255 / 9%);
+    --toolbar-glass-strong: rgb(255 255 255 / 16%);
+    --toolbar-glass-pressed: rgb(255 255 255 / 24%);
+    --surface: #2b2b2e;
+    --sidebar-tint: rgb(255 255 255 / 4%);
+    --window-solid: #232325;
+    --scroll-edge: rgb(0 0 0 / 30%);
+    --content-bg: #1e1e1e;
+    --control-fill: rgb(255 255 255 / 11%);
+    --control-fill-strong: rgb(255 255 255 / 20%);
+    --control-fill-check: rgb(255 255 255 / 10%);
+    --field-bg: rgb(0 0 0 / 25%);
+    --field-border: rgb(255 255 255 / 15%);
+
+    --red: #ff453a;
+    --orange: #ff9f0a;
+      --green: #30d158;
+    --blue: #0a84ff;
+    --gray: #98989d;
+  }
+}
+
+@supports (color: -apple-system-label) {
+  :root {
+    --label: -apple-system-label;
+    --label-secondary: -apple-system-secondary-label;
+    --label-tertiary: -apple-system-tertiary-label;
+    --separator: -apple-system-separator;
+      --content-bg: -apple-system-control-background;
+    --window-bg: -apple-system-window-background;
+    --red: -apple-system-red;
+    --orange: -apple-system-orange;
+      --green: -apple-system-green;
+    --blue: -apple-system-blue;
+    --gray: -apple-system-gray;
+    --accent: -apple-system-control-accent;
+  }
+}
+
+@supports (color: -apple-system-placeholder-text) {
+  :root {
+    --placeholder: -apple-system-placeholder-text;
+  }
+}
+
+@supports (color: -apple-system-selected-content-background) {
+  :root {
+    --selected-bg: -apple-system-selected-content-background;
+    --selected-bg-inactive: -apple-system-unemphasized-selected-content-background;
+  }
+}
+
+/* Increase Contrast: stronger fills and separators, and a visible edge on push buttons and fields. */
+@media (prefers-contrast: more) {
+  :root {
+    --label-secondary: rgb(0 0 0 / 80%);
+    --label-tertiary: rgb(0 0 0 / 62%);
+    --separator: rgb(0 0 0 / 35%);
+    --fill: rgb(0 0 0 / 12%);
+    --fill-strong: rgb(0 0 0 / 20%);
+    --group-bg: #fff;
+    --control-fill: rgb(0 0 0 / 14%);
+    --control-fill-strong: rgb(0 0 0 / 28%);
+    --control-fill-check: rgb(0 0 0 / 20%);
+    --field-border: rgb(0 0 0 / 55%);
+  }
+}
+
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root {
+    --label-secondary: rgb(255 255 255 / 85%);
+    --label-tertiary: rgb(255 255 255 / 66%);
+    --separator: rgb(255 255 255 / 40%);
+    --fill: rgb(255 255 255 / 16%);
+    --fill-strong: rgb(255 255 255 / 26%);
+    --group-bg: #1c1c1e;
+    --control-fill: rgb(255 255 255 / 20%);
+    --control-fill-strong: rgb(255 255 255 / 34%);
+    --control-fill-check: rgb(255 255 255 / 26%);
+    --field-border: rgb(255 255 255 / 60%);
+  }
+}
+
+/*
+ * Reduce Transparency: translucent surfaces become opaque. The `reduce-transparency` class on the
+ * root follows the system setting (see `lib/appearance.ts`).
+ */
+:root.reduce-transparency {
+  --group-bg: #fff;
+  --field-bg: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root.reduce-transparency {
+    --group-bg: #38383a;
+    --field-bg: #1c1c1e;
+  }
+}

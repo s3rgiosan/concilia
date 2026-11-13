@@ -1,0 +1,114 @@
+# Wiring
+
+How each menu item, context menu and native surface reaches its handler, and where each permission is declared. Fire every entry in the built app before a release.
+
+## Menu bar
+
+Built in `src-tauri/src/menu.rs` (`build`). The frontend sends the localized labels (`set_menu`), the enabled flags (`set_menu_state`) and the Remove Match text (`set_menu_item_text`) from `src/lib/hooks/useMenu.ts`.
+
+Routes, from `menu::route` and `handle_menu_event` in `src-tauri/src/lib.rs`:
+
+- **Rust**: the item runs in the backend.
+- **Main**: a `menu` event with `{ id }` to the main window, handled in `useMenu.ts` (`onMenu`), month items in its `switch`, review items through `runMenuCommand` in `src/lib/menuCommands.ts`.
+- **Focused**: a `menu` event to the Settings window while it has focus (`menu::event_target`), handled in `src/settings/Settings.tsx`. Only Undo, Redo and Delete reach it; While Settings has focus, `MenuState` disables every other `Main` item (`Inner::effective`), so shortcuts such as ⌘⌫ reach the Settings text fields, and `event_target` drops any such event as a second guard. The items are enabled again, as the main window asked, when Settings loses focus. Without Settings focus, the event goes to the main window.
+- **AppKit**: a predefined item handled by the system.
+
+| Menu | Item | Id | Shortcut | Route | Handler |
+|---|---|---|---|---|---|
+| App | About Concilia | predefined | | AppKit | About panel with version, copyright and credits (`menu.rs` `AboutMetadata`); debug builds also pass the app icon (`about_icon`) |
+| App | Check for Updates… | `check_updates` | | Rust | `check_for_updates_from_menu` (`lib.rs`), result sent as `update-check-result` to main, which shows the banner or an up-to-date or failure alert |
+| App | Settings… | `settings` | ⌘, | Rust | `windows::open_settings` |
+| App | Services, Hide Concilia, Hide Others, Show All, Quit Concilia | predefined | system | AppKit | |
+| File | New Month… | `new_month` | ⌘N | Main | `MenuActions.newMonth` (`Main.tsx`) |
+| File | Show in Finder | `reveal_period` | | Main | `MenuActions.revealPeriod` |
+| File | Close Window | predefined | ⌘W | AppKit | |
+| Edit | Undo | `undo` | ⌘Z | Focused | text field: `execCommand("undo")`; review: `undo`; Settings: Rules pane undo |
+| Edit | Redo | `redo` | ⇧⌘Z | Focused | text field: `execCommand("redo")`; review: `redo` |
+| Edit | Cut, Copy, Paste, Select All | predefined | system | AppKit | |
+| Edit | Delete | `delete` | | Focused | text field: `execCommand("delete")` |
+| Edit | Find | `find` | ⌘F | Main | review: `focusSearch` |
+| View | To Decide, Matched, All | `filter_pending`, `filter_matched`, `filter_all` | ⌘1, ⌘2, ⌘3 | Main | review: `setFilter` |
+| View | Show Sidebar / Hide Sidebar | `toggle_sidebar` | ⌃⌘S | Main | `MenuActions.toggleSidebar` |
+| View | Enter Full Screen | predefined | ⌃⌘F | AppKit | |
+| View | Actual Size, Zoom In, Zoom Out | `actual_size`, `zoom_in`, `zoom_out` | ⌘0, ⌘=, ⌘− | Rust | `zoom::apply` on the focused window, then `zoom-changed` to that window (Settings resizes to fit, `useFitWindow.ts`) |
+| Month | Add Statements… | `add_statements` | ⌘O | Main | `MenuActions.addStatements` |
+| Month | Reconcile | `reconcile` | ⌘R | Main | `MenuActions.reconcile` |
+| Month | Scan for New Receipts | `scan` | ⇧⌘R | Main | review: `scan` |
+| Month | Finalize… | `finalize` | | Main | review: `finalize`, which shows the Finalize alert |
+| Month | Reopen Month… | `reopen` | | Main | `MenuActions.reopen`, which shows the Reopen alert; enabled for a finalized month |
+| Month | Reconcile Again… | `rerun` | | Main | `MenuActions.rerun`, which shows the Reconcile Again alert |
+| Month | Open Report | `open_report` | | Main | `MenuActions.openReport` |
+| Month | Export Report… | `export_report` | | Main | review: `exportReport` |
+| Transaction | Assign Receipt | `accept` | ⌘↩ | Main | review: `accept` |
+| Transaction | Remove Match (text follows the selection) | `reject` | ⌘⌫ | Main | review: `reject` |
+| Transaction | No Receipt Needed › one item per reason, in the order of Settings › Reasons | `no_receipt_<reason id>` | | Main | review: `noReceipt` with the reason id; `useMenu` sends the reasons with the labels (`set_menu`) |
+| Transaction | Read Receipt Again | `rescan` | ⌥⌘R | Main | review: `rescan` |
+| Transaction | Quick Look | `quick_look` | ⌘Y | Main | review: `quickLook` |
+| Transaction | Open | `open` | ⌥⌘O | Main | review: `open` |
+| Go | Next Undecided, Previous Undecided | `next_pending`, `previous_pending` | ⌘], ⌘[ | Main | review: `nextPending`, `previousPending` |
+| Window | Minimize, Zoom, Bring All to Front | predefined | system | AppKit | registered as the Window menu (`WINDOW_SUBMENU_ID`) |
+| Help | Concilia Help | `help` | | Rust | opens `menu::HELP_URL` |
+
+## Context and pop-up menus
+
+Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`src/lib/popUpMenu.ts`); each entry runs its `onSelect` in the page.
+
+| Where | Built in | Items |
+|---|---|---|
+| Sidebar month (right click) | `monthMenu` in `src/main/Main.tsx`, shown by `src/main/Sidebar.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
+| Month toolbar More Actions | `monthActions` in `src/main/Main.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
+| Statement row (right click) | `src/main/Statements.tsx` | Remove |
+| Transaction row (right click) | `rowMenu` in `src/review/rowMenu.ts`, shown by `src/review/Review.tsx` | Assign Receipt, Remove Match, No Receipt Needed › reasons, Always Match or Always Mark rule, Quick Look, Open |
+| Reimbursement row (right click) | `rowMenu` in `src/review/rowMenu.ts` | Read Receipt Again, Quick Look, Open |
+| Receipt row (right click) | `src/review/ReceiptRow.tsx` | Read Receipt Again, Open |
+| Rule sheet Rule pop-up | `src/settings/RulesTab.tsx` | Match a receipt, then No receipt: <reason> for each reason in Settings › Reasons |
+| Toolbar pop-up buttons | `src/components/PopUpButton.tsx` with entries from `ReviewToolbar.tsx` and `Details.tsx` | the entries each pane passes |
+| Text fields | WebKit | the system text menu (`App.tsx` keeps it for text fields only) |
+
+## Alerts
+
+`show_alert` (`src-tauri/src/alert.rs`) shows an `NSAlert` as a sheet on the calling window through `tauri-plugin-dialog`.
+
+| Alert | Asked from | Buttons |
+|---|---|---|
+| Finalize <month>? | `askFinalize` in `src/review/Review.tsx` (`finalizeAlert.ts`) | Finalize, Review Remaining (while transactions need a decision), Cancel |
+| Reopen <month>? | `askReopen` in `src/main/Main.tsx` (`reopenAlert.ts`) | Reopen, Cancel |
+| Reconcile <month> again? | `askRerun` in `src/main/Main.tsx` (`rerunAlert.ts`) | Reconcile Again, Cancel |
+| Delete “<reason>”? | `askRemove` in `src/settings/ReasonsTab.tsx` | Delete, Cancel |
+| Remove the service account key? | `askRemove` in `src/settings/GeminiTab.tsx` | Remove Key, Cancel |
+| Concilia is up to date. / Couldn't check for updates. | `UpdateBanner` in `src/main/UpdateBanner.tsx`, on a manual `update-check-result` with no update | OK |
+
+## Events
+
+| Event | Sent by | To | Listener |
+|---|---|---|---|
+| `menu` | `handle_menu_event` (`lib.rs`) | main, or Settings for Undo, Redo and Delete while it has focus | `onMenu` in `useMenu.ts` and `Settings.tsx` |
+| `appearance-changed` | `appearance::refresh` on window focus and theme change | all windows | `installAppearance` (`src/lib/appearance.ts`) |
+| `zoom-changed` | `zoom::apply` | the zoomed window | `onZoomChanged` in `useFitWindow.ts` |
+| `settings-changed` | `commands.rs` after a settings or reasons change | all windows | `onSettingsChanged` |
+| `rules-changed` | `save_rules` and `save_reasons` in `commands.rs` | all windows | `onRulesChanged` in `RulesTab.tsx` |
+| `busy-changed` | the lock watcher set up in `lib.rs` | all windows | `onBusyChanged` |
+| `update-progress` | `install_update` in `commands.rs` | all windows | `onUpdateProgress` |
+| `update-check-result` | `check_for_updates_from_menu` and the scheduled check (`updates::run_schedule`, started in `lib.rs`, emits only when it finds an update) | main | `onUpdateCheckResult` in `UpdateBanner.tsx` (`manual` is true for the menu check) |
+
+## Permissions
+
+App commands are declared in `src-tauri/build.rs` (`COMMANDS`); each window may call only the commands its capability allows.
+
+### `main` (`src-tauri/capabilities/main.json`, window `main`)
+
+Core: `core:app:allow-version`, `core:event:allow-listen`, `core:event:allow-unlisten`, `core:menu:allow-new`, `core:menu:allow-popup`, `core:resources:allow-close`, `core:window:allow-request-user-attention`, `core:window:allow-set-progress-bar`, `core:window:allow-set-title`, `core:window:allow-internal-toggle-maximize`, `core:window:allow-start-dragging`.
+
+App commands: `allow-get-app-state`, `allow-save-settings`, `allow-pick-receipts-root`, `allow-import-service-account`, `allow-open-key-help`, `allow-get-rules`, `allow-save-rules`, `allow-period-status`, `allow-list-periods`, `allow-period-summary`, `allow-create-period`, `allow-pick-statements`, `allow-reconcile`, `allow-scan-receipts`, `allow-add-statements`, `allow-cancel-run`, `allow-get-review`, `allow-get-draft`, `allow-save-draft`, `allow-finalize`, `allow-reopen`, `allow-rescan-receipt`, `allow-rescan-reimbursement`, `allow-export-report`, `allow-open-report`, `allow-open-receipt`, `allow-reveal-period`, `allow-open-settings`, `allow-pending-update`, `allow-install-update`, `allow-set-menu`, `allow-set-menu-state`, `allow-set-menu-item-text`, `allow-get-appearance`, `allow-show-alert`.
+
+A double click on the title bar zooms the window through `core:window:allow-internal-toggle-maximize`.
+
+### `settings` (`src-tauri/capabilities/settings.json`, window `settings`)
+
+Core: `core:app:allow-version`, `core:event:allow-listen`, `core:event:allow-unlisten`, `core:menu:allow-new`, `core:menu:allow-popup`, `core:resources:allow-close`, `core:window:allow-set-size`, `core:window:allow-set-title`, `core:window:allow-start-dragging`.
+
+App commands: `allow-get-app-state`, `allow-save-settings`, `allow-pick-receipts-root`, `allow-import-service-account`, `allow-remove-service-account`, `allow-test-gemini-connection`, `allow-poppler-status`, `allow-get-rules`, `allow-save-rules`, `allow-save-reasons`, `allow-check-for-updates`, `allow-install-update`, `allow-get-appearance`, `allow-show-alert`.
+
+Settings is not maximizable, so it has no maximize permission.
+
+Plugins registered in `lib.rs` and used from Rust only (no webview permission): `tauri-plugin-log` sets up logging, `tauri-plugin-single-instance` focuses the main window when a second instance starts, `tauri-plugin-window-state` restores the main window's size and position, `tauri-plugin-dialog` shows file pickers and alerts, `tauri-plugin-opener` opens the help and key pages, `tauri-plugin-updater` checks for and installs updates.

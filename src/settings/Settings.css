@@ -1,0 +1,279 @@
+.settings {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/*
+ * Pane switcher drawn in the overlay title bar: icon above label, each pane in its own rounded
+ * button. The bar is 62 px; src-tauri/src/windows.rs centres the traffic lights in it.
+ */
+.settings__bar {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  height: 62px;
+  padding: 0 12px;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.settings__tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.toolbar__tab {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 64px;
+  padding: 5px 7px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--label-secondary);
+  font-size: 11px;
+}
+
+.toolbar__tab:active:not(.toolbar__tab--active) {
+  background: var(--fill);
+}
+
+.toolbar__tab--active {
+  border-color: var(--separator);
+  background: var(--control-fill);
+  color: var(--label);
+}
+
+.pane {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 20px 18px;
+  overflow-y: auto;
+}
+
+.pane__content,
+.pane__view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* A pane the user switches to fades in while the window resizes around it. */
+.pane__view {
+  transition: opacity 180ms ease-out;
+}
+
+@starting-style {
+  .pane__view[data-switched] {
+    opacity: 0;
+  }
+}
+
+.path {
+  max-width: 300px;
+  overflow: hidden;
+  color: var(--label-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rules__scroll {
+  max-height: 232px;
+  border-radius: var(--radius-group);
+  background: var(--group-bg);
+  box-shadow: 0 0 0 0.5px var(--separator);
+  overflow-y: auto;
+}
+
+.rules__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rules__table th {
+  position: sticky;
+  top: 0;
+  padding: 6px 12px;
+  background: var(--surface);
+  color: var(--label-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.rules__table td {
+  padding: 6px 12px;
+  border-top: 0.5px solid var(--separator);
+  overflow-wrap: anywhere;
+}
+
+.rules__table tbody tr {
+  outline: none;
+}
+
+/* The selected row is accent-coloured while the table has focus and grey otherwise. */
+.rules__row--selected td {
+  background: var(--selected-bg-inactive);
+}
+
+:root:not(.window-inactive) .rules__table:focus-within .rules__row--selected td {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.rules__no-receipt {
+  color: var(--label-secondary);
+}
+
+:root:not(.window-inactive) .rules__table:focus-within .rules__row--selected .rules__no-receipt {
+  color: var(--selected-text);
+}
+
+/* A blank name shows the other language's name, which the app uses in its place. */
+.reasons__fallback {
+  color: var(--label-secondary);
+}
+
+:root:not(.window-inactive) .rules__table:focus-within .rules__row--selected .reasons__fallback {
+  color: var(--selected-text);
+}
+
+/* Rows move by dragging; a line in the accent colour marks where the row drops. */
+.reasons__table tbody tr {
+  touch-action: none;
+  user-select: none;
+}
+
+.reasons__row--drop-above td {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.reasons__row--drop-below td {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.reasons__row--dragged td {
+  opacity: 0.5;
+}
+
+.rules__empty {
+  color: var(--label-secondary);
+  text-align: center;
+}
+
+.rules__buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+
+.value {
+  color: var(--label-secondary);
+}
+
+.value--status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A disclosure: its chevron turns down while the section below it shows. */
+.disclosure-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+button.disclosure {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--label);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.disclosure__icon {
+  color: var(--label-secondary);
+  transition: transform 150ms ease-out;
+}
+
+.disclosure[aria-expanded="true"] .disclosure__icon {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disclosure__icon {
+    transition: none;
+  }
+}
+
+.form-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Add and remove buttons under a list: one grouped control with a divider. */
+.add-remove {
+  display: inline-flex;
+  height: 24px;
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+}
+
+.add-remove button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--label);
+}
+
+.add-remove button + button {
+  box-shadow: inset 1px 0 0 0 var(--separator), inset 1px 0 0 -0.5px var(--separator);
+  background-clip: padding-box;
+}
+
+.add-remove button:first-child {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+
+.add-remove button:last-child {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.add-remove button:active:not(:disabled) {
+  background: var(--control-fill-strong);
+}
+
+.add-remove button:disabled {
+  opacity: 0.6;
+}
