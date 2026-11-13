@@ -75,11 +75,11 @@ pub fn stored_path(dir: &Path, file: &str) -> String {
     relative_text(Path::new(file), dir).unwrap_or_else(|| file.to_string())
 }
 
-/// The absolute path of a stored `file` in the period folder `dir`. An empty or absolute path
-/// stays as it is. Each part of the stored path joins with the separator of the platform, so
-/// the result equals the paths that a folder walk returns.
+/// The absolute path of a stored `file` in the period folder `dir`. An empty path or a path
+/// with a root stays as it is. Each part of a relative path joins with the separator of the
+/// platform, so the result equals the paths that a folder walk returns.
 pub fn resolved_path(dir: &Path, file: &str) -> String {
-    if file.is_empty() || Path::new(file).is_absolute() {
+    if file.is_empty() || Path::new(file).has_root() {
         return file.to_string();
     }
     let path = file
@@ -192,6 +192,7 @@ mod tests {
 
         let new = dir.path().join("new/2030/03");
         let back: Vec<ReceiptMeta> = read_stored(&new, &file).unwrap().unwrap();
-        assert_eq!(back[0].file, new.join("receipts/a.pdf").to_string_lossy());
+        let expected = new.join("receipts").join("a.pdf");
+        assert_eq!(back[0].file, expected.to_string_lossy());
     }
 }
