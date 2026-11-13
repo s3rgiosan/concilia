@@ -229,6 +229,8 @@ export interface UpdateProgress {
 export interface UpdateCheckResult {
   update: UpdateInfo | null;
   error: string | null;
+  /** True for a check the user started from the menu; the window then reports every outcome. */
+  manual: boolean;
 }
 
 export const SETTINGS_CHANGED_EVENT = "settings-changed";
@@ -251,7 +253,8 @@ export interface AlertRequest {
   title: string;
   message: string;
   confirm: string;
-  cancel: string;
+  /** The Cancel button's title. An alert without it is a notice with only the default button. */
+  cancel?: string;
   /** A third button between the default button and Cancel. */
   alternate?: string;
 }

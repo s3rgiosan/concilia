@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
 import { useInstallUpdate } from "../lib/hooks/useInstallUpdate";
-import { onUpdateCheckResult, pendingUpdate, subscribe, type UpdateInfo } from "../lib/tauri";
+import { useLatest } from "../lib/hooks/useLatest";
+import { onUpdateCheckResult, pendingUpdate, showAlert, subscribe, type UpdateInfo } from "../lib/tauri";
 
 /** The version the user put off with Later; its banner stays hidden until the app quits. */
 let postponed: string | null = null;
@@ -22,6 +23,7 @@ export function UpdateBanner({
   onError: (e: unknown) => void;
 }) {
   const { t } = useTranslation();
+  const report = useLatest(onError);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [hidden, setHidden] = useState<string | null>(postponed);
   const { busy, label, install } = useInstallUpdate(onError);
@@ -32,10 +34,20 @@ export function UpdateBanner({
       onUpdateCheckResult((result) => {
         if (result.update) {
           setUpdate(result.update);
+          if (result.manual) {
+            postponed = null;
+            setHidden(null);
+          }
+        } else if (result.manual) {
+          showAlert(
+            result.error === null
+              ? { title: t("update.upToDate"), message: t("update.upToDateMessage"), confirm: t("common.ok") }
+              : { title: t("update.checkFailed"), message: `${t("update.checkFailedMessage")}\n\n${result.error}`, confirm: t("common.ok") },
+          ).catch((e) => report.current(e));
         }
       }),
     );
-  }, []);
+  }, [t, report]);
 
   if (!update || hidden === update.version) {
     return null;

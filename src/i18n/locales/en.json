@@ -8,6 +8,7 @@
     "close": "Close",
     "choose": "Choose…",
     "working": "Working…",
+    "ok": "OK",
     "tryAgain": "Try Again",
     "openSettings": "Open Settings…"
   },
@@ -433,7 +434,11 @@
     "downloading": "Downloading…",
     "downloadingPercent": "Downloading… {{percent}}%",
     "installing": "Installing…",
-    "later": "Later"
+    "later": "Later",
+    "upToDate": "Concilia is up to date.",
+    "upToDateMessage": "You have the latest version.",
+    "checkFailed": "Couldn't check for updates.",
+    "checkFailedMessage": "Check your internet connection and try again."
   },
   "errors": {
     "invalid_input": "Concilia can't use that value. Check it and try again.",

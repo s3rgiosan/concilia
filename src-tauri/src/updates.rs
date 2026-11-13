@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// Emitted while an update downloads, with an `UpdateProgress` payload.
 pub const UPDATE_PROGRESS_EVENT: &str = "update-progress";
 /// Emitted to the main window with an `UpdateCheckResult` after a check started from the app
-/// menu, and with the update after a scheduled check finds one.
+/// menu, and with the update after a scheduled check finds one (`manual` is false then).
 pub const UPDATE_CHECK_RESULT_EVENT: &str = "update-check-result";
 
 /// The first scheduled check runs this long after launch.
@@ -45,19 +45,33 @@ pub struct UpdateProgress {
 pub struct UpdateCheckResult {
     pub update: Option<UpdateInfo>,
     pub error: Option<String>,
+    /// True when the user started the check from the menu, so the window reports every outcome.
+    pub manual: bool,
 }
 
-impl From<&Result<Option<UpdateInfo>, UpdateError>> for UpdateCheckResult {
-    fn from(result: &Result<Option<UpdateInfo>, UpdateError>) -> UpdateCheckResult {
+impl UpdateCheckResult {
+    /// The outcome of a check the user started from the menu.
+    pub fn from_menu(result: &Result<Option<UpdateInfo>, UpdateError>) -> UpdateCheckResult {
         match result {
             Ok(update) => UpdateCheckResult {
                 update: update.clone(),
                 error: None,
+                manual: true,
             },
             Err(e) => UpdateCheckResult {
                 update: None,
                 error: Some(e.to_string()),
+                manual: true,
             },
+        }
+    }
+
+    /// An update that a scheduled check found.
+    pub fn scheduled(update: UpdateInfo) -> UpdateCheckResult {
+        UpdateCheckResult {
+            update: Some(update),
+            error: None,
+            manual: false,
         }
     }
 }
@@ -279,13 +293,25 @@ mod tests {
             notes: None,
         };
         assert_eq!(
-            serde_json::to_value(UpdateCheckResult::from(&Ok(Some(found)))).unwrap(),
-            serde_json::json!({ "update": { "version": "9.9.9", "notes": null }, "error": null })
+            serde_json::to_value(UpdateCheckResult::from_menu(&Ok(Some(found)))).unwrap(),
+            serde_json::json!({ "update": { "version": "9.9.9", "notes": null }, "error": null, "manual": true })
         );
         let failed = Err(UpdateError::Network("offline".into()));
         assert_eq!(
-            serde_json::to_value(UpdateCheckResult::from(&failed)).unwrap(),
-            serde_json::json!({ "update": null, "error": "offline" })
+            serde_json::to_value(UpdateCheckResult::from_menu(&failed)).unwrap(),
+            serde_json::json!({ "update": null, "error": "offline", "manual": true })
+        );
+    }
+
+    #[test]
+    fn a_scheduled_result_is_not_manual() {
+        assert_eq!(
+            serde_json::to_value(UpdateCheckResult::scheduled(info("9.9.9"))).unwrap(),
+            serde_json::json!({
+                "update": { "version": "9.9.9", "notes": "Fixes." },
+                "error": null,
+                "manual": false
+            })
         );
     }
 

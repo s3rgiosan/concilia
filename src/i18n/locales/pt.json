@@ -8,6 +8,7 @@
     "close": "Fechar",
     "choose": "Escolher…",
     "working": "A trabalhar…",
+    "ok": "OK",
     "tryAgain": "Tentar novamente",
     "openSettings": "Abrir definições…"
   },
@@ -433,7 +434,11 @@
     "downloading": "A transferir…",
     "downloadingPercent": "A transferir… {{percent}}%",
     "installing": "A instalar…",
-    "later": "Mais tarde"
+    "later": "Mais tarde",
+    "upToDate": "O Concilia está atualizado.",
+    "upToDateMessage": "Tem a versão mais recente.",
+    "checkFailed": "Não foi possível procurar atualizações.",
+    "checkFailedMessage": "Verifique a ligação à Internet e tente novamente."
   },
   "errors": {
     "invalid_input": "O Concilia não consegue usar esse valor. Verifique-o e tente novamente.",

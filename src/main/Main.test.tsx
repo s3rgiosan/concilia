@@ -434,10 +434,43 @@ describe("update banner", () => {
 
   it("announces an update found by a background check", async () => {
     await renderMain();
-    act(() => pushCheckResult({ update: null, error: "offline" }));
+    act(() => pushCheckResult({ update: null, error: "offline", manual: false }));
     expect(screen.queryByRole("status")).toBeNull();
-    act(() => pushCheckResult({ update: { version: "9.9.10", notes: "Fixes." }, error: null }));
+    act(() => pushCheckResult({ update: { version: "9.9.10", notes: "Fixes." }, error: null, manual: false }));
     expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.10 is available.");
+  });
+
+  it("says so when a check from the menu finds no update", async () => {
+    await renderMain();
+    act(() => pushCheckResult({ update: null, error: null, manual: true }));
+    expect(showAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Concilia is up to date.", confirm: "OK" }),
+    );
+  });
+
+  it("reports a failed check from the menu", async () => {
+    await renderMain();
+    act(() => pushCheckResult({ update: null, error: "offline", manual: true }));
+    expect(showAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't check for updates.", message: expect.stringContaining("offline") }),
+    );
+  });
+
+  it("stays quiet when a background check finds nothing", async () => {
+    await renderMain();
+    act(() => pushCheckResult({ update: null, error: null, manual: false }));
+    expect(showAlert).not.toHaveBeenCalled();
+  });
+
+  it("shows the banner again for a check from the menu after Later", async () => {
+    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.13", notes: null });
+    await renderMain();
+    fireEvent.click(await screen.findByRole("button", { name: "Later" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => pushCheckResult({ update: { version: "9.9.13", notes: null }, error: null, manual: false }));
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => pushCheckResult({ update: { version: "9.9.13", notes: null }, error: null, manual: true }));
+    expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.13 is available.");
   });
 
   it("puts the update off with Later until the app runs again", async () => {
@@ -449,7 +482,7 @@ describe("update banner", () => {
     await renderMain();
     await act(async () => undefined);
     expect(screen.queryByRole("status")).toBeNull();
-    act(() => pushCheckResult({ update: { version: "9.9.12", notes: null }, error: null }));
+    act(() => pushCheckResult({ update: { version: "9.9.12", notes: null }, error: null, manual: false }));
     expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.12 is available.");
   });
 

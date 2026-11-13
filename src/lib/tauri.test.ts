@@ -298,7 +298,7 @@ describe("event listeners", () => {
     const handler = vi.fn();
     const { name, fire } = captureListener(() => api.onUpdateCheckResult(handler));
     expect(name).toBe(api.UPDATE_CHECK_RESULT_EVENT);
-    const result = { update: { version: "9.9.9", notes: null }, error: null };
+    const result = { update: { version: "9.9.9", notes: null }, error: null, manual: false };
     fire(result);
     expect(handler).toHaveBeenCalledWith(result);
   });

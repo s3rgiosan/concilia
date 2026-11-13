@@ -16,7 +16,7 @@ Routes, from `menu::route` and `handle_menu_event` in `src-tauri/src/lib.rs`:
 | Menu | Item | Id | Shortcut | Route | Handler |
 |---|---|---|---|---|---|
 | App | About Concilia | predefined | | AppKit | About panel with version, copyright and credits (`menu.rs` `AboutMetadata`); debug builds also pass the app icon (`about_icon`) |
-| App | Check for Updates… | `check_updates` | | Rust | `check_for_updates_from_menu` (`lib.rs`), result sent as `update-check-result` to main |
+| App | Check for Updates… | `check_updates` | | Rust | `check_for_updates_from_menu` (`lib.rs`), result sent as `update-check-result` to main, which shows the banner or an up-to-date or failure alert |
 | App | Settings… | `settings` | ⌘, | Rust | `windows::open_settings` |
 | App | Services, Hide Concilia, Hide Others, Show All, Quit Concilia | predefined | system | AppKit | |
 | File | New Month… | `new_month` | ⌘N | Main | `MenuActions.newMonth` (`Main.tsx`) |
@@ -76,6 +76,7 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 | Reconcile <month> again? | `askRerun` in `src/main/Main.tsx` (`rerunAlert.ts`) | Reconcile Again, Cancel |
 | Delete “<reason>”? | `askRemove` in `src/settings/ReasonsTab.tsx` | Delete, Cancel |
 | Remove the service account key? | `askRemove` in `src/settings/GeminiTab.tsx` | Remove Key, Cancel |
+| Concilia is up to date. / Couldn't check for updates. | `UpdateBanner` in `src/main/UpdateBanner.tsx`, on a manual `update-check-result` with no update | OK |
 
 ## Events
 
@@ -87,7 +88,7 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 | `settings-changed` | `commands.rs` after a settings or reasons change | all windows | `onSettingsChanged` |
 | `busy-changed` | the lock watcher set up in `lib.rs` | all windows | `onBusyChanged` |
 | `update-progress` | `install_update` in `commands.rs` | all windows | `onUpdateProgress` |
-| `update-check-result` | `check_for_updates_from_menu` and the scheduled check (`updates::run_schedule`, started in `lib.rs`, emits only when it finds an update) | main | `onUpdateCheckResult` |
+| `update-check-result` | `check_for_updates_from_menu` and the scheduled check (`updates::run_schedule`, started in `lib.rs`, emits only when it finds an update) | main | `onUpdateCheckResult` in `UpdateBanner.tsx` (`manual` is true for the menu check) |
 
 ## Permissions
 

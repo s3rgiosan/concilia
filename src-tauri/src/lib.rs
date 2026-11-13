@@ -86,7 +86,7 @@ fn check_for_updates_from_menu(app: &AppHandle) {
         let _ = app.emit_to(
             windows::MAIN_LABEL,
             UPDATE_CHECK_RESULT_EVENT,
-            UpdateCheckResult::from(&result),
+            UpdateCheckResult::from_menu(&result),
         );
     });
 }
@@ -261,10 +261,7 @@ pub fn run() {
                     let _ = schedule_app.emit_to(
                         windows::MAIN_LABEL,
                         UPDATE_CHECK_RESULT_EVENT,
-                        UpdateCheckResult {
-                            update: Some(update),
-                            error: None,
-                        },
+                        UpdateCheckResult::scheduled(update),
                     );
                 },
             ));

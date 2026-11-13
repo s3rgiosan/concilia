@@ -9,13 +9,14 @@ use tauri_plugin_dialog::{
 use crate::error::{fail, CommandError, CommandResult};
 
 /// An alert's text and buttons. `confirm` is the default button; `alternate`, when given, sits
-/// between it and Cancel.
+/// between it and Cancel. An alert without `cancel` is a notice with the one `confirm` button.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AlertRequest {
     pub title: String,
     pub message: String,
     pub confirm: String,
-    pub cancel: String,
+    #[serde(default)]
+    pub cancel: Option<String>,
     pub alternate: Option<String>,
 }
 
@@ -29,15 +30,13 @@ pub enum AlertChoice {
 }
 
 fn buttons(request: &AlertRequest) -> MessageDialogButtons {
-    match &request.alternate {
-        Some(alternate) => MessageDialogButtons::YesNoCancelCustom(
-            request.confirm.clone(),
-            alternate.clone(),
-            request.cancel.clone(),
-        ),
-        None => {
-            MessageDialogButtons::OkCancelCustom(request.confirm.clone(), request.cancel.clone())
+    let confirm = request.confirm.clone();
+    match (&request.alternate, &request.cancel) {
+        (Some(alternate), Some(cancel)) => {
+            MessageDialogButtons::YesNoCancelCustom(confirm, alternate.clone(), cancel.clone())
         }
+        (None, Some(cancel)) => MessageDialogButtons::OkCancelCustom(confirm, cancel.clone()),
+        (_, None) => MessageDialogButtons::OkCustom(confirm),
     }
 }
 
@@ -86,7 +85,7 @@ mod tests {
             title: "Remove the key?".into(),
             message: "Example message.".into(),
             confirm: "Remove".into(),
-            cancel: "Cancel".into(),
+            cancel: Some("Cancel".into()),
             alternate: alternate.map(String::from),
         }
     }
@@ -110,6 +109,24 @@ mod tests {
         assert_eq!(
             choice(&with_alternate, &MessageDialogResult::Cancel),
             AlertChoice::Cancel
+        );
+    }
+
+    #[test]
+    fn a_notice_has_one_button() {
+        let notice = AlertRequest {
+            cancel: None,
+            ..request(None)
+        };
+        assert!(matches!(
+            buttons(&notice),
+            MessageDialogButtons::OkCustom(label) if label == "Remove"
+        ));
+        let custom = MessageDialogResult::Custom("Remove".into());
+        assert_eq!(choice(&notice, &custom), AlertChoice::Confirm);
+        assert_eq!(
+            choice(&notice, &MessageDialogResult::Ok),
+            AlertChoice::Confirm
         );
     }
 
