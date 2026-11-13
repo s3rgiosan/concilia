@@ -33,6 +33,7 @@ const LUCIDE = {
   save: "download",
   key: "key-round",
   rules: "list-checks",
+  reasons: "tag",
   drop: "inbox",
   globe: "globe",
   sparkles: "sparkles",

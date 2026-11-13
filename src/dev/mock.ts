@@ -18,6 +18,7 @@ import type {
   Missing,
   PeriodState,
   PeriodSummary,
+  Reason,
   ReceiptMeta,
   RefusedFile,
   ReviewData,
@@ -89,6 +90,8 @@ function reviewData(): ReviewData {
   const hooli = receipt("hooli.jpg", 4000, "Hooli", "2030-03-09");
   const initech = receipt("initech-usd.pdf", 5200, "Initech", "2030-03-11", "USD");
   const unreadable = receipt("scan-0001.pdf", null, null, null, null);
+  const contosoMeal = receipt("contoso-meal.pdf", 1950, "Contoso Kitchen", "2030-03-17");
+  const contosoDelivery = receipt("contoso-delivery.pdf", 400, "Contoso Delivery", "2030-03-17");
   return {
     transactions: [
       tx(1, "2030-03-01", "ACME CORP", -1000, "MATCHED", [acme], "name_amount_match"),
@@ -97,6 +100,7 @@ function reviewData(): ReviewData {
       tx(4, "2030-03-10", "HOOLI SERVICES", -4000, "UNMATCHED", [], ""),
       tx(5, "2030-03-12", "INITECH", -4800, "REVIEW", [initech], "fx_match (USD ±10%)"),
       tx(6, "2030-03-15", "TRANSFER FROM ACME", 50000, "UNMATCHED", [], ""),
+      tx(7, "2030-03-17", "CONTOSO DELIVERY", -2350, "MATCHED", [contosoMeal, contosoDelivery], "manual_match"),
     ],
     unmatched_receipts: [hooli, unreadable],
     refused_files: [],
@@ -191,8 +195,19 @@ export function install(): void {
     ? [
         { id: "rule-1", receiptVendor: "ACME", transactionDescription: "ACME CORP" },
         { id: "rule-2", receiptVendor: "globex", transactionDescription: "GLOBEX ONLINE" },
+        { id: "rule-3", receiptVendor: "", transactionDescription: "TRF MBWAY", noReceipt: "transfer" },
       ]
     : [];
+
+  const reason = (id: string, en: string, pt: string): Reason => ({ id, names: { en, pt } });
+  let reasons: Reason[] = [
+    reason("bank_fee", "Bank Fee", "Comissão bancária"),
+    reason("salary", "Salary", "Salário"),
+    reason("transfer", "Transfer", "Transferência"),
+    reason("refund", "Refund", "Reembolso"),
+    reason("reason:sample-lunch", "Team Lunch", ""),
+    reason("no_receipt", "Other", "Outro"),
+  ];
 
   let cancelRequested = false;
   let draft: Draft = {};
@@ -229,6 +244,7 @@ export function install(): void {
       configured: missing.length === 0,
       busy: scenario === "busy",
       read_only: scenario === "read-only",
+      reasons,
     };
   }
 
@@ -267,6 +283,12 @@ export function install(): void {
         case "save_rules":
           rules = a.rules as Rule[];
           return delay(200, rules);
+        case "save_reasons": {
+          reasons = a.reasons as Reason[];
+          const other = "no_receipt";
+          rules = rules.map((r) => (r.noReceipt && !reasons.some((x) => x.id === r.noReceipt) ? { ...r, noReceipt: other } : r));
+          return delay(200, changed());
+        }
         case "list_periods":
           return delay(150, [...periods.values()].sort((a, b) => `${b.year}${b.month}`.localeCompare(`${a.year}${a.month}`)));
         case "period_status": {
@@ -290,6 +312,9 @@ export function install(): void {
           draft = {};
           setPeriod(a, { status: "finalized", pending: 0 });
           return delay(600, null);
+        case "reopen":
+          setPeriod(a, { status: "in_review", pending: pendingWith(draft) });
+          return delay(400, { restored: 27, keptDecisions: 3 });
         case "rescan_receipt":
         case "rescan_reimbursement": {
           const relPath = String(a.relPath);

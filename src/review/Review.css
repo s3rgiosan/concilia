@@ -378,6 +378,18 @@
   margin-top: 10px;
 }
 
+/* The sum of a matched transaction's receipts, with the difference from its amount. */
+.details__total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 6px 2px 0;
+  font-size: 12px;
+  line-height: 15px;
+}
+
 .details__more {
   display: flex;
   margin-top: 8px;

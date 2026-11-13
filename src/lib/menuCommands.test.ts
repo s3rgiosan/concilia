@@ -21,6 +21,7 @@ describe("menuCommand", () => {
     expect(menuCommand("export_report")).toBe("exportReport");
     expect(menuCommand("filter_pending")).toBe("setFilter");
     expect(menuCommand("no_receipt_bank_fee")).toBe("noReceipt");
+    expect(menuCommand("no_receipt_reason:abc")).toBe("noReceipt");
     expect(menuCommand("no_receipt")).toBe("noReceipt");
   });
 
@@ -39,6 +40,8 @@ describe("runMenuCommand", () => {
     expect(c.setFilter).toHaveBeenCalledWith("pending");
     runMenuCommand(c, "no_receipt_no_receipt");
     expect(c.noReceipt).toHaveBeenCalledWith("no_receipt");
+    runMenuCommand(c, "no_receipt_reason:abc");
+    expect(c.noReceipt).toHaveBeenCalledWith("reason:abc");
     runMenuCommand(c, "undo");
     expect(c.undo).toHaveBeenCalledTimes(1);
     runMenuCommand(c, "find");
@@ -69,8 +72,7 @@ describe("menuState", () => {
     expect(state.filter_matched).toBe(true);
     expect(state.filter_pending).toBe(true);
     expect(state.no_receipt).toBe(true);
-    expect(state.no_receipt_salary).toBe(true);
     expect(state.undo).toBe(false);
-    expect(Object.keys(state)).toHaveLength(22);
+    expect(Object.keys(state)).toHaveLength(17);
   });
 });

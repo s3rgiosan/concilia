@@ -1,28 +1,15 @@
 // The review state the user sees: the match result with pending decisions applied.
 
-import { FILTERS, NO_RECEIPT_CATEGORIES, type Filter, type NoReceiptCategory } from "../lib/menuCommands";
+import { FILTERS, type Filter } from "../lib/menuCommands";
 import { fileName } from "../lib/paths";
+import { isReasonId } from "../lib/reasons";
 import type { Draft, ReceiptMeta, ReviewData, Status, Transaction } from "../lib/tauri";
 
-export { FILTERS, NO_RECEIPT_CATEGORIES, type Filter, type NoReceiptCategory };
+export { FILTERS, type Filter };
 
-/** The categories money coming in most likely needs no receipt for. */
-const CREDIT_CATEGORIES: readonly NoReceiptCategory[] = ["transfer", "salary", "refund"];
-
-/**
- * The No Receipt Needed choices for a transaction, in menu order: money coming in lists its likely
- * categories first and the rest after a separator; money going out lists every category.
- */
-export function noReceiptChoices(tx: Transaction): (NoReceiptCategory | "separator")[] {
-  if (tx.amount_cents <= 0) {
-    return [...NO_RECEIPT_CATEGORIES];
-  }
-  const others = NO_RECEIPT_CATEGORIES.filter((category) => !CREDIT_CATEGORIES.includes(category));
-  return [...CREDIT_CATEGORIES, "separator", ...others];
-}
-
-export function isNoReceipt(notes: string): notes is NoReceiptCategory {
-  return (NO_RECEIPT_CATEGORIES as readonly string[]).includes(notes);
+/** Whether a transaction with these notes is marked as needing no receipt. */
+export function isNoReceipt(notes: string): boolean {
+  return isReasonId(notes);
 }
 
 /** Every receipt's path relative to the receipts root, by file, for previews. */
@@ -112,6 +99,42 @@ export function assignableReceipts(pool: ReceiptMeta[], tx: Pick<Transaction, "a
   const outgoing = tx.amount_cents < 0;
   const fits = (r: ReceiptMeta) => (r.amount_cents === null ? outgoing : (r.amount_cents >= 0) === outgoing);
   return byAmountProximity(pool.filter(fits), tx.abs_cents);
+}
+
+/**
+ * Pool receipts that can join a MATCHED transaction's receipts, closest first to the amount its
+ * receipts do not cover yet. Receipt amounts count by size, so credit notes cover money coming in.
+ */
+export function addableReceipts(pool: ReceiptMeta[], tx: Pick<Transaction, "amount_cents" | "abs_cents" | "receipt_meta">): ReceiptMeta[] {
+  const covered = tx.receipt_meta.reduce((sum, m) => sum + Math.abs(m.amount_cents ?? 0), 0);
+  return assignableReceipts(pool, { amount_cents: tx.amount_cents, abs_cents: Math.max(tx.abs_cents - covered, 0) });
+}
+
+/**
+ * The euro total of receipts, adding their amounts by size, or null when a receipt has no amount
+ * or another currency.
+ */
+export function receiptsTotal(receipts: ReceiptMeta[]): number | null {
+  let total = 0;
+  for (const receipt of receipts) {
+    if (receipt.amount_cents === null || (receipt.currency && receipt.currency !== "EUR")) {
+      return null;
+    }
+    total += Math.abs(receipt.amount_cents);
+  }
+  return total;
+}
+
+/**
+ * How the euro total of several receipts differs from their transaction's amount, in cents, or
+ * null when it fits or `receiptsTotal` gives none.
+ */
+export function totalMismatch(receipts: ReceiptMeta[], txAbsCents: number): number | null {
+  const total = receiptsTotal(receipts);
+  if (total === null || total === txAbsCents) {
+    return null;
+  }
+  return Math.abs(total - txAbsCents);
 }
 
 /** A REVIEW transaction's candidates that no MATCHED transaction holds. */

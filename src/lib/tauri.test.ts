@@ -190,8 +190,8 @@ describe("setWindowTitle", () => {
 
 describe("menu commands", () => {
   it("sends the labels", async () => {
-    await api.setMenu({ menu_file: "Ficheiro" });
-    expect(mocks.invoke).toHaveBeenCalledWith("set_menu", { labels: { menu_file: "Ficheiro" } });
+    await api.setMenu({ menu_file: "Ficheiro" }, [{ id: "salary", label: "Salário" }]);
+    expect(mocks.invoke).toHaveBeenCalledWith("set_menu", { labels: { menu_file: "Ficheiro" }, reasons: [{ id: "salary", label: "Salário" }] });
   });
 
   it("sends the enabled map", async () => {

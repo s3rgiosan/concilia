@@ -125,6 +125,11 @@
   margin-top: 6px;
 }
 
+.sheet__grid > .field {
+  width: 100%;
+  min-width: 0;
+}
+
 .sheet__grid > .popup-button {
   justify-self: start;
   min-width: 150px;

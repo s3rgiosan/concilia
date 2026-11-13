@@ -6,9 +6,10 @@ import { fileName } from "../lib/paths";
 import type { MenuEntry } from "../lib/popUpMenu";
 import { longDate } from "../lib/dates";
 import { formatMoney, formatSignedMoney } from "../lib/money";
-import type { ReceiptMeta, Transaction } from "../lib/tauri";
-import { isNoReceipt, noReceiptChoices, type NoReceiptCategory } from "./effective";
-import { matchReason, noReceiptLabel, noReceiptTitle } from "./notes";
+import type { ReceiptMeta } from "../lib/tauri";
+import { reasonLabel, reasonName, useReasons } from "../lib/reasons";
+import { isNoReceipt, receiptsTotal, totalMismatch } from "./effective";
+import { matchReason } from "./notes";
 import { ReceiptPreview } from "./ReceiptPreview";
 import { receiptTitle } from "./receipts";
 import { ReceiptRow } from "./ReceiptRow";
@@ -19,9 +20,14 @@ export interface DetailsHandlers {
   onFocusReceipt: (receipt: ReceiptMeta) => void;
   /** Accepts a REVIEW candidate or assigns a pool receipt to an UNMATCHED transaction. */
   onAccept: (receipt: ReceiptMeta) => void;
+  /** Adds a pool receipt to a MATCHED transaction's receipts. */
+  onAddReceipt: (receipt: ReceiptMeta) => void;
+  /** Takes one receipt off a MATCHED transaction that holds several. */
+  onRemoveReceipt: (receipt: ReceiptMeta) => void;
   /** None of These for REVIEW, Remove Match or Needs a Receipt for MATCHED. */
   onReject: () => void;
-  onNoReceipt: (category: NoReceiptCategory) => void;
+  /** Marks the transaction as needing no receipt for the reason with this id. */
+  onNoReceipt: (reason: string) => void;
   onRescan: (receipt: ReceiptMeta) => void;
   onOpen: (receipt: ReceiptMeta) => void;
   onQuickLook: () => void;
@@ -33,12 +39,11 @@ export const RECEIPT_LIMIT = 20;
 /** Longest a new preview waits during key repeat, in milliseconds. */
 const PREVIEW_DELAY_MS = 120;
 
-/** The No Receipt Needed pull-down, its categories in the order `noReceiptChoices` gives. */
-function NoReceiptChoices({ tx, onNoReceipt }: { tx: Transaction; onNoReceipt: (category: NoReceiptCategory) => void }) {
-  const { t } = useTranslation();
-  const actions: MenuEntry[] = noReceiptChoices(tx).map((choice) =>
-    choice === "separator" ? choice : { label: noReceiptTitle(choice, t), onSelect: () => onNoReceipt(choice) },
-  );
+/** The No Receipt Needed pull-down, with the reasons in their Settings order. */
+function NoReceiptChoices({ onNoReceipt }: { onNoReceipt: (reason: string) => void }) {
+  const { t, i18n } = useTranslation();
+  const reasons = useReasons();
+  const actions: MenuEntry[] = reasons.map((reason) => ({ label: reasonName(reason, i18n.language), onSelect: () => onNoReceipt(reason.id) }));
   return (
     <span data-details-action>
       <PullDownButton label={t("review.noReceiptMenu")} actions={actions} />
@@ -52,11 +57,14 @@ function NoReceiptChoices({ tx, onNoReceipt }: { tx: Transaction; onNoReceipt: (
  * `data-details-action`, so Return in the list can move focus to the first one. A finalized
  * month shows no decisions, and a decision the user made reads as manual. Without a row it shows
  * `empty`, or No Selection. An unmatched transaction lists the closest receipts by amount and
- * offers Show All for the rest. `handlers` should keep their identity between renders.
+ * offers Show All for the rest. A matched transaction can take more receipts from `addable`, and
+ * one with several lists their total and lets each go. `handlers` should keep their identity
+ * between renders.
  */
 export const Details = memo(function Details({
   row,
   receipts,
+  addable = [],
   focused,
   rescanning,
   readOnly,
@@ -68,6 +76,8 @@ export const Details = memo(function Details({
   row: ListRow | null;
   /** The row's receipts, as `rowReceipts` lists them. */
   receipts: ReceiptMeta[];
+  /** Pool receipts a MATCHED transaction can add, as `addableReceipts` lists them. */
+  addable?: ReceiptMeta[];
   focused: ReceiptMeta | null;
   rescanning: Set<string>;
   /** The month is finalized: decisions and new readings are unavailable. */
@@ -81,10 +91,13 @@ export const Details = memo(function Details({
   handlers: DetailsHandlers;
 }) {
   const { t, i18n } = useTranslation();
+  const reasons = useReasons();
   const headingId = useId();
   const language = i18n.language;
   /** The transaction whose full receipt list was asked for. */
   const [expanded, setExpanded] = useState<string | null>(null);
+  /** The matched transaction whose Add Receipt list is open. */
+  const [adding, setAdding] = useState<string | null>(null);
 
   if (!row) {
     return (
@@ -94,7 +107,12 @@ export const Details = memo(function Details({
     );
   }
 
-  const receiptRow = (receipt: ReceiptMeta, txAbsCents: number | null, assignable = false) => (
+  const receiptRow = (
+    receipt: ReceiptMeta,
+    txAbsCents: number | null,
+    onAssign?: (receipt: ReceiptMeta) => void,
+    onRemove?: (receipt: ReceiptMeta) => void,
+  ) => (
     <ReceiptRow
       key={receipt.file}
       receipt={receipt}
@@ -102,17 +120,39 @@ export const Details = memo(function Details({
       txAbsCents={txAbsCents}
       rescanning={rescanning.has(receipt.file)}
       readOnly={readOnly}
-      onAssign={assignable && !readOnly ? handlers.onAccept : undefined}
+      onAssign={readOnly ? undefined : onAssign}
+      onRemove={readOnly ? undefined : onRemove}
       onFocus={handlers.onFocusReceipt}
       onRescan={handlers.onRescan}
       onOpen={handlers.onOpen}
     />
   );
 
+  /** `list` up to the limit, with Show All for the rest unless the focused receipt lies beyond it. */
+  const limitedList = (rowId: string, list: ReceiptMeta[], render: (receipt: ReceiptMeta) => ReactNode) => {
+    const focusedIndex = focused ? list.findIndex((r) => r.file === focused.file) : -1;
+    const showAll = expanded === rowId || focusedIndex >= RECEIPT_LIMIT;
+    const listed = showAll ? list : list.slice(0, RECEIPT_LIMIT);
+    return (
+      <>
+        <ul className="receipt-list">{listed.map(render)}</ul>
+        {listed.length < list.length ? (
+          <div className="details__more">
+            <button type="button" onClick={() => setExpanded(rowId)}>
+              {t("review.showAllReceipts", { count: list.length })}
+            </button>
+          </div>
+        ) : null}
+      </>
+    );
+  };
+
   let header;
   let heading: string;
   let body;
   let actions = null;
+  /** A section after the main one: the receipts a matched transaction can add. */
+  let extra: ReactNode = null;
   if (row.kind === "reimbursement") {
     const { receipt } = row;
     header = (
@@ -132,8 +172,8 @@ export const Details = memo(function Details({
     body = <ul className="receipt-list">{receiptRow(receipt, null)}</ul>;
   } else {
     const { tx } = row;
-    const reason = edited ? t("review.manualDecision") : matchReason(tx.notes, t);
-    const noReceiptChoices = <NoReceiptChoices tx={tx} onNoReceipt={handlers.onNoReceipt} />;
+    const reason = edited ? t("review.manualDecision") : matchReason(tx.notes, t, (id) => reasonLabel(reasons, id, language));
+    const noReceiptChoices = <NoReceiptChoices onNoReceipt={handlers.onNoReceipt} />;
     header = (
       <>
         <h2 className="details__title">{tx.description}</h2>
@@ -155,7 +195,7 @@ export const Details = memo(function Details({
         heading = t("review.sections.candidates");
         body =
           receipts.length > 0 ? (
-            <ul className="receipt-list">{receipts.map((r) => receiptRow(r, tx.abs_cents, true))}</ul>
+            <ul className="receipt-list">{receipts.map((r) => receiptRow(r, tx.abs_cents, handlers.onAccept))}</ul>
           ) : (
             <p className="details__note">{t("review.candidatesTaken")}</p>
           );
@@ -173,21 +213,7 @@ export const Details = memo(function Details({
         if (receipts.length === 0) {
           body = <p className="details__note">{t("review.noCandidates")}</p>;
         } else {
-          const focusedIndex = focused ? receipts.findIndex((r) => r.file === focused.file) : -1;
-          const showAll = expanded === row.id || focusedIndex >= RECEIPT_LIMIT;
-          const listed = showAll ? receipts : receipts.slice(0, RECEIPT_LIMIT);
-          body = (
-            <>
-              <ul className="receipt-list">{listed.map((r) => receiptRow(r, tx.abs_cents, true))}</ul>
-              {listed.length < receipts.length ? (
-                <div className="details__more">
-                  <button type="button" onClick={() => setExpanded(row.id)}>
-                    {t("review.showAllReceipts", { count: receipts.length })}
-                  </button>
-                </div>
-              ) : null}
-            </>
-          );
+          body = limitedList(row.id, receipts, (r) => receiptRow(r, tx.abs_cents, handlers.onAccept));
         }
         actions = noReceiptChoices;
         break;
@@ -195,16 +221,57 @@ export const Details = memo(function Details({
       default:
         heading = t("review.sections.receipts", { count: Math.max(receipts.length, 1) });
         if (isNoReceipt(tx.notes)) {
-          body = <p className="details__note">{t("review.noReceiptNeeded", { category: noReceiptLabel(tx.notes, t) })}</p>;
+          body = <p className="details__note">{t("review.noReceiptNeeded", { reason: reasonLabel(reasons, tx.notes, language) })}</p>;
         } else if (receipts.length === 0) {
-          body = <p className="details__note">{t("review.noReceiptCategories.noReceipt")}</p>;
+          body = <p className="details__note">{t("review.noReceipts")}</p>;
         } else {
-          body = <ul className="receipt-list">{receipts.map((r) => receiptRow(r, tx.abs_cents))}</ul>;
+          const several = receipts.length > 1;
+          const total = several ? receiptsTotal(receipts) : null;
+          const difference = total === null ? null : totalMismatch(receipts, tx.abs_cents);
+          body = (
+            <>
+              <ul className="receipt-list">
+                {receipts.map((r) => receiptRow(r, several ? null : tx.abs_cents, undefined, several ? handlers.onRemoveReceipt : undefined))}
+              </ul>
+              {total !== null ? (
+                <p className="details__total">
+                  <span className="numeric">{t("review.receiptsTotal", { amount: formatMoney(total, "EUR", language) })}</span>
+                  {difference === null ? null : (
+                    <span className="receipt-row__mismatch">
+                      <Icon name="warning" size={12} className="receipt-row__warning" />
+                      {t("review.mismatch.amount", { amount: formatMoney(difference, "EUR", language) })}
+                    </span>
+                  )}
+                </p>
+              ) : null}
+            </>
+          );
+        }
+        if (adding === row.id && !isNoReceipt(tx.notes)) {
+          extra = (
+            <section className="details__section" aria-labelledby={`${headingId}-add`}>
+              <h3 id={`${headingId}-add`} className="details__heading">
+                {t("review.sections.addable")}
+              </h3>
+              {addable.length === 0 ? (
+                <p className="details__note">{t("review.noCandidates")}</p>
+              ) : (
+                limitedList(`${row.id}:add`, addable, (r) => receiptRow(r, null, handlers.onAddReceipt))
+              )}
+            </section>
+          );
         }
         actions = (
-          <button type="button" data-details-action onClick={handlers.onReject}>
-            {isNoReceipt(tx.notes) ? t("review.actions.needsReceipt") : t("review.actions.removeMatch")}
-          </button>
+          <>
+            {isNoReceipt(tx.notes) ? null : (
+              <button type="button" aria-expanded={adding === row.id} onClick={() => setAdding(adding === row.id ? null : row.id)}>
+                {t("review.actions.addReceipt")}
+              </button>
+            )}
+            <button type="button" data-details-action onClick={handlers.onReject}>
+              {isNoReceipt(tx.notes) ? t("review.actions.needsReceipt") : t("review.actions.removeMatch")}
+            </button>
+          </>
         );
         break;
     }
@@ -222,6 +289,7 @@ export const Details = memo(function Details({
           {readOnly && row.kind === "transaction" ? <p className="details__note details__note--finalized">{t("review.finalizedNote")}</p> : null}
           {actions && !readOnly ? <div className="details__actions">{actions}</div> : null}
         </section>
+        {readOnly ? null : extra}
       </div>
       {focused ? (
         <section className="details__preview" aria-label={t("review.previewOf", { name: fileName(focused.file) })}>

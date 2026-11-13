@@ -24,6 +24,7 @@ let symbols: [(name: String, symbol: String)] = [
     ("save", "square.and.arrow.down"),
     ("key", "key"),
     ("rules", "list.bullet.rectangle"),
+    ("reasons", "tag"),
     ("drop", "tray.and.arrow.down"),
     ("globe", "globe"),
     ("sparkles", "sparkles"),

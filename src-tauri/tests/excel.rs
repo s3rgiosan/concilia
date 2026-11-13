@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 
 use calamine::{open_workbook, Data, Reader, Xlsx};
-use concilia_lib::excel::{build, write, CellValue, Sheet};
-use concilia_lib::model::{Language, MatchResult, ReceiptMeta};
+use concilia_lib::excel::{build, write, CellValue, Labels, Sheet};
+use concilia_lib::model::{default_reasons, Language, MatchResult, ReceiptMeta};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -68,11 +68,15 @@ fn renamed(lang: Language) -> &'static [(&'static str, &'static str)] {
             ("Validated", "All Transactions"),
             ("Review", "Needs Review"),
             ("Label", "Category"),
+            ("Bank fee (auto)", "Bank Fee"),
+            ("No receipt", "Other"),
         ],
         Language::Pt => &[
             ("Validados", "Todas as transações"),
             ("Revisão", "Por rever"),
             ("Sem Associação", "Sem associação"),
+            ("Comissão bancária (auto)", "Comissão bancária"),
+            ("Sem recibo", "Outro"),
             ("Data da Transação", "Data da transação"),
             ("Descrição da Transação", "Descrição da transação"),
             ("Valor da Transação", "Valor da transação"),
@@ -181,7 +185,10 @@ fn sheets_match_the_node_implementation() {
         let sheets = build(
             &case.input.result,
             &case.input.reimbursements,
-            case.input.lang,
+            &Labels {
+                language: case.input.lang,
+                reasons: &default_reasons(),
+            },
         );
         let actual = as_fixture(&sheets);
         let expected = with_current_labels(&case.expected, case.input.lang);
@@ -198,7 +205,10 @@ fn written_files_read_back_with_the_same_cells() {
         let sheets = build(
             &case.input.result,
             &case.input.reimbursements,
-            case.input.lang,
+            &Labels {
+                language: case.input.lang,
+                reasons: &default_reasons(),
+            },
         );
         let path = dir.path().join(format!("report-{i}.xlsx"));
         write(&sheets, &path).unwrap();
@@ -234,7 +244,14 @@ fn reimbursements_sheet_only_when_there_are_any() {
     let result = MatchResult::default();
     let names = |sheets: Vec<Sheet>| sheets.into_iter().map(|s| s.name).collect::<Vec<_>>();
     assert_eq!(
-        names(build(&result, &[], Language::En)),
+        names(build(
+            &result,
+            &[],
+            &Labels {
+                language: Language::En,
+                reasons: &default_reasons(),
+            }
+        )),
         [
             "Totals",
             "All Transactions",
@@ -249,7 +266,14 @@ fn reimbursements_sheet_only_when_there_are_any() {
         ..Default::default()
     };
     assert_eq!(
-        names(build(&result, &[taxi], Language::Pt)),
+        names(build(
+            &result,
+            &[taxi],
+            &Labels {
+                language: Language::Pt,
+                reasons: &default_reasons(),
+            }
+        )),
         [
             "Totais",
             "Todas as transações",

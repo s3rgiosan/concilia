@@ -5,7 +5,8 @@ import { isTextField } from "../popUpMenu";
 import { isPreview } from "../preview";
 import type { ReviewMenuStore } from "../reviewMenu";
 import { shallowEqual } from "../shallowEqual";
-import { onMenu, setMenu, setMenuItemText, setMenuState, subscribe } from "../tauri";
+import { reasonName } from "../reasons";
+import { onMenu, setMenu, setMenuItemText, setMenuState, subscribe, type Reason } from "../tauri";
 import { useLatest } from "./useLatest";
 import { useShallowStable } from "./useShallowStable";
 
@@ -20,6 +21,8 @@ export interface MenuModel {
   canReconcile: boolean;
   /** The month has a match result, so it opens in the review. */
   hasResult: boolean;
+  /** The month is finalized, so it can be reopened. */
+  finalized: boolean;
   running: boolean;
   /** What the open review can run, or null when no review is shown. */
   reviewCan: ReviewAvailability | null;
@@ -37,6 +40,7 @@ export interface MenuActions {
   addStatements: () => void;
   reconcile: () => void;
   rerun: () => void;
+  reopen: () => void;
   openReport: () => void;
   revealPeriod: () => void;
   toggleSidebar: () => void;
@@ -45,7 +49,7 @@ export interface MenuActions {
 /** Items that work before the app is set up. */
 const ALWAYS_ENABLED = ["settings", "check_updates", "help"];
 
-const MONTH_IDS = ["new_month", "add_statements", "reconcile", "rerun", "open_report", "reveal_period", "toggle_sidebar"];
+const MONTH_IDS = ["new_month", "add_statements", "reconcile", "rerun", "reopen", "open_report", "reveal_period", "toggle_sidebar"];
 
 /** Labels that are plain translations of their key. */
 const LABEL_KEYS = [
@@ -92,14 +96,10 @@ const LABEL_KEYS = [
   "reconcile",
   "scan",
   "rerun",
+  "reopen",
   "finalize",
   "accept",
   "no_receipt",
-  "no_receipt_bank_fee",
-  "no_receipt_salary",
-  "no_receipt_transfer",
-  "no_receipt_refund",
-  "no_receipt_no_receipt",
   "rescan",
   "quick_look",
   "open_in_preview",
@@ -148,6 +148,7 @@ export function menuEnabled(model: MenuModel): Record<string, boolean> {
     add_statements: model.acceptsStatements || model.reviewCan?.addStatements === true,
     reconcile: model.acceptsStatements && model.canReconcile,
     rerun: model.hasResult && !model.running,
+    reopen: model.finalized && !model.running,
     open_report: model.hasResult,
     reveal_period: true,
     toggle_sidebar: true,
@@ -158,12 +159,18 @@ export function menuEnabled(model: MenuModel): Record<string, boolean> {
 /**
  * Keeps the native menu bar in step with the main window: sends the localized labels when the
  * language or the sidebar change, renames Reject as the selected transaction changes what it does,
- * sends which items are enabled, and runs the items the user chooses. The review's availability and
- * Reject kind are read from `review` without rendering the caller. Does nothing in the browser
- * preview.
+ * sends which items are enabled, and runs the items the user chooses. The No Receipt Needed
+ * submenu lists `reasons`. The review's availability and Reject kind are read from `review` without
+ * rendering the caller. Does nothing in the browser preview.
  */
-export function useMenu(inputs: MenuInputs, actions: MenuActions, reviewCommands: RefObject<ReviewCommands | null>, review: ReviewMenuStore) {
-  const { t } = useTranslation();
+export function useMenu(
+  inputs: MenuInputs,
+  actions: MenuActions,
+  reviewCommands: RefObject<ReviewCommands | null>,
+  review: ReviewMenuStore,
+  reasons: readonly Reason[],
+) {
+  const { t, i18n } = useTranslation();
   const { sidebarShown } = inputs;
 
   const menu = useMemo(() => {
@@ -174,8 +181,9 @@ export function useMenu(inputs: MenuInputs, actions: MenuActions, reviewCommands
     labels.toggle_sidebar = t(sidebarShown ? "menu.hide_sidebar" : "menu.show_sidebar");
     const rejectKind = review.get().rejectKind;
     labels.reject = t(rejectMenuLabel(rejectKind));
-    return { labels, rejectKind };
-  }, [t, sidebarShown, review]);
+    const reasonItems = reasons.map((reason) => ({ id: reason.id, label: reasonName(reason, i18n.language) }));
+    return { labels, rejectKind, reasonItems };
+  }, [t, i18n.language, sidebarShown, review, reasons]);
 
   /** Menu calls run one after another, so a state update never lands before the labels it follows. */
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -219,7 +227,7 @@ export function useMenu(inputs: MenuInputs, actions: MenuActions, reviewCommands
       return;
     }
     sentKind.current = menu.rejectKind;
-    send(() => setMenu(menu.labels));
+    send(() => setMenu(menu.labels, menu.reasonItems));
     syncReject();
     syncState(true);
   }, [menu, send, syncReject, syncState]);
@@ -278,6 +286,9 @@ export function useMenu(inputs: MenuInputs, actions: MenuActions, reviewCommands
             return;
           case "rerun":
             monthActions.rerun();
+            return;
+          case "reopen":
+            monthActions.reopen();
             return;
           case "open_report":
             monthActions.openReport();

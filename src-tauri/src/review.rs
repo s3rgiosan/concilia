@@ -6,12 +6,10 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::model::{
-    basename, Draft, DroppedDecision, MatchResult, ReceiptMeta, Status, Summary, Transaction,
+    basename, is_reason_id, Draft, DroppedDecision, MatchResult, ReceiptMeta, Status, Summary,
+    Transaction,
 };
 use crate::text::js_round;
-
-/// Notes of transactions the user marked as needing no receipt.
-pub const NO_RECEIPT_NOTES: &[&str] = &["bank_fee", "salary", "transfer", "refund", "no_receipt"];
 
 #[derive(Debug, thiserror::Error)]
 #[error("review decision for {tx_id} is invalid: {source}")]
@@ -52,7 +50,7 @@ pub fn merge_draft(
 pub fn claimed_files(transactions: &[Transaction]) -> HashSet<String> {
     transactions
         .iter()
-        .filter(|tx| tx.status == Status::Matched && !NO_RECEIPT_NOTES.contains(&tx.notes.as_str()))
+        .filter(|tx| tx.status == Status::Matched && !is_reason_id(&tx.notes))
         .flat_map(|tx| tx.receipt_meta.iter().map(|m| m.file.clone()))
         .collect()
 }
@@ -264,6 +262,13 @@ mod tests {
             "transfer",
         )];
         assert!(claimed_files(&merged).is_empty());
+        let custom = vec![tx(
+            "t1",
+            Status::Matched,
+            &[receipt("/r/a.pdf", 1000)],
+            "reason:lunch",
+        )];
+        assert!(claimed_files(&custom).is_empty());
     }
 
     #[test]

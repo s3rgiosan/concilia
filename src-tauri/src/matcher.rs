@@ -14,8 +14,9 @@
 //! - Pass 4, receipts sharing a name word, whatever their amount, except EUR receipts with a
 //!   known amount that differs: REVIEW.
 //!
-//! Bank fees are MATCHED up front. Only MATCHED consumes a receipt; REVIEW candidates stay
-//! available to later transactions.
+//! No-receipt rules come first: a transaction whose description holds the rule's keyword is
+//! MATCHED with the rule's category as its notes. Bank fees are MATCHED next. Only MATCHED
+//! consumes a receipt; REVIEW candidates stay available to later transactions.
 
 use std::collections::{HashMap, HashSet};
 
@@ -23,7 +24,7 @@ use crate::bank_fees::is_bank_fee;
 use crate::dates::days_between;
 use crate::model::{
     basename, MatchResult, ReceiptMeta, ReceiptsByStatus, Rule, StatementTransaction, Status,
-    Transaction,
+    Transaction, BANK_FEE_REASON,
 };
 
 const FX_TOLERANCE_PERCENT: i64 = 10;
@@ -444,14 +445,30 @@ pub fn match_transactions(
 ) -> MatchResult {
     let mut m = Matcher::new(receipts);
 
+    let no_receipt_rules: Vec<(String, &str)> = rules
+        .iter()
+        .filter_map(|rule| {
+            let reason = rule.no_receipt.as_deref()?;
+            Some((rule.transaction_description.to_lowercase(), reason))
+        })
+        .filter(|(keyword, _)| !keyword.is_empty())
+        .collect();
     let mut result: Vec<Transaction> = transactions
         .iter()
         .cloned()
         .map(|tx| {
             let mut out = Transaction::from(tx);
-            if is_bank_fee(&out.description) {
+            let description = out.description.to_lowercase();
+            let reason = no_receipt_rules
+                .iter()
+                .find(|(keyword, _)| description.contains(keyword.as_str()))
+                .map(|(_, reason)| *reason);
+            if let Some(reason) = reason {
                 out.status = Status::Matched;
-                out.notes = "bank_fee".to_string();
+                out.notes = reason.to_string();
+            } else if is_bank_fee(&out.description) {
+                out.status = Status::Matched;
+                out.notes = BANK_FEE_REASON.to_string();
             } else {
                 out.status = Status::Unmatched;
             }
@@ -459,10 +476,11 @@ pub fn match_transactions(
         })
         .collect();
 
-    // Pass 0: user rules.
-    if !rules.is_empty() {
-        let lowered_rules: Vec<LoweredRule> = rules
-            .iter()
+    // Pass 0: user receipt rules.
+    let receipt_rules: Vec<&Rule> = rules.iter().filter(|r| r.no_receipt.is_none()).collect();
+    if !receipt_rules.is_empty() {
+        let lowered_rules: Vec<LoweredRule> = receipt_rules
+            .into_iter()
             .map(|rule| LoweredRule {
                 rule,
                 vendor: rule.receipt_vendor.to_lowercase(),

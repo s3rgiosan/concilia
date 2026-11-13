@@ -35,11 +35,22 @@ pub(super) fn match_keeping_draft(
 ) -> MatchResult {
     let previous: Option<MatchResult> = read_json_lenient(&paths.match_result());
     let draft: Draft = read_json_lenient(&paths.draft()).unwrap_or_default();
+    match_with_draft(previous.as_ref(), &draft, transactions, receipts, rules)
+}
+
+/// `match_keeping_draft` for a previous match result and draft held in memory.
+pub(super) fn match_with_draft(
+    previous: Option<&MatchResult>,
+    draft: &Draft,
+    transactions: &[StatementTransaction],
+    receipts: &[ReceiptMeta],
+    rules: &[Rule],
+) -> MatchResult {
     let (Some(previous), false) = (previous, draft.is_empty()) else {
         return match_transactions(transactions, receipts, rules);
     };
     let present: HashSet<&str> = receipts.iter().map(|r| r.file.as_str()).collect();
-    let claims: HashMap<String, String> = draft_claims(&previous, &draft)
+    let claims: HashMap<String, String> = draft_claims(previous, draft)
         .into_iter()
         .filter(|(file, _)| present.contains(file.as_str()))
         .collect();

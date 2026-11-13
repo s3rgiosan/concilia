@@ -32,7 +32,8 @@ import {
   type RunHandle,
   type ScanResult,
 } from "../lib/tauri";
-import { deferred, makePeriodStatus, makeReceipt, makeReviewData, makeTransaction } from "../test/fixtures";
+import { ReasonsContext } from "../lib/reasons";
+import { deferred, makePeriodStatus, makeReasons, makeReceipt, makeReviewData, makeTransaction } from "../test/fixtures";
 import type { RejectKind, ReviewAvailability, ReviewCommands } from "../lib/menuCommands";
 import { Review, type ReviewProps } from "./Review";
 
@@ -189,6 +190,8 @@ const openReport = vi.fn();
 const MORE: PopUpAction[] = [{ label: "Open Report", onSelect: openReport }];
 
 /** The review inside a toolbar with the slots the main window gives it. */
+const REASONS = makeReasons();
+
 function Window(props: Omit<ReviewProps, "toolbar" | "period" | "status" | "moreActions"> & Partial<ReviewProps>) {
   const [subtitle, setSubtitle] = useState<HTMLElement | null>(null);
   const [trailing, setTrailing] = useState<HTMLElement | null>(null);
@@ -202,7 +205,9 @@ function Window(props: Omit<ReviewProps, "toolbar" | "period" | "status" | "more
           <div ref={setTrailing} />
         </div>
       </header>
-      <Review period={PERIOD} status="In review · 9 to decide" moreActions={MORE} toolbar={{ subtitle, trailing }} {...props} />
+      <ReasonsContext.Provider value={REASONS}>
+        <Review period={PERIOD} status="In review · 9 to decide" moreActions={MORE} toolbar={{ subtitle, trailing }} {...props} />
+      </ReasonsContext.Provider>
     </>
   );
 }
@@ -618,7 +623,7 @@ describe("details", () => {
     expect(within(details()).queryByRole("button", { name: "None of These" })).toBeNull();
   });
 
-  it("offers income no receipts, its likely categories first", async () => {
+  it("offers the no-receipt reasons in their Settings order", async () => {
     await renderReview();
     fireEvent.click(button("None of These", details()));
     select("HOOLI PAYROLL");
@@ -627,7 +632,7 @@ describe("details", () => {
     expect(within(details()).getByText("No receipts to assign.")).toBeTruthy();
     expect(within(details()).queryByRole("region", { name: /^Preview of/ })).toBeNull();
     fireEvent.click(button("No Receipt Needed", details()));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Transfer", "Salary", "Refund", "Bank Fee", "Other"]);
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Bank Fee", "Salary", "Transfer", "Refund", "Other"]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Bank Fee" }));
     expect(options()[3]).toBe("* No Receipt · Bank Fee4 MarHOOLI PAYROLLEdited+€5,000.00");
     fireEvent.click(button("Needs a Receipt", details()));
@@ -646,6 +651,16 @@ describe("details", () => {
     expect(within(details()).getByText("No receipt needed: Salary")).toBeTruthy();
     expect(button("Needs a Receipt", details())).toBeTruthy();
     expect(within(details()).queryByRole("button", { name: "Remove Match" })).toBeNull();
+  });
+
+  it("names a transaction marked with a deleted reason as Other", async () => {
+    const gone = { ...TX_SALARY, notes: "reason:gone" };
+    vi.mocked(getReview).mockResolvedValue(makeReviewData({ transactions: [gone] }));
+    await renderReview();
+    select("HOOLI PAYROLL");
+    expect(within(details()).getByText("No receipt needed: Other")).toBeTruthy();
+    expect(button("Needs a Receipt", details())).toBeTruthy();
+    expect(options()[0]).toContain("No Receipt · Other");
   });
 
   it("says when every candidate went to another transaction", async () => {
@@ -757,6 +772,36 @@ describe("decisions", () => {
     });
   });
 
+  it("adds a second receipt to a matched transaction and removes one again", async () => {
+    await renderReview();
+    select("ACME CORP");
+    const add = button("Add Receipt…", details());
+    expect(add.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(add);
+    const section = within(details()).getByRole("region", { name: "Add a Receipt" });
+    fireEvent.click(button("Assign INITECH", section));
+    expect(receiptTitles()).toEqual(["ACME", "INITECH"]);
+    expect(within(details()).getByText("Total €40.00")).toBeTruthy();
+    expect(within(details()).getByText("Differs by €30.00")).toBeTruthy();
+    await advance(500);
+    expect(vi.mocked(saveDraft).mock.calls[0][2]).toEqual({
+      "tx-1": { status: "MATCHED", receipt_meta: [stripped(ACME), stripped(INITECH)], receipt_files: [ACME.file, INITECH.file], notes: "manual_match" },
+    });
+
+    fireEvent.click(button("Remove ACME", details()));
+    const held = within(details()).getByRole("region", { name: "Receipt" });
+    expect(within(held).getAllByRole("listitem").map((item) => item.querySelector(".receipt-row__title")?.textContent)).toEqual(["INITECH"]);
+    expect(within(details()).getByRole("button", { name: "Assign ACME" })).toBeTruthy();
+    expect(within(details()).queryByText(/^Total /)).toBeNull();
+    expect(within(details()).queryByRole("button", { name: "Remove INITECH" })).toBeNull();
+  });
+
+  it("offers no Add Receipt for a transaction that needs no receipt", async () => {
+    await renderReview();
+    select("HOOLI PAYROLL");
+    expect(within(details()).queryByRole("button", { name: "Add Receipt…" })).toBeNull();
+  });
+
   it("marks a transaction as needing no receipt", async () => {
     await renderReview();
     select("INITECH SERVICES");
@@ -837,6 +882,20 @@ describe("context menu", () => {
     const banner = screen.getByText("Rule added. It applies the next time Concilia matches receipts.").closest<HTMLElement>(".banner")!;
     fireEvent.click(button("Dismiss", banner));
     expect(screen.queryByText(/Rule added/)).toBeNull();
+  });
+
+  it("adds a no-receipt rule from a decision the user made", async () => {
+    vi.mocked(getRules).mockResolvedValue([]);
+    vi.mocked(saveRules).mockImplementation(async (rules) => rules);
+    await renderReview();
+    select("INITECH SERVICES");
+    pick("No Receipt Needed", "Refund", details());
+    fireEvent.contextMenu(within(list()).getByText("INITECH SERVICES"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Always Mark “INITECH SERVICES” as Refund" }));
+    await settle();
+    expect(saveRules).toHaveBeenCalledWith([
+      { id: expect.any(String), receiptVendor: "", transactionDescription: "INITECH SERVICES", noReceipt: "refund" },
+    ]);
   });
 
   it("does not add a rule that exists", async () => {
@@ -1181,7 +1240,7 @@ describe("toolbar", () => {
   it("shows a finalized month read-only", async () => {
     vi.mocked(periodStatus).mockResolvedValue(makePeriodStatus({ applied: true }));
     const { commands } = await renderReview();
-    expect(within(details()).getByText("This month is finalized. Reconcile it again to change decisions.")).toBeTruthy();
+    expect(within(details()).getByText("This month is finalized. Reopen it to change decisions.")).toBeTruthy();
     expect(within(details()).queryByRole("button", { name: /^Assign / })).toBeNull();
     expect(within(details()).queryByRole("button", { name: "None of These" })).toBeNull();
     expect(within(details()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
@@ -1544,7 +1603,7 @@ describe("finalize", () => {
     const request = lastAlert();
     expect(request.title).toBe("Finalize March 2030?");
     expect(request.message).toContain("4 receipts will be sorted: 1 matched, 2 still to review, and 1 unmatched.");
-    expect(request.message).toContain("To change decisions later, use Reconcile Again.");
+    expect(request.message).toContain("To change decisions later, use Reopen Month.");
     expect(request.message).toContain("2 transactions still need a decision. They will be sorted as they are now.");
     expect(request).toMatchObject({ confirm: "Finalize", cancel: "Cancel", alternate: "Review Remaining" });
     expect(finalize).not.toHaveBeenCalled();

@@ -21,6 +21,7 @@ import {
   periodSummary,
   pickStatements,
   requestAttention,
+  reopenPeriod,
   revealPeriod,
   showAlert,
   setDockProgress,
@@ -58,6 +59,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   periodSummary: vi.fn(),
   pickReceiptsRoot: vi.fn(),
   pickStatements: vi.fn(),
+  reopenPeriod: vi.fn(),
   revealPeriod: vi.fn(),
   requestAttention: vi.fn(),
   saveSettings: vi.fn(),
@@ -156,8 +158,8 @@ const LISTED: PeriodSummary[] = [
 /** The listing with March holding receipts, so a statement is all it needs to reconcile. */
 const READY_LISTED: PeriodSummary[] = [summary("2030", "03", { status: "ready", receipts: 5 }), ...LISTED];
 
-/** Paths dropped onto the window, delivered to the statements drop zone. */
-let dropFiles: (paths: string[]) => void;
+/** Paths dropped onto the window, delivered to the statements drop zone; null until the window listens for drops. */
+let dropFiles: ((paths: string[]) => void) | null;
 let uuid: number;
 
 /** Sets the window width and tells the window it resized. */
@@ -167,6 +169,7 @@ function resizeWindow(width: number) {
 }
 
 beforeEach(() => {
+  dropFiles = null;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2030, 3, 15));
   localStorage.clear();
@@ -217,10 +220,22 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function renderMain(view: AppStateView = makeView()) {
+/**
+ * Renders the main window and waits for its launch reads: the app state and, for a set-up app,
+ * the months listing. With `listing: false` the test settles the listing itself.
+ */
+async function renderMain(view: AppStateView = makeView(), { listing = true }: { listing?: boolean } = {}) {
   vi.mocked(getAppState).mockResolvedValue(view);
+  const before = vi.mocked(listPeriods).mock.results.length;
   const result = render(<Main />);
   await waitFor(() => expect(getAppState).toHaveBeenCalled());
+  if (view.configured && listing) {
+    await waitFor(() => expect(vi.mocked(listPeriods).mock.results.length).toBeGreaterThan(before));
+    const started = vi.mocked(listPeriods).mock.results[before];
+    await act(async () => {
+      await Promise.resolve(started.value).catch(() => undefined);
+    });
+  }
   await act(async () => undefined);
   return result;
 }
@@ -292,9 +307,11 @@ function steps(): string[] {
   return [...document.querySelectorAll(".step")].map((li) => `${li.className.replace("step step--", "")}: ${li.textContent}`);
 }
 
+/** Drops the statement once the statements screen listens for drops, and waits for its row. */
 async function addStatement() {
-  await act(async () => dropFiles([STATEMENT_PATH]));
-  expect(screen.getByText("extrato-2030-03.pdf")).toBeTruthy();
+  await waitFor(() => expect(dropFiles).not.toBeNull());
+  await act(async () => dropFiles?.([STATEMENT_PATH]));
+  expect(await screen.findByText("extrato-2030-03.pdf")).toBeTruthy();
 }
 
 /** Starts a reconcile of one statement for March and returns the run to drive. */
@@ -511,7 +528,7 @@ describe("sidebar", () => {
   it("ignores a listing that arrives after a newer one", async () => {
     const slow = deferred<PeriodSummary[]>();
     vi.mocked(listPeriods).mockReturnValueOnce(slow.promise);
-    await renderMain();
+    await renderMain(makeView(), { listing: false });
     vi.setSystemTime(new Date(2030, 3, 15, 0, 0, 6));
     await act(async () => window.dispatchEvent(new Event("focus")));
     expect(months()).toHaveLength(4);
@@ -522,7 +539,7 @@ describe("sidebar", () => {
   it("shows no month statuses until the months have loaded", async () => {
     const listing = deferred<PeriodSummary[]>();
     vi.mocked(listPeriods).mockReturnValueOnce(listing.promise);
-    await renderMain();
+    await renderMain(makeView(), { listing: false });
     expect(months()).toEqual(["* March\u00a0"]);
     await act(async () => listing.resolve(LISTED));
     expect(months()[0]).toBe("* MarchNo receipts");
@@ -1073,6 +1090,28 @@ describe("app menu", () => {
     expect(openReport).toHaveBeenCalledWith("2030", "02");
     act(() => pushMenu("rerun"));
     expect(showAlert).toHaveBeenCalledWith(expect.objectContaining({ title: "Reconcile February 2030 again?" }));
+  });
+});
+
+describe("reopen", () => {
+  it("reopens a finalized month after the alert and lists the months again", async () => {
+    vi.mocked(showAlert).mockResolvedValue("confirm");
+    vi.mocked(reopenPeriod).mockResolvedValue({ restored: 3, keptDecisions: 1 });
+    await renderMain();
+    selectMonth(/January/);
+    await screen.findByText("Review 2030-01");
+    await act(async () => pushMenu("reopen"));
+    expect(showAlert).toHaveBeenCalledWith(expect.objectContaining({ title: "Reopen January 2030?", confirm: "Reopen" }));
+    expect(reopenPeriod).toHaveBeenCalledWith("2030", "01");
+    expect(listPeriods).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps Reopen Month off for a month in review", async () => {
+    await renderMain();
+    selectMonth(/February/);
+    await screen.findByText("Review 2030-02");
+    await act(async () => pushMenu("reopen"));
+    expect(showAlert).not.toHaveBeenCalled();
   });
 });
 

@@ -82,6 +82,7 @@
     "openReport": "Abrir relatório",
     "reconcile": "Reconciliar",
     "rerun": "Reconciliar novamente…",
+    "reopen": "Reabrir mês…",
     "summary": {
       "transactions_one": "{{count}} transação",
       "transactions_other": "{{count}} transações",
@@ -96,6 +97,11 @@
     "title": "Novo mês",
     "create": "Criar",
     "exists": "{{month}} já está na barra lateral."
+  },
+  "reopen": {
+    "title": "Reabrir {{period}}?",
+    "message": "Os recibos que foram organizados voltam para a pasta de recibos. As suas decisões são mantidas e pode procurar novos recibos.",
+    "confirm": "Reabrir"
   },
   "rerun": {
     "title": "Reconciliar {{period}} novamente?",
@@ -166,7 +172,7 @@
       "review": "Por rever",
       "unmatched": "Sem associação",
       "matched": "Associada",
-      "noReceipt": "Sem recibo · {{category}}"
+      "noReceipt": "Sem recibo · {{reason}}"
     },
     "search": "Pesquisar transações",
     "scan": "Procurar novos recibos",
@@ -210,6 +216,7 @@
     "sections": {
       "candidates": "Recibos sugeridos",
       "assignable": "Recibos sem associação",
+      "addable": "Adicionar um recibo",
       "receipts_one": "Recibo",
       "receipts_other": "Recibos"
     },
@@ -219,7 +226,9 @@
       "removeMatch": "Remover associação",
       "rescan": "Ler novamente",
       "quickLook": "Vista rápida",
-      "needsReceipt": "Precisa de recibo"
+      "needsReceipt": "Precisa de recibo",
+      "addReceipt": "Adicionar recibo…",
+      "remove": "Remover"
     },
     "receiptActions": "Ações para {{name}}",
     "assignReceipt": "Associar {{name}}",
@@ -228,19 +237,15 @@
     "noPreview": "Sem pré-visualização",
     "previewOf": "Pré-visualização de {{name}}",
     "quickLookOf": "Vista rápida de {{name}}",
+    "receiptsTotal": "Total {{amount}}",
+    "removeReceipt": "Remover {{name}}",
     "mismatch": {
       "amount": "Difere em {{amount}}",
       "fx": "Difere em mais de 10% (recibo em {{currency}})"
     },
     "noReceiptMenu": "Recibo dispensado",
-    "noReceiptNeeded": "Recibo dispensado: {{category}}",
-    "noReceiptCategories": {
-      "bankFee": "Comissão bancária",
-      "salary": "Salário",
-      "transfer": "Transferência",
-      "refund": "Reembolso",
-      "noReceipt": "Sem recibo"
-    },
+    "noReceiptNeeded": "Recibo dispensado: {{reason}}",
+    "noReceipts": "Sem recibo",
     "candidatesTaken": "Todos os candidatos foram associados a outra transação.",
     "noCandidates": "Não há recibos para associar.",
     "showAllReceipts": "Mostrar os {{count}} recibos",
@@ -295,7 +300,7 @@
         "unmatched_other": "{{count}} sem associação"
       },
       "report": "O Concilia organiza os recibos em pastas dentro da pasta de recibos deste mês e guarda o relatório Excel.",
-      "later": "Para alterar decisões mais tarde, use Reconciliar novamente.",
+      "later": "Para alterar decisões mais tarde, use Reabrir mês.",
       "refused_one": "{{count}} ficheiro fica na pasta de recibos porque o Concilia não o consegue ler.",
       "refused_other": "{{count}} ficheiros ficam na pasta de recibos porque o Concilia não os consegue ler.",
       "reviewRemaining": "Rever restantes",
@@ -305,11 +310,12 @@
     },
     "resizeDetails": "Redimensionar detalhes",
     "clearSearch": "Limpar pesquisa",
-    "finalizedNote": "Este mês está finalizado. Reconcilie-o novamente para alterar as decisões.",
+    "finalizedNote": "Este mês está finalizado. Reabra-o para alterar as decisões.",
     "finalizedBanner": "{{period}} está finalizado. Os recibos estão organizados e o relatório está pronto.",
     "rule": {
       "alwaysMatch": "Associar sempre “{{vendor}}” a “{{description}}”",
       "added": "Regra adicionada. Aplica-se da próxima vez que o Concilia associar recibos.",
+      "alwaysNoReceipt": "Marcar sempre “{{description}}” como {{reason}}",
       "exists": "Essa regra já existe."
     },
     "loadFailed": "Não foi possível abrir este mês"
@@ -324,7 +330,8 @@
       "general": "Geral",
       "folder": "Pasta",
       "gemini": "Gemini",
-      "rules": "Regras"
+      "rules": "Regras",
+      "reasons": "Motivos"
     },
     "busy": "A pasta e as definições do Gemini não podem ser alteradas enquanto um mês está a ser processado.",
     "readOnly": "Estas definições foram guardadas por uma versão mais recente do Concilia e não podem ser alteradas aqui.",
@@ -376,8 +383,11 @@
     },
     "rules": {
       "title": "Regras de associação",
-      "description": "As regras são aplicadas antes da associação automática. Uma regra associa um recibo a uma transação quando ambas as palavras-chave são encontradas. Maiúsculas e minúsculas são indiferentes.",
+      "description": "As regras são aplicadas antes da associação automática. Uma regra associa um recibo a uma transação quando ambas as palavras-chave são encontradas, ou marca uma transação como não precisando de recibo quando a sua palavra-chave é encontrada. Maiúsculas e minúsculas são indiferentes.",
       "none": "Ainda não há regras.",
+      "kind": "Regra",
+      "kindReceipt": "Associar a um recibo",
+      "kindNoReceipt": "Sem recibo: {{reason}}",
       "receipt": "Palavra-chave do recibo",
       "transaction": "Palavra-chave da transação",
       "receiptPlaceholder": "p. ex. acme",
@@ -385,11 +395,35 @@
       "addRule": "Adicionar regra…",
       "addRuleTitle": "Adicionar regra",
       "deleteRule": "Eliminar regra",
-      "incomplete": "Preencha as duas palavras-chave de todas as regras.",
+      "incomplete": "Preencha todas as palavras-chave da regra.",
       "editRuleTitle": "Editar regra",
       "editRule": "Editar…",
       "removed": "Regra removida.",
       "undoRemove": "Desfazer"
+    },
+    "reasons": {
+      "title": "Motivos sem recibo",
+      "description": "Motivos que pode indicar quando uma transação não precisa de recibo. O menu Recibo dispensado mostra-os por esta ordem. Arraste uma linha, ou prima ⌥↑ ou ⌥↓, para a mover.",
+      "english": "Inglês",
+      "portuguese": "Português",
+      "add": "Adicionar motivo…",
+      "addTitle": "Adicionar motivo",
+      "remove": "Apagar motivo",
+      "edit": "Editar…",
+      "editTitle": "Editar motivo",
+      "otherKept": "Este motivo não pode ser apagado.",
+      "nameEn": "Nome em inglês",
+      "namePt": "Nome em português",
+      "namePlaceholderEn": "p. ex. Bank Fee",
+      "namePlaceholderPt": "p. ex. Comissão bancária",
+      "fallback": "Um nome em branco mostra o nome na outra língua.",
+      "duplicate": "Já existe um motivo com este nome.",
+      "empty": "Introduza um nome em pelo menos uma língua.",
+      "removeTitle": "Apagar “{{name}}”?",
+      "removeMessage": "As transações marcadas com este motivo vão aparecer como “{{other}}”.",
+      "removeMessageRules_one": "{{count}} regra usa este motivo. A regra e as transações marcadas com este motivo vão aparecer como “{{other}}”.",
+      "removeMessageRules_other": "{{count}} regras usam este motivo. As regras e as transações marcadas com este motivo vão aparecer como “{{other}}”.",
+      "removeConfirm": "Apagar"
     }
   },
   "update": {
@@ -410,7 +444,7 @@
     "network": "O Concilia não consegue contactar a Google. Verifique a ligação à Internet e tente novamente.",
     "poppler_missing": "Faltam as ferramentas de PDF de que o Concilia precisa. Reinstale o Concilia.",
     "parse": "O Concilia não conseguiu ler o extrato. Verifique se pertence ao banco selecionado.",
-    "finalized": "Este mês está finalizado. Reconcilie-o novamente para procurar recibos.",
+    "finalized": "Este mês está finalizado. Reabra-o para procurar recibos.",
     "cancelled": "Reconciliação interrompida.",
     "timeout": "A reconciliação demorou mais de 30 minutos e foi interrompida. Tente novamente.",
     "read_only": "As definições foram guardadas por uma versão mais recente do Concilia e são só de leitura.",
@@ -420,6 +454,7 @@
     "codes": {
       "no_transactions": "Adicione um extrato bancário a este mês e reconcilie-o.",
       "not_reconciled": "Este mês ainda não foi reconciliado. Reconcilie-o primeiro.",
+      "not_finalized": "Este mês não está finalizado, por isso não há nada para reabrir.",
       "no_bank_match": "O Concilia não encontrou transações nos extratos. Verifique o banco selecionado para cada extrato.",
       "not_pdf": "Só é possível adicionar extratos em PDF.",
       "file_missing": "O ficheiro do recibo já não está na pasta de recibos.",
@@ -482,17 +517,13 @@
     "reconcile": "Reconciliar",
     "scan": "Procurar novos recibos",
     "rerun": "Reconciliar novamente…",
+    "reopen": "Reabrir mês…",
     "finalize": "Finalizar…",
     "accept": "Associar recibo",
     "reject": "Remover associação",
     "reject_review": "Nenhum destes",
     "reject_no_receipt": "Precisa de recibo",
     "no_receipt": "Recibo dispensado",
-    "no_receipt_bank_fee": "Comissão bancária",
-    "no_receipt_salary": "Salário",
-    "no_receipt_transfer": "Transferência",
-    "no_receipt_refund": "Reembolso",
-    "no_receipt_no_receipt": "Outro",
     "rescan": "Ler recibo novamente",
     "quick_look": "Vista rápida",
     "open_in_preview": "Abrir na Pré-visualização",

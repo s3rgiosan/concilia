@@ -16,6 +16,7 @@ import {
   pickReceiptsRoot,
   popplerStatus,
   removeServiceAccount,
+  saveReasons,
   saveRules,
   saveSettings,
   showAlert,
@@ -26,7 +27,8 @@ import {
   type Settings as SettingsData,
   type UpdateProgress,
 } from "../lib/tauri";
-import { ACCOUNT, deferred, makeRule, makeSettings, makeView } from "../test/fixtures";
+import { ACCOUNT, deferred, makeReasons, makeRule, makeSettings, makeView } from "../test/fixtures";
+import { moveReason } from "./ReasonsTab";
 import { Settings } from "./Settings";
 
 vi.mock("../lib/tauri", async (importOriginal) => ({
@@ -45,6 +47,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   pickReceiptsRoot: vi.fn(),
   popplerStatus: vi.fn(),
   removeServiceAccount: vi.fn(),
+  saveReasons: vi.fn(),
   saveRules: vi.fn(),
   saveSettings: vi.fn(),
   showAlert: vi.fn(),
@@ -83,6 +86,7 @@ beforeEach(() => {
   vi.mocked(popplerStatus).mockResolvedValue({ version: "24.02.0", bundled: true });
   vi.mocked(getRules).mockResolvedValue([]);
   vi.mocked(saveRules).mockImplementation((rules) => Promise.resolve(rules));
+  vi.mocked(saveReasons).mockImplementation((reasons) => Promise.resolve({ ...current, reasons }));
 });
 
 afterEach(async () => {
@@ -156,7 +160,7 @@ describe("Settings window", () => {
     vi.mocked(setWindowSize).mockResolvedValue(undefined);
     try {
       await renderSettings();
-      expect(setWindowSize).toHaveBeenCalledWith(640, 240);
+      expect(setWindowSize).toHaveBeenCalledWith(640, 260);
       expect(notify).toBeTypeOf("function");
     } finally {
       vi.unstubAllGlobals();
@@ -200,7 +204,7 @@ describe("Settings window", () => {
   it("lists the panes in order", async () => {
     await renderSettings();
     const tabs = within(screen.getByRole("tablist", { name: "Settings" })).getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Folder", "Gemini", "Rules", "General"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["Folder", "Gemini", "Rules", "Reasons", "General"]);
   });
 
   it("opens on Folder and switches panes", async () => {
@@ -835,14 +839,14 @@ describe("Rules pane", () => {
 
     fireEvent.change(sheetInput("Receipt keyword"), { target: { value: " initech " } });
     expect(add.disabled).toBe(true);
-    expect(within(sheet).queryByText("Fill in both keywords of every rule.")).toBeNull();
+    expect(within(sheet).queryByText("Fill in every keyword of the rule.")).toBeNull();
 
     fireEvent.keyDown(sheetInput("Receipt keyword"), { key: "Enter" });
-    expect(within(sheet).getByText("Fill in both keywords of every rule.")).toBeTruthy();
+    expect(within(sheet).getByText("Fill in every keyword of the rule.")).toBeTruthy();
 
     fireEvent.change(sheetInput("Transaction keyword"), { target: { value: "initech llc " } });
     expect(add.disabled).toBe(false);
-    expect(within(sheet).queryByText("Fill in both keywords of every rule.")).toBeNull();
+    expect(within(sheet).queryByText("Fill in every keyword of the rule.")).toBeNull();
 
     fireEvent.click(add);
     expect(saveRules).toHaveBeenCalledWith([
@@ -858,14 +862,14 @@ describe("Rules pane", () => {
     await renderRules();
     fireEvent.click(button("Add Rule…"));
     fireEvent.change(sheetInput("Receipt keyword"), { target: { value: "   " } });
-    expect(screen.queryByText("Fill in both keywords of every rule.")).toBeNull();
+    expect(screen.queryByText("Fill in every keyword of the rule.")).toBeNull();
   });
 
   it("warns when Return is pressed with both keywords empty", async () => {
     await renderRules();
     fireEvent.click(button("Add Rule…"));
     fireEvent.keyDown(sheetInput("Transaction keyword"), { key: "Enter" });
-    expect(screen.getByText("Fill in both keywords of every rule.")).toBeTruthy();
+    expect(screen.getByText("Fill in every keyword of the rule.")).toBeTruthy();
   });
 
   it("cancels adding a rule", async () => {
@@ -894,6 +898,37 @@ describe("Rules pane", () => {
     fireEvent.keyDown(rows()[0], { key: "Enter" });
     expect(screen.getByRole("dialog", { name: "Edit Rule" })).toBeTruthy();
     expect(sheetInput("Receipt keyword").value).toBe("acme");
+  });
+
+  it("adds a no-receipt rule with only a transaction keyword", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000003");
+    await renderRules();
+    fireEvent.click(button("Add Rule…"));
+    const sheet = screen.getByRole("dialog", { name: "Add Rule" });
+    fireEvent.change(within(sheet).getByLabelText("Rule"), { target: { value: "transfer" } });
+    expect(within(sheet).queryByLabelText("Receipt keyword")).toBeNull();
+    const add = within(sheet).getByRole("button", { name: "Add" }) as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+
+    fireEvent.change(sheetInput("Transaction keyword"), { target: { value: " trf mbway " } });
+    expect(add.disabled).toBe(false);
+    fireEvent.click(add);
+    expect(saveRules).toHaveBeenCalledWith([
+      ...rules,
+      { id: "00000000-0000-4000-8000-000000000003", receiptVendor: "", transactionDescription: "trf mbway", noReceipt: "transfer" },
+    ]);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(rows()[2].textContent).toBe("No receipt: Transfertrf mbway");
+  });
+
+  it("opens a no-receipt rule with its category chosen", async () => {
+    await renderRules([makeRule({ id: "rule-3", receiptVendor: "", transactionDescription: "juros", noReceipt: "bank_fee" })]);
+    expect(rows()[0].textContent).toBe("No receipt: Bank Feejuros");
+    fireEvent.doubleClick(rows()[0]);
+    const sheet = screen.getByRole("dialog", { name: "Edit Rule" });
+    expect((within(sheet).getByLabelText("Rule") as HTMLSelectElement).value).toBe("bank_fee");
+    expect(within(sheet).queryByLabelText("Receipt keyword")).toBeNull();
+    expect(sheetInput("Transaction keyword").value).toBe("juros");
   });
 
   it("gives an edited rule without an id a new one", async () => {
@@ -1043,5 +1078,148 @@ describe("Rules pane", () => {
     await renderSettings(makeView(), "rules");
     expect((await screen.findByRole("alert")).textContent).toContain("Details: match-rules.json");
     expect(screen.queryByRole("grid")).toBeNull();
+  });
+});
+
+describe("Reasons pane", () => {
+  function rows(): HTMLElement[] {
+    return within(screen.getByRole("grid", { name: "No-receipt reasons" })).getAllByRole("row").slice(1);
+  }
+
+  async function renderReasons(view = makeView()) {
+    await renderSettings(view, "reasons");
+    await screen.findByRole("region", { name: "No-receipt reasons" });
+  }
+
+  function sheetInput(label: string): HTMLInputElement {
+    return within(screen.getByRole("dialog")).getByLabelText(label) as HTMLInputElement;
+  }
+
+  /** The reasons passed to the last `saveReasons` call. */
+  function lastReasons() {
+    const calls = vi.mocked(saveReasons).mock.calls;
+    return calls[calls.length - 1][0];
+  }
+
+  it("lists each reason's English and Portuguese names in menu order", async () => {
+    const reasons = [...makeReasons()];
+    reasons.splice(4, 0, { id: "reason:lunch", names: { en: "Team Lunch", pt: "" } });
+    await renderReasons(makeView({ reasons }));
+    expect(rows().map((row) => row.textContent)).toEqual([
+      "Bank FeeComissão bancária",
+      "SalarySalário",
+      "TransferTransferência",
+      "RefundReembolso",
+      "Team LunchTeam Lunch",
+      "OtherOutro",
+    ]);
+    expect(within(rows()[4]).getAllByRole("gridcell")[1].className).toBe("reasons__fallback");
+  });
+
+  it("adds a reason before Other with a new id and trimmed names", async () => {
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000009");
+    await renderReasons();
+    fireEvent.click(button("Add Reason…"));
+    const sheet = screen.getByRole("dialog", { name: "Add Reason" });
+    const add = within(sheet).getByRole("button", { name: "Add" }) as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.change(sheetInput("Name in English"), { target: { value: " Team Lunch " } });
+    expect(add.disabled).toBe(false);
+    fireEvent.click(add);
+    const saved = lastReasons();
+    expect(saved.map((r) => r.id)).toEqual(["bank_fee", "salary", "transfer", "refund", "reason:00000000-0000-4000-8000-000000000009", "no_receipt"]);
+    expect(saved[4].names).toEqual({ en: "Team Lunch", pt: "" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(rows()[4].textContent).toBe("Team LunchTeam Lunch");
+  });
+
+  it("refuses a name another reason has, in either language", async () => {
+    await renderReasons();
+    fireEvent.click(button("Add Reason…"));
+    fireEvent.change(sheetInput("Name in Portuguese"), { target: { value: "salário" } });
+    expect(screen.getByText("Another reason has this name.")).toBeTruthy();
+    expect((within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renames a reason and keeps its id", async () => {
+    await renderReasons();
+    fireEvent.doubleClick(rows()[0]);
+    expect(sheetInput("Name in English").value).toBe("Bank Fee");
+    fireEvent.change(sheetInput("Name in English"), { target: { value: "Bank Charges" } });
+    fireEvent.submit(screen.getByRole("dialog"));
+    expect(lastReasons()[0]).toEqual({ id: "bank_fee", names: { en: "Bank Charges", pt: "Comissão bancária" } });
+  });
+
+  it("keeps Other: it cannot be deleted", async () => {
+    await renderReasons();
+    fireEvent.click(rows()[4]);
+    expect(button("Delete Reason").disabled).toBe(true);
+    fireEvent.keyDown(rows()[4], { key: "Backspace" });
+    expect(showAlert).not.toHaveBeenCalled();
+  });
+
+  it("asks before deleting a reason and counts the rules that use it", async () => {
+    vi.mocked(getRules).mockResolvedValue([
+      makeRule({ id: "rule-1", receiptVendor: "", transactionDescription: "trf", noReceipt: "transfer" }),
+      makeRule({ id: "rule-2", receiptVendor: "", transactionDescription: "mbway", noReceipt: "transfer" }),
+    ]);
+    vi.mocked(showAlert).mockResolvedValue("confirm");
+    await renderReasons();
+    fireEvent.click(rows()[2]);
+    fireEvent.click(button("Delete Reason"));
+    await waitFor(() => expect(saveReasons).toHaveBeenCalled());
+    expect(showAlert).toHaveBeenCalledWith({
+      title: "Delete “Transfer”?",
+      message: "2 rules use this reason. The rules and the transactions marked with this reason will show as “Other”.",
+      confirm: "Delete",
+      cancel: "Cancel",
+    });
+    expect(lastReasons().map((r) => r.id)).toEqual(["bank_fee", "salary", "refund", "no_receipt"]);
+  });
+
+  it("keeps the reason when the alert is cancelled", async () => {
+    vi.mocked(showAlert).mockResolvedValue("cancel");
+    await renderReasons();
+    fireEvent.click(rows()[1]);
+    fireEvent.click(button("Delete Reason"));
+    await waitFor(() => expect(showAlert).toHaveBeenCalled());
+    expect(vi.mocked(showAlert).mock.calls[0][0].message).toBe("Transactions marked with this reason will show as “Other”.");
+    expect(saveReasons).not.toHaveBeenCalled();
+  });
+
+  it("moves a row with Option and the arrow keys", async () => {
+    await renderReasons();
+    fireEvent.keyDown(rows()[0], { key: "ArrowDown", altKey: true });
+    expect(lastReasons().map((r) => r.id)).toEqual(["salary", "bank_fee", "transfer", "refund", "no_receipt"]);
+  });
+
+  it("does not move the first row up", async () => {
+    await renderReasons();
+    fireEvent.keyDown(rows()[0], { key: "ArrowUp", altKey: true });
+    expect(saveReasons).not.toHaveBeenCalled();
+  });
+
+  it("moves a reason into a gap between rows", () => {
+    const ids = (from: number, to: number) => moveReason(makeReasons(), from, to).map((r) => r.id);
+    expect(ids(0, 2)).toEqual(["salary", "bank_fee", "transfer", "refund", "no_receipt"]);
+    expect(ids(4, 0)).toEqual(["no_receipt", "bank_fee", "salary", "transfer", "refund"]);
+    expect(ids(1, 5)).toEqual(["bank_fee", "transfer", "refund", "no_receipt", "salary"]);
+  });
+
+  it("offers the reasons as rule kinds in the Rules pane", async () => {
+    const reasons = [{ id: "reason:lunch", names: { en: "Team Lunch", pt: "Almoço" } }, ...makeReasons()];
+    await renderSettings(makeView({ reasons }), "rules");
+    await screen.findByRole("region", { name: "Match rules" });
+    fireEvent.click(button("Add Rule…"));
+    const kinds = within(screen.getByRole("dialog")).getByLabelText("Rule") as HTMLSelectElement;
+    expect(Array.from(kinds.options).map((o) => o.textContent)).toEqual([
+      "Match a receipt",
+      "No receipt: Team Lunch",
+      "No receipt: Bank Fee",
+      "No receipt: Salary",
+      "No receipt: Transfer",
+      "No receipt: Refund",
+      "No receipt: Other",
+    ]);
   });
 });

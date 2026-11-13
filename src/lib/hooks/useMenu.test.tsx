@@ -7,6 +7,7 @@ import menuSource from "../../../src-tauri/src/menu.rs?raw";
 import { REVIEW_COMMANDS, type RejectKind, type ReviewAvailability, type ReviewCommands } from "../menuCommands";
 import { createReviewMenuStore } from "../reviewMenu";
 import { onMenu, setMenu, setMenuItemText, setMenuState } from "../tauri";
+import { makeReasons } from "../../test/fixtures";
 import { menuEnabled, useMenu, type MenuActions, type MenuModel } from "./useMenu";
 
 vi.mock("../tauri", async (importOriginal) => ({
@@ -22,6 +23,8 @@ vi.mock("../preview", () => ({ isPreview: () => mocks.preview }));
 
 let choose: (id: string) => void;
 
+const REASONS = [...makeReasons(), { id: "reason:lunch", names: { en: "Team Lunch", pt: "" } }];
+
 function availability(value: boolean): ReviewAvailability {
   return Object.fromEntries(REVIEW_COMMANDS.map((command) => [command, value])) as ReviewAvailability;
 }
@@ -36,6 +39,7 @@ const STATEMENTS_SCREEN: TestModel = {
   acceptsStatements: true,
   canReconcile: true,
   hasResult: false,
+  finalized: false,
   running: false,
   reviewCan: null,
 };
@@ -56,6 +60,7 @@ function makeActions(): { [K in keyof MenuActions]: ReturnType<typeof vi.fn> } {
     addStatements: vi.fn(),
     reconcile: vi.fn(),
     rerun: vi.fn(),
+    reopen: vi.fn(),
     openReport: vi.fn(),
     revealPeriod: vi.fn(),
     toggleSidebar: vi.fn(),
@@ -100,7 +105,7 @@ function setup(model: TestModel, commands: ReviewCommands | null = null) {
     ({ m }: { m: TestModel }) => {
       const { reviewCan, rejectKind, ...rest } = m;
       void rejectKind;
-      return useMenu({ ...rest, reviewShown: reviewCan !== null }, actions as unknown as MenuActions, ref, review);
+      return useMenu({ ...rest, reviewShown: reviewCan !== null }, actions as unknown as MenuActions, ref, review, REASONS);
     },
     { initialProps: { m: model } },
   );
@@ -207,6 +212,17 @@ describe("labels", () => {
     });
   });
 
+  it("sends the reasons in the menu's language", async () => {
+    await i18n.changeLanguage("pt");
+    setup(STATEMENTS_SCREEN);
+    await flush();
+    const calls = vi.mocked(setMenu).mock.calls;
+    const reasons = calls[calls.length - 1][1];
+    expect(reasons[0]).toEqual({ id: "bank_fee", label: "Comissão bancária" });
+    expect(reasons).toContainEqual({ id: "reason:lunch", label: "Team Lunch" });
+    expect(reasons.map((r) => r.id)).toEqual(REASONS.map((r) => r.id));
+  });
+
   it("sends the labels again when the language changes", async () => {
     setup(STATEMENTS_SCREEN);
     await flush();
@@ -268,10 +284,10 @@ describe("labels", () => {
     const review = createReviewMenuStore();
     review.setCan(availability(false));
     const ref = createRef<ReviewCommands | null>() as RefObject<ReviewCommands | null>;
-    const inputs = { configured: true, sidebarShown: true, acceptsStatements: false, canReconcile: false, hasResult: true, running: false, reviewShown: true };
+    const inputs = { configured: true, sidebarShown: true, acceptsStatements: false, canReconcile: false, hasResult: true, finalized: false, running: false, reviewShown: true };
     renderHook(() => {
       renders += 1;
-      useMenu(inputs, makeActions() as unknown as MenuActions, ref, review);
+      useMenu(inputs, makeActions() as unknown as MenuActions, ref, review, REASONS);
     });
     await flush();
     expect(lastState()).toMatchObject({ accept: false });
@@ -328,7 +344,6 @@ describe("enabled items", () => {
       find: false,
       filter_pending: false,
       filter_all: false,
-      no_receipt_salary: false,
     });
   });
 
@@ -369,6 +384,12 @@ describe("enabled items", () => {
     expect(menuEnabled({ ...REVIEW_SCREEN, running: true }).rerun).toBe(false);
   });
 
+  it("enables Reopen Month only for a finalized month with no run going", () => {
+    expect(menuEnabled(REVIEW_SCREEN).reopen).toBe(false);
+    expect(menuEnabled({ ...REVIEW_SCREEN, finalized: true }).reopen).toBe(true);
+    expect(menuEnabled({ ...REVIEW_SCREEN, finalized: true, running: true }).reopen).toBe(false);
+  });
+
   it("enables Add Statements… in a review that can take statements", () => {
     expect(menuEnabled(REVIEW_SCREEN).add_statements).toBe(true);
     expect(menuEnabled({ ...REVIEW_SCREEN, reviewCan: { ...availability(true), addStatements: false } }).add_statements).toBe(false);
@@ -400,11 +421,12 @@ describe("routing", () => {
   it.each([
     ["new_month", "newMonth"],
     ["rerun", "rerun"],
+    ["reopen", "reopen"],
     ["open_report", "openReport"],
     ["reveal_period", "revealPeriod"],
     ["toggle_sidebar", "toggleSidebar"],
   ] as const)("sends %s to the main window", async (id, action) => {
-    const { actions } = setup({ ...REVIEW_SCREEN }, makeCommands());
+    const { actions } = setup({ ...REVIEW_SCREEN, finalized: true }, makeCommands());
     await flush();
     act(() => choose(id));
     expect(actions[action]).toHaveBeenCalledTimes(1);
@@ -455,11 +477,9 @@ describe("routing", () => {
     ["filter_pending", "setFilter", ["pending"]],
     ["filter_matched", "setFilter", ["matched"]],
     ["filter_all", "setFilter", ["all"]],
-    ["no_receipt_bank_fee", "noReceipt", ["bank_fee"]],
     ["no_receipt_salary", "noReceipt", ["salary"]],
-    ["no_receipt_transfer", "noReceipt", ["transfer"]],
-    ["no_receipt_refund", "noReceipt", ["refund"]],
     ["no_receipt_no_receipt", "noReceipt", ["no_receipt"]],
+    ["no_receipt_reason:lunch", "noReceipt", ["reason:lunch"]],
   ] as const)("sends %s to the review", async (id, command, args) => {
     const commands = makeCommands();
     setup(REVIEW_SCREEN, commands);

@@ -62,6 +62,7 @@ fn rule(id: &str, receipt_vendor: &str, transaction_description: &str) -> Rule {
         id: id.to_string(),
         receipt_vendor: receipt_vendor.to_string(),
         transaction_description: transaction_description.to_string(),
+        no_receipt: None,
     }
 }
 
@@ -710,6 +711,72 @@ fn filename_matches_eur_receipt_when_amount_equals_exactly() {
 }
 
 // matchTransactions > custom rules (Pass 0)
+
+fn no_receipt_rule(id: &str, description: &str, reason: &str) -> Rule {
+    Rule {
+        no_receipt: Some(reason.to_string()),
+        ..rule(id, "", description)
+    }
+}
+
+#[test]
+fn a_no_receipt_rule_matches_the_description_without_a_receipt() {
+    let rules = [no_receipt_rule("1", "trf", "transfer")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "TRF P2P ACME", -1100)],
+        &[eur("/r/acme.pdf", 1100)],
+        &rules,
+    );
+    let t = &result.transactions[0];
+    assert_eq!(t.status, Status::Matched);
+    assert_eq!(t.notes, "transfer");
+    assert!(t.receipt_files.is_empty());
+    assert_eq!(
+        result.receipts_by_status.unmatched,
+        strings(&["/r/acme.pdf"])
+    );
+}
+
+#[test]
+fn a_no_receipt_rule_takes_priority_over_bank_fees_and_receipt_rules() {
+    let rules = [
+        rule("1", "acme", "juros"),
+        no_receipt_rule("2", "juros", "salary"),
+    ];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "JUROS CREDORES", 1100)],
+        &[with_vendor(eur("/r/acme.pdf", 1100), "Acme")],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].status, Status::Matched);
+    assert_eq!(result.transactions[0].notes, "salary");
+}
+
+#[test]
+fn the_first_matching_no_receipt_rule_wins() {
+    let rules = [
+        no_receipt_rule("1", "mbway", "transfer"),
+        no_receipt_rule("2", "mbway hooli", "refund"),
+    ];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "MBWAY HOOLI", 500)],
+        &[],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].notes, "transfer");
+}
+
+#[test]
+fn a_no_receipt_rule_without_a_match_leaves_the_other_passes_alone() {
+    let rules = [no_receipt_rule("1", "trf", "transfer")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "HOOLI", -1100)],
+        &[eur("/r/hooli.pdf", 1100)],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].status, Status::Matched);
+    assert_eq!(result.transactions[0].notes, "name_amount_match");
+}
 
 #[test]
 fn matches_via_rule_when_vendor_and_description_keywords_match() {

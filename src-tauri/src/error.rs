@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::bank::UnknownBank;
-use crate::config::{ConfigError, InvalidRule};
+use crate::config::{ConfigError, InvalidReason, InvalidRule};
 use crate::gemini::client::{GeminiError, InvalidSetting};
 use crate::locks::Busy;
 use crate::period::InvalidPeriod;
@@ -93,6 +93,7 @@ macro_rules! kind_from {
 kind_from! {
     InvalidPeriod => ErrorKind::InvalidInput,
     InvalidRule => ErrorKind::InvalidInput,
+    InvalidReason => ErrorKind::InvalidInput,
     UnknownBank => ErrorKind::InvalidInput,
     Busy => ErrorKind::Busy,
     SecretError => ErrorKind::Keychain,

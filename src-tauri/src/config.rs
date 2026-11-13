@@ -1,4 +1,5 @@
-//! `config.json` (settings) and `rules.json` (match rules) in the app's config folder.
+//! `config.json` (settings), `rules.json` (match rules) and `reasons.json` (no-receipt reasons)
+//! in the app's config folder.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,14 +11,19 @@ use crate::fsutil::write_json;
 use crate::gemini::client::{
     check_location, check_model, check_project, InvalidSetting, DEFAULT_LOCATION, DEFAULT_MODEL,
 };
-use crate::model::{Language, Rule};
+use crate::model::{
+    default_reasons, is_reason_id, Language, Reason, ReasonNames, Rule, CUSTOM_REASON_PREFIX,
+    OTHER_REASON, SHIPPED_REASONS,
+};
 
 const SCHEMA_VERSION: u32 = 1;
 pub const FILE_NAME: &str = "config.json";
 pub const RULES_FILE_NAME: &str = "rules.json";
+pub const REASONS_FILE_NAME: &str = "reasons.json";
 /// Debug builds use their own files so they never touch a release build's settings.
 pub const DEV_FILE_NAME: &str = "config.dev.json";
 pub const DEV_RULES_FILE_NAME: &str = "rules.dev.json";
+pub const DEV_REASONS_FILE_NAME: &str = "reasons.dev.json";
 
 /// Which Google Cloud project, region and model reads the receipts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,7 +239,7 @@ pub struct RulesStore {
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-#[error("rule {index}: both the receipt vendor and the transaction description are required")]
+#[error("rule {index}: the transaction description and a receipt vendor or a known no-receipt reason are required")]
 pub struct InvalidRule {
     pub index: usize,
 }
@@ -257,16 +263,30 @@ impl RulesStore {
         &self.rules
     }
 
-    /// Trims and checks the rules, then saves them.
-    pub fn replace(&mut self, rules: Vec<Rule>) -> Result<Result<(), InvalidRule>, ConfigError> {
+    /// Trims and checks the rules, then saves them. A no-receipt rule must name one of `reasons`.
+    pub fn replace(
+        &mut self,
+        rules: Vec<Rule>,
+        reasons: &[Reason],
+    ) -> Result<Result<(), InvalidRule>, ConfigError> {
         let mut cleaned = Vec::with_capacity(rules.len());
         for (index, rule) in rules.into_iter().enumerate() {
+            // A no-receipt rule matches on the description alone, so it keeps no vendor.
+            let receipt_vendor = match rule.no_receipt {
+                Some(_) => String::new(),
+                None => rule.receipt_vendor.trim().to_string(),
+            };
             let rule = Rule {
                 id: rule.id.trim().to_string(),
-                receipt_vendor: rule.receipt_vendor.trim().to_string(),
+                receipt_vendor,
                 transaction_description: rule.transaction_description.trim().to_string(),
+                no_receipt: rule.no_receipt,
             };
-            if rule.receipt_vendor.is_empty() || rule.transaction_description.is_empty() {
+            let valid = match &rule.no_receipt {
+                Some(id) => reasons.iter().any(|r| &r.id == id),
+                None => !rule.receipt_vendor.is_empty(),
+            };
+            if rule.transaction_description.is_empty() || !valid {
                 return Ok(Err(InvalidRule { index }));
             }
             cleaned.push(rule);
@@ -275,6 +295,94 @@ impl RulesStore {
         self.rules = cleaned;
         Ok(Ok(()))
     }
+}
+
+/// Owns `reasons.json`. Without the file, the store holds the shipped reasons.
+#[derive(Debug)]
+pub struct ReasonsStore {
+    path: PathBuf,
+    reasons: Vec<Reason>,
+}
+
+/// Why a list of reasons cannot be saved.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidReason {
+    #[error("reason {index}: the id is not a shipped reason or a custom reason, or it repeats")]
+    Id { index: usize },
+    #[error("reason {index}: a name in at least one language is required")]
+    Name { index: usize },
+    #[error("reason {index}: another reason has the same name")]
+    DuplicateName { index: usize },
+    #[error("the Other reason cannot be removed")]
+    OtherMissing,
+}
+
+impl ReasonsStore {
+    pub fn load(path: &Path) -> Result<ReasonsStore, ConfigError> {
+        Ok(ReasonsStore {
+            path: path.to_path_buf(),
+            reasons: load_or_recover(path)?.unwrap_or_else(default_reasons),
+        })
+    }
+
+    pub fn in_memory(reasons: Vec<Reason>) -> ReasonsStore {
+        ReasonsStore {
+            path: PathBuf::new(),
+            reasons,
+        }
+    }
+
+    pub fn reasons(&self) -> &[Reason] {
+        &self.reasons
+    }
+
+    /// Trims and checks the reasons, then saves them in the given order.
+    pub fn replace(
+        &mut self,
+        reasons: Vec<Reason>,
+    ) -> Result<Result<(), InvalidReason>, ConfigError> {
+        let cleaned: Vec<Reason> = reasons
+            .into_iter()
+            .map(|reason| Reason {
+                id: reason.id.trim().to_string(),
+                names: ReasonNames {
+                    en: reason.names.en.trim().to_string(),
+                    pt: reason.names.pt.trim().to_string(),
+                },
+            })
+            .collect();
+        if let Err(invalid) = check_reasons(&cleaned) {
+            return Ok(Err(invalid));
+        }
+        save(&self.path, &cleaned)?;
+        self.reasons = cleaned;
+        Ok(Ok(()))
+    }
+}
+
+fn check_reasons(reasons: &[Reason]) -> Result<(), InvalidReason> {
+    let mut ids = std::collections::HashSet::new();
+    let mut names = std::collections::HashSet::new();
+    for (index, reason) in reasons.iter().enumerate() {
+        let known = SHIPPED_REASONS.contains(&reason.id.as_str())
+            || (reason.id.starts_with(CUSTOM_REASON_PREFIX) && is_reason_id(&reason.id));
+        if !known || !ids.insert(reason.id.as_str()) {
+            return Err(InvalidReason::Id { index });
+        }
+        if reason.names.en.is_empty() && reason.names.pt.is_empty() {
+            return Err(InvalidReason::Name { index });
+        }
+        for language in [Language::En, Language::Pt] {
+            let name = reason.names.get(language).to_lowercase();
+            if !names.insert((language, name)) {
+                return Err(InvalidReason::DuplicateName { index });
+            }
+        }
+    }
+    if !ids.contains(OTHER_REASON) {
+        return Err(InvalidReason::OtherMissing);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -286,6 +394,7 @@ mod tests {
             id: "r1".into(),
             receipt_vendor: vendor.into(),
             transaction_description: description.into(),
+            no_receipt: None,
         }
     }
 
@@ -399,14 +508,14 @@ mod tests {
 
         assert_eq!(
             store
-                .replace(vec![rule("ACME", "ACME"), rule("  ", "X")])
+                .replace(vec![rule("ACME", "ACME"), rule("  ", "X")], &[])
                 .unwrap(),
             Err(InvalidRule { index: 1 })
         );
         assert!(store.rules().is_empty());
 
         store
-            .replace(vec![rule(" ACME ", " ACME CORP ")])
+            .replace(vec![rule(" ACME ", " ACME CORP ")], &[])
             .unwrap()
             .unwrap();
         let reloaded = RulesStore::load(&path).unwrap();
@@ -414,5 +523,108 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(json[0]["receiptVendor"], "ACME");
+    }
+
+    #[test]
+    fn no_receipt_rules_drop_the_vendor_and_need_a_description() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = RulesStore::load(&dir.path().join(RULES_FILE_NAME)).unwrap();
+        let reasons = default_reasons();
+        let no_receipt = |vendor: &str, description: &str| Rule {
+            no_receipt: Some("transfer".into()),
+            ..rule(vendor, description)
+        };
+
+        assert_eq!(
+            store.replace(vec![no_receipt("", "  ")], &reasons).unwrap(),
+            Err(InvalidRule { index: 0 })
+        );
+        store
+            .replace(vec![no_receipt(" ACME ", " TRF ")], &reasons)
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.rules(), [no_receipt("", "TRF")]);
+    }
+
+    #[test]
+    fn no_receipt_rules_need_a_known_reason() {
+        let mut store = RulesStore::in_memory(Vec::new());
+        let unknown = Rule {
+            no_receipt: Some("reason:gone".into()),
+            ..rule("", "TRF")
+        };
+        assert_eq!(
+            store.replace(vec![unknown], &default_reasons()).unwrap(),
+            Err(InvalidRule { index: 0 })
+        );
+    }
+
+    fn reason(id: &str, en: &str, pt: &str) -> Reason {
+        Reason {
+            id: id.into(),
+            names: ReasonNames {
+                en: en.into(),
+                pt: pt.into(),
+            },
+        }
+    }
+
+    #[test]
+    fn a_missing_reasons_file_starts_with_the_shipped_reasons() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ReasonsStore::load(&dir.path().join(REASONS_FILE_NAME)).unwrap();
+        assert_eq!(store.reasons(), default_reasons());
+    }
+
+    #[test]
+    fn reasons_are_trimmed_saved_and_reloaded_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(REASONS_FILE_NAME);
+        let mut store = ReasonsStore::load(&path).unwrap();
+        let reasons = vec![
+            reason(" reason:a ", " Lunch ", ""),
+            reason(OTHER_REASON, "Other", "Outro"),
+        ];
+        store.replace(reasons).unwrap().unwrap();
+        let reloaded = ReasonsStore::load(&path).unwrap();
+        assert_eq!(
+            reloaded.reasons(),
+            [
+                reason("reason:a", "Lunch", ""),
+                reason(OTHER_REASON, "Other", "Outro")
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_reasons_are_refused() {
+        let mut store = ReasonsStore::in_memory(default_reasons());
+        let other = reason(OTHER_REASON, "Other", "Outro");
+        let cases = [
+            (
+                vec![reason("lunch", "Lunch", ""), other.clone()],
+                InvalidReason::Id { index: 0 },
+            ),
+            (
+                vec![other.clone(), reason(OTHER_REASON, "Again", "")],
+                InvalidReason::Id { index: 1 },
+            ),
+            (
+                vec![reason("reason:a", " ", ""), other.clone()],
+                InvalidReason::Name { index: 0 },
+            ),
+            (
+                vec![reason("reason:a", "OTHER", ""), other.clone()],
+                InvalidReason::DuplicateName { index: 1 },
+            ),
+            (
+                vec![reason("salary", "Salary", "")],
+                InvalidReason::OtherMissing,
+            ),
+        ];
+        for (reasons, expected) in cases {
+            assert_eq!(store.replace(reasons).unwrap(), Err(expected));
+        }
+        assert_eq!(store.reasons(), default_reasons());
     }
 }

@@ -134,19 +134,44 @@
   color: var(--selected-text);
 }
 
+.rules__no-receipt {
+  color: var(--label-secondary);
+}
+
+:root:not(.window-inactive) .rules__table:focus-within .rules__row--selected .rules__no-receipt {
+  color: var(--selected-text);
+}
+
+/* A blank name shows the other language's name, which the app uses in its place. */
+.reasons__fallback {
+  color: var(--label-secondary);
+}
+
+:root:not(.window-inactive) .rules__table:focus-within .rules__row--selected .reasons__fallback {
+  color: var(--selected-text);
+}
+
+/* Rows move by dragging; a line in the accent colour marks where the row drops. */
+.reasons__table tbody tr {
+  touch-action: none;
+  user-select: none;
+}
+
+.reasons__row--drop-above td {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.reasons__row--drop-below td {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.reasons__row--dragged td {
+  opacity: 0.5;
+}
+
 .rules__empty {
   color: var(--label-secondary);
   text-align: center;
-}
-
-.sheet__field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.sheet__field .field {
-  width: 100%;
 }
 
 .rules__buttons {

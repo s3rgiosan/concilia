@@ -39,7 +39,6 @@ pub struct Strings {
 
     pub confidence_high: &'static str,
 
-    pub bank_fee_auto: &'static str,
     pub name_amount_match: &'static str,
     pub name_amount_date_match: &'static str,
     pub amount_match: &'static str,
@@ -61,12 +60,6 @@ pub struct Strings {
     /// Singular, then plural; both take `{tol}`, the plural also `{n}`.
     pub multiple_fx: (&'static str, &'static str),
     pub multiple_filename: (&'static str, &'static str),
-
-    pub no_receipt_bank_fee: &'static str,
-    pub no_receipt_salary: &'static str,
-    pub no_receipt_transfer: &'static str,
-    pub no_receipt_refund: &'static str,
-    pub no_receipt_none: &'static str,
 }
 
 const EN: Strings = Strings {
@@ -101,7 +94,6 @@ const EN: Strings = Strings {
     tx_receipt_currency: "Receipt Currency",
     tx_notes: "Notes",
     confidence_high: "High",
-    bank_fee_auto: "Bank fee (auto)",
     name_amount_match: "Name & amount match",
     name_amount_date_match: "Name, amount & date match",
     amount_match: "Amount match",
@@ -133,11 +125,6 @@ const EN: Strings = Strings {
         "1 receipt matches by filename",
         "{n} receipts match by filename",
     ),
-    no_receipt_bank_fee: "Bank fee",
-    no_receipt_salary: "Salary",
-    no_receipt_transfer: "Transfer",
-    no_receipt_refund: "Refund",
-    no_receipt_none: "No receipt",
 };
 
 const PT: Strings = Strings {
@@ -172,7 +159,6 @@ const PT: Strings = Strings {
     tx_receipt_currency: "Moeda do recibo",
     tx_notes: "Notas",
     confidence_high: "Alta",
-    bank_fee_auto: "Comissão bancária (auto)",
     name_amount_match: "Nome e valor coincidentes",
     name_amount_date_match: "Nome, valor e data coincidentes",
     amount_match: "Valor coincidente",
@@ -207,11 +193,6 @@ const PT: Strings = Strings {
         "1 recibo coincide pelo nome do ficheiro",
         "{n} recibos coincidem pelo nome do ficheiro",
     ),
-    no_receipt_bank_fee: "Comissão bancária",
-    no_receipt_salary: "Salário",
-    no_receipt_transfer: "Transferência",
-    no_receipt_refund: "Reembolso",
-    no_receipt_none: "Sem recibo",
 };
 
 pub fn strings(language: Language) -> &'static Strings {

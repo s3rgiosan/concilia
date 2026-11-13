@@ -52,7 +52,8 @@ fn suffixed(name: &str, n: usize) -> String {
     }
 }
 
-fn clean(meta: &ReceiptMeta, file: &str) -> ReceiptMeta {
+/// `meta` stored at `file`, without the fields added for display.
+pub(crate) fn clean(meta: &ReceiptMeta, file: &str) -> ReceiptMeta {
     let mut meta = meta.clone();
     meta.file = file.to_string();
     for field in TRANSIENT_FIELDS {

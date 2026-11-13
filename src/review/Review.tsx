@@ -19,7 +19,7 @@ import { popUpMenu } from "../lib/popUpMenu";
 import { isPdf, newStatements } from "../lib/statements";
 import { exportReport, finalize, openReceipt, openReport, openSettings, pickStatements, showAlert, type ReceiptMeta, type Transaction } from "../lib/tauri";
 import { rejectKindOf } from "./commands";
-import { assign, changedIds, confirm, forDraft, noReceipt, unmatch, type Decision } from "./decisions";
+import { addReceipt, assign, changedIds, confirm, forDraft, noReceipt, removeReceipt, unmatch, type Decision } from "./decisions";
 import { finalizeCounts, FILTERS } from "./effective";
 import { Details, type DetailsHandlers } from "./Details";
 import { finalizeAlert } from "./finalizeAlert";
@@ -31,6 +31,7 @@ import { ReviewBanners } from "./ReviewBanners";
 import { ReviewEmpty } from "./ReviewEmpty";
 import { ReviewToolbar, TOOLBAR_LEVELS } from "./ReviewToolbar";
 import { listNavigationTarget, type ListRow } from "./rows";
+import { useReasons } from "../lib/reasons";
 import { rowMenu, type RowMenuContext } from "./rowMenu";
 import { SaveStatus } from "./SaveStatus";
 import { TransactionList } from "./TransactionList";
@@ -70,6 +71,7 @@ export interface ReviewProps {
  */
 export function Review({ period, toolbar, status, runSummary, moreActions, onChanged, onSaved, onError, onAvailabilityChange, onRejectKindChange, ref }: ReviewProps) {
   const { t, i18n } = useTranslation();
+  const reasons = useReasons();
   const { year, month } = period;
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
@@ -108,7 +110,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
   const refusedKey = refused.map((f) => `${f.file}:${f.code}`).join("|");
 
   const list = useReviewList(data, draft);
-  const { filter, search, merged, claimed, pool, counts, pending, rows, reimbursementTotal, edited, selected, selectedIndex, selectedTx, receipts, focused } = list;
+  const { filter, search, merged, claimed, pool, counts, pending, rows, reimbursementTotal, edited, selected, selectedIndex, selectedTx, receipts, addable, focused } = list;
   const { nextPendingIndex, previousPendingIndex, setFilter, setSearch, setSelection, setFocus } = list;
 
   const busy = finalizing || jobState.phase === "running";
@@ -413,6 +415,18 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
           acceptReceipt(selectedTx, receipt);
         }
       }),
+    onAddReceipt: (receipt) =>
+      fromDetails(() => {
+        if (selectedTx && decidable && selectedTx.status === "MATCHED") {
+          decide(selectedTx, addReceipt(selectedTx, receipt));
+        }
+      }),
+    onRemoveReceipt: (receipt) =>
+      fromDetails(() => {
+        if (selectedTx && decidable && selectedTx.status === "MATCHED") {
+          decide(selectedTx, removeReceipt(selectedTx, receipt.file));
+        }
+      }),
     onReject: () => fromDetails(commands.reject),
     onNoReceipt: (category) => fromDetails(() => commands.noReceipt(category)),
     onRescan: (receipt) => {
@@ -424,6 +438,8 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
 
   const menuContext: RowMenuContext = {
     t,
+    language: i18n.language,
+    reasons,
     applied,
     decidable,
     selectedId: selected?.id ?? null,
@@ -593,6 +609,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       <Details
         row={selected}
         receipts={receipts}
+        addable={addable}
         focused={focused}
         rescanning={rescanning}
         readOnly={applied}

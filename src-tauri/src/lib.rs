@@ -38,7 +38,7 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::app::{AppState, BUSY_CHANGED_EVENT};
 use crate::appearance::AppearanceState;
-use crate::config::{ConfigStore, RulesStore};
+use crate::config::{ConfigStore, ReasonsStore, RulesStore};
 use crate::menu::{MenuLabels, MenuState, Route};
 use crate::poppler::Poppler;
 use crate::secrets::{SecretStore, ServiceAccountStore};
@@ -148,6 +148,7 @@ pub fn run() {
             commands::poppler_status,
             commands::get_rules,
             commands::save_rules,
+            commands::save_reasons,
             commands::period_status,
             commands::list_periods,
             commands::create_period,
@@ -164,6 +165,7 @@ pub fn run() {
             commands::get_draft,
             commands::save_draft,
             commands::finalize,
+            commands::reopen,
             commands::rescan_receipt,
             commands::rescan_reimbursement,
             commands::export_report,
@@ -201,10 +203,18 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             let config_dir = app.path().app_config_dir()?;
-            let (config_name, rules_name) = if cfg!(debug_assertions) {
-                (config::DEV_FILE_NAME, config::DEV_RULES_FILE_NAME)
+            let (config_name, rules_name, reasons_name) = if cfg!(debug_assertions) {
+                (
+                    config::DEV_FILE_NAME,
+                    config::DEV_RULES_FILE_NAME,
+                    config::DEV_REASONS_FILE_NAME,
+                )
             } else {
-                (config::FILE_NAME, config::RULES_FILE_NAME)
+                (
+                    config::FILE_NAME,
+                    config::RULES_FILE_NAME,
+                    config::REASONS_FILE_NAME,
+                )
             };
             let config = ConfigStore::load(&config_dir.join(config_name)).unwrap_or_else(|e| {
                 log::error!("settings unavailable: {e}");
@@ -213,6 +223,10 @@ pub fn run() {
             let rules = RulesStore::load(&config_dir.join(rules_name)).unwrap_or_else(|e| {
                 log::error!("rules unavailable: {e}");
                 RulesStore::in_memory(Vec::new())
+            });
+            let reasons = ReasonsStore::load(&config_dir.join(reasons_name)).unwrap_or_else(|e| {
+                log::error!("no-receipt reasons unavailable: {e}");
+                ReasonsStore::in_memory(model::default_reasons())
             });
             let accounts = ServiceAccountStore::new(secret_store(&handle, &config_dir));
 
@@ -223,7 +237,7 @@ pub fn run() {
                 if poppler.bundled { "bundled" } else { "PATH" }
             );
 
-            let state = Arc::new(AppState::new(config, rules, accounts, poppler));
+            let state = Arc::new(AppState::new(config, rules, reasons, accounts, poppler));
             // The first read of the service account may wait on a Keychain prompt; reading it
             // now keeps the windows' first `get_app_state` from waiting on it.
             let warm_state = Arc::clone(&state);
@@ -251,7 +265,10 @@ pub fn run() {
             app.manage(ZoomState::default());
 
             let menu_state = MenuState::default();
-            if let Err(error) = menu::apply(&handle, &menu_state, &MenuLabels::default()) {
+            let reasons =
+                menu::reason_items(&app.state::<Arc<AppState>>().reasons(), model::Language::En);
+            if let Err(error) = menu::apply(&handle, &menu_state, &MenuLabels::default(), &reasons)
+            {
                 log::error!("menu unavailable: {error}");
             }
             app.manage(menu_state);

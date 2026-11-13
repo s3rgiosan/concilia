@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use concilia_lib::bank::Bank;
 use concilia_lib::extract::{ExtractOptions, GeminiExtractor};
 use concilia_lib::gemini::client::{GeminiClient, GeminiConfig};
-use concilia_lib::model::{Language, MatchResult, Status};
+use concilia_lib::model::{default_reasons, Language, MatchResult, Status};
 use concilia_lib::period::Period;
 use concilia_lib::pipeline::{self, RunContext, RunEvent, StatementFile};
 use serde_json::{json, Value};
@@ -114,6 +114,7 @@ async fn reconciles_and_finalizes_a_period() {
         statements: &poppler,
         rules: Vec::new(),
         language: Language::Pt,
+        reasons: default_reasons(),
         options: ExtractOptions::default(),
         progress: &progress,
         cancel: CancellationToken::new(),
@@ -161,7 +162,7 @@ async fn reconciles_and_finalizes_a_period() {
         ]
     );
 
-    pipeline::finalize(&paths, Language::Pt).unwrap();
+    pipeline::finalize(&paths, Language::Pt, &default_reasons()).unwrap();
     assert!(paths.receipts.join("_matched/acme.pdf").is_file());
     assert!(paths.receipts.join("_matched/globex.pdf").is_file());
     assert!(paths.applied_marker().is_file());

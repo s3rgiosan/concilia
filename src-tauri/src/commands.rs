@@ -19,7 +19,7 @@ use crate::config::Settings;
 use crate::error::{fail, CommandError, CommandResult, ErrorKind};
 use crate::extract::{ExtractOptions, GeminiExtractor};
 use crate::locks::{ExclusiveGuard, RunKind};
-use crate::model::{Draft, Rule, Summary};
+use crate::model::{Draft, Reason, Rule, Summary};
 use crate::period::{Period, PeriodPaths};
 use crate::pipeline::{
     self, AddStatementsResult, PipelineError, ReceiptView, RescanKind, ReviewData, RunContext,
@@ -181,6 +181,21 @@ pub async fn save_rules(
         .map_err(fail)
 }
 
+/// Saves the no-receipt reasons; rules that named a removed reason change to Other.
+#[tauri::command]
+pub async fn save_reasons(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    reasons: Vec<Reason>,
+) -> CommandResult<AppStateView> {
+    let state = shared(&state);
+    let view = blocking(move || state.save_reasons(reasons))
+        .await
+        .and_then(|result| result)
+        .map_err(fail)?;
+    Ok(changed(&app, view))
+}
+
 #[tauri::command]
 pub async fn period_status(
     state: State<'_, Arc<AppState>>,
@@ -339,6 +354,7 @@ async fn run_job<T>(
         statements: &state.poppler,
         rules: state.rules(),
         language: state.settings().report_language(),
+        reasons: state.reasons(),
         options: ExtractOptions::default(),
         progress: &progress,
         cancel: token,
@@ -478,7 +494,29 @@ pub async fn finalize(
         .try_exclusive(&period, RunKind::Finalize)
         .map_err(fail)?;
     let language = state.settings().report_language();
-    let result = blocking(move || pipeline::finalize(&paths, language))
+    let reasons = state.reasons();
+    let result = blocking(move || pipeline::finalize(&paths, language, &reasons))
+        .await
+        .map_err(fail)?;
+    drop(guard);
+    result.map_err(fail)
+}
+
+/// Returns a finalized month to review, keeping its decisions.
+#[tauri::command]
+pub async fn reopen(
+    state: State<'_, Arc<AppState>>,
+    year: String,
+    month: String,
+) -> CommandResult<pipeline::ReopenReport> {
+    let period = period(&year, &month).map_err(fail)?;
+    let paths = state.period_paths(&period).map_err(fail)?;
+    let guard = state
+        .locks
+        .try_exclusive(&period, RunKind::Reopen)
+        .map_err(fail)?;
+    let rules = state.rules();
+    let result = blocking(move || pipeline::reopen(&paths, &rules))
         .await
         .map_err(fail)?;
     drop(guard);
@@ -535,7 +573,8 @@ async fn write_report(state: &AppState, period: &Period) -> CommandResult<PathBu
     let paths = state.period_paths(period)?;
     let guard = state.locks.try_exclusive(period, RunKind::Report)?;
     let language = state.settings().report_language();
-    let result = blocking(move || pipeline::export_report(&paths, language)).await?;
+    let reasons = state.reasons();
+    let result = blocking(move || pipeline::export_report(&paths, language, &reasons)).await?;
     drop(guard);
     Ok(result?)
 }

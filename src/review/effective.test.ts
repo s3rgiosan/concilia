@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Draft } from "../lib/tauri";
 import { makeReceipt, makeReviewData, makeTransaction } from "../test/fixtures";
 import {
+  addableReceipts,
   amountMismatch,
   assignableReceipts,
   byAmountProximity,
@@ -9,15 +10,15 @@ import {
   filterCounts,
   finalizeCounts,
   isNoReceipt,
-  noReceiptChoices,
   mergeDraft,
   mismatch,
   needsDecision,
-  NO_RECEIPT_CATEGORIES,
   openCandidates,
   patchReceipt,
   pendingCount,
   relPaths,
+  receiptsTotal,
+  totalMismatch,
   unmatchedPool,
   visibleReimbursements,
   visibleTransactions,
@@ -30,11 +31,14 @@ const INITECH = makeReceipt("initech.pdf", { vendor: "INITECH", amount_cents: 40
 
 const files = (receipts: { file: string }[]) => receipts.map((r) => r.file);
 
+const REASON_IDS = ["bank_fee", "salary", "transfer", "refund", "no_receipt", "reason:lunch"];
+
 describe("isNoReceipt", () => {
-  it("accepts every no-receipt category", () => {
-    for (const category of NO_RECEIPT_CATEGORIES) {
-      expect(isNoReceipt(category)).toBe(true);
+  it("accepts shipped and custom reason ids, also of deleted reasons", () => {
+    for (const id of REASON_IDS) {
+      expect(isNoReceipt(id)).toBe(true);
     }
+    expect(isNoReceipt("reason:")).toBe(false);
   });
 
   it("rejects match notes", () => {
@@ -139,7 +143,7 @@ describe("claimedFiles", () => {
   });
 
   it("claims nothing for no-receipt categories", () => {
-    const merged = NO_RECEIPT_CATEGORIES.map((notes, i) => makeTransaction(`tx-${i}`, { status: "MATCHED", receipt_meta: [ACME], notes }));
+    const merged = REASON_IDS.map((notes, i) => makeTransaction(`tx-${i}`, { status: "MATCHED", receipt_meta: [ACME], notes }));
     expect(claimedFiles(merged).size).toBe(0);
   });
 });
@@ -331,6 +335,38 @@ describe("assignableReceipts", () => {
   });
 });
 
+describe("addableReceipts", () => {
+  it("orders the pool by the amount the transaction's receipts leave uncovered", () => {
+    const small = makeReceipt("small.pdf", { amount_cents: 600 });
+    const tx = makeTransaction("tx-1", { amount_cents: -1500, status: "MATCHED", receipt_meta: [ACME] });
+    expect(files(addableReceipts([GLOBEX, small], tx))).toEqual([small.file, GLOBEX.file]);
+  });
+});
+
+describe("totalMismatch", () => {
+  const five = makeReceipt("five.pdf", { amount_cents: 500 });
+
+  it("is null when the euro receipts add up to the amount", () => {
+    expect(totalMismatch([five, five], 1000)).toBeNull();
+  });
+
+  it("gives the difference in cents otherwise", () => {
+    expect(totalMismatch([five, five], 1200)).toBe(200);
+  });
+
+  it("adds credit notes by size, as they fit money coming in", () => {
+    const credit = makeReceipt("credit.pdf", { amount_cents: -500 });
+    expect(receiptsTotal([credit, credit])).toBe(1000);
+    expect(totalMismatch([credit, credit], 1000)).toBeNull();
+  });
+
+  it("is null when a receipt has no amount or another currency", () => {
+    expect(receiptsTotal([five, makeReceipt("usd.pdf", { currency: "USD", amount_cents: 500 })])).toBeNull();
+    expect(totalMismatch([five, makeReceipt("x.pdf", { amount_cents: null })], 1200)).toBeNull();
+    expect(totalMismatch([five, makeReceipt("usd.pdf", { currency: "USD", amount_cents: 500 })], 1200)).toBeNull();
+  });
+});
+
 describe("openCandidates", () => {
   it("leaves out candidates a MATCHED transaction holds", () => {
     const tx = makeTransaction("tx-1", { status: "REVIEW", receipt_meta: [ACME, GLOBEX] });
@@ -410,16 +446,5 @@ describe("finalizeCounts", () => {
 
   it("counts nothing for an empty month", () => {
     expect(finalizeCounts(makeReviewData(), [])).toEqual({ matched: 0, review: 0, unmatched: 0, total: 0 });
-  });
-});
-
-
-describe("noReceiptChoices", () => {
-  it("lists every category for money going out", () => {
-    expect(noReceiptChoices(makeTransaction("tx-1", { amount_cents: -1000 }))).toEqual(["bank_fee", "salary", "transfer", "refund", "no_receipt"]);
-  });
-
-  it("lists the likely categories first for money coming in", () => {
-    expect(noReceiptChoices(makeTransaction("tx-1", { amount_cents: 1000 }))).toEqual(["transfer", "salary", "refund", "separator", "bank_fee", "no_receipt"]);
   });
 });

@@ -1,13 +1,22 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../components/Icon";
+import { PopUpButton } from "../components/PopUpButton";
 import { Sheet, SheetNote } from "../components/Sheet";
 import { useLatest } from "../lib/hooks/useLatest";
-import { getRules, saveRules, type Rule } from "../lib/tauri";
+import { reasonLabel, reasonName } from "../lib/reasons";
+import { getRules, saveRules, type Reason, type Rule } from "../lib/tauri";
+
+/** What a rule does: `RECEIPT_KIND` matches a receipt; a reason id marks the transaction as needing no receipt. */
+type RuleKind = string;
+
+/** The rule kind that matches a receipt. No reason id has this value. */
+const RECEIPT_KIND = "receipt";
 
 /** A rule being added (no index) or edited. */
 interface Editing {
   index: number | null;
+  kind: RuleKind;
   receiptVendor: string;
   transactionDescription: string;
   /** Return was pressed while a keyword was missing. */
@@ -26,18 +35,22 @@ function newId(): string {
 
 /**
  * Match rules: a table with add, edit and remove buttons; each change saves at once. A removal
- * can be undone from the banner or from Edit › Undo (`registerUndo`).
+ * can be undone from the banner or from Edit › Undo (`registerUndo`). A no-receipt rule names
+ * one of `reasons`.
  */
 export function RulesTab({
   onError,
   readOnly,
   registerUndo,
+  reasons,
 }: {
   onError: (e: unknown) => void;
   readOnly: boolean;
   registerUndo: RefObject<(() => void) | null>;
+  reasons: readonly Reason[];
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const fieldId = useId();
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -129,6 +142,7 @@ export function RulesTab({
     const rule = index === null ? null : rules[index];
     setEditing({
       index,
+      kind: rule?.noReceipt ?? RECEIPT_KIND,
       receiptVendor: rule?.receiptVendor ?? "",
       transactionDescription: rule?.transactionDescription ?? "",
       attempted: false,
@@ -139,11 +153,12 @@ export function RulesTab({
     if (!rules || !editing) {
       return;
     }
-    const rule: Rule = {
-      id: editing.index === null ? newId() : rules[editing.index].id || newId(),
-      receiptVendor: editing.receiptVendor.trim(),
-      transactionDescription: editing.transactionDescription.trim(),
-    };
+    const id = editing.index === null ? newId() : rules[editing.index].id || newId();
+    const transactionDescription = editing.transactionDescription.trim();
+    const rule: Rule =
+      editing.kind === RECEIPT_KIND
+        ? { id, receiptVendor: editing.receiptVendor.trim(), transactionDescription }
+        : { id, receiptVendor: "", transactionDescription, noReceipt: editing.kind };
     const next = editing.index === null ? [...rules, rule] : rules.map((r, i) => (i === editing.index ? rule : r));
     store(next).then((saved) => {
       if (saved) {
@@ -194,7 +209,15 @@ export function RulesTab({
     ) : null;
   }
 
-  const incomplete = editing !== null && (!editing.receiptVendor.trim() || !editing.transactionDescription.trim());
+  const needsVendor = editing?.kind === RECEIPT_KIND;
+  const incomplete = editing !== null && ((needsVendor && !editing.receiptVendor.trim()) || !editing.transactionDescription.trim());
+  const kindOptions: { value: RuleKind; label: string }[] = [
+    { value: RECEIPT_KIND, label: t("settings.rules.kindReceipt") },
+    ...reasons.map((reason) => ({
+      value: reason.id,
+      label: t("settings.rules.kindNoReceipt", { reason: reasonName(reason, i18n.language) }),
+    })),
+  ];
   const rowTabbable = selected !== null && selected < rules.length ? selected : 0;
 
   return (
@@ -234,7 +257,13 @@ export function RulesTab({
                   onDoubleClick={() => startEdit(index)}
                   onKeyDown={(e) => onRowKeyDown(e, index)}
                 >
-                  <td role="gridcell">{rule.receiptVendor}</td>
+                  {rule.noReceipt ? (
+                    <td role="gridcell" className="rules__no-receipt">
+                      {t("settings.rules.kindNoReceipt", { reason: reasonLabel(reasons, rule.noReceipt, i18n.language) })}
+                    </td>
+                  ) : (
+                    <td role="gridcell">{rule.receiptVendor}</td>
+                  )}
                   <td role="gridcell">{rule.transactionDescription}</td>
                 </tr>
               ))
@@ -289,26 +318,38 @@ export function RulesTab({
           onCancel={() => setEditing(null)}
           onSubmit={submitEdit}
         >
-          <label className="sheet__field">
-            {t("settings.rules.receipt")}
-            <input
-              className="field"
-              value={editing.receiptVendor}
-              placeholder={t("settings.rules.receiptPlaceholder")}
-              onChange={(e) => setEditing({ ...editing, receiptVendor: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && incomplete && setEditing({ ...editing, attempted: true })}
+          <div className="sheet__grid">
+            <label htmlFor={`${fieldId}-kind`}>{t("settings.rules.kind")}</label>
+            <PopUpButton<RuleKind>
+              id={`${fieldId}-kind`}
+              value={editing.kind}
+              options={kindOptions}
+              onChange={(kind) => setEditing({ ...editing, kind })}
+              label={t("settings.rules.kind")}
             />
-          </label>
-          <label className="sheet__field">
-            {t("settings.rules.transaction")}
+            {needsVendor ? (
+              <>
+                <label htmlFor={`${fieldId}-receipt`}>{t("settings.rules.receipt")}</label>
+                <input
+                  id={`${fieldId}-receipt`}
+                  className="field"
+                  value={editing.receiptVendor}
+                  placeholder={t("settings.rules.receiptPlaceholder")}
+                  onChange={(e) => setEditing({ ...editing, receiptVendor: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && incomplete && setEditing({ ...editing, attempted: true })}
+                />
+              </>
+            ) : null}
+            <label htmlFor={`${fieldId}-transaction`}>{t("settings.rules.transaction")}</label>
             <input
+              id={`${fieldId}-transaction`}
               className="field"
               value={editing.transactionDescription}
               placeholder={t("settings.rules.transactionPlaceholder")}
               onChange={(e) => setEditing({ ...editing, transactionDescription: e.target.value })}
               onKeyDown={(e) => e.key === "Enter" && incomplete && setEditing({ ...editing, attempted: true })}
             />
-          </label>
+          </div>
           {incomplete && editing.attempted ? <SheetNote tone="warning">{t("settings.rules.incomplete")}</SheetNote> : null}
         </Sheet>
       ) : null}

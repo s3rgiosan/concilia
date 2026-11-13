@@ -20,6 +20,7 @@ export const SYMBOL_NAMES = [
   "save",
   "key",
   "rules",
+  "reasons",
   "drop",
   "globe",
   "sparkles",

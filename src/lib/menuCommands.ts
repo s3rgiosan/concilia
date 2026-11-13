@@ -1,8 +1,6 @@
 // The review's command ids and types, which the toolbar, the keyboard and the app menu share.
 
-/** The receipt-less categories a transaction can be marked with. */
-export const NO_RECEIPT_CATEGORIES = ["bank_fee", "salary", "transfer", "refund", "no_receipt"] as const;
-export type NoReceiptCategory = (typeof NO_RECEIPT_CATEGORIES)[number];
+import { REASON_MENU_PREFIX } from "./reasons";
 
 /** The review list's filters. */
 export const FILTERS = ["pending", "matched", "all"] as const;
@@ -47,7 +45,8 @@ export interface ReviewCommands {
   accept: () => void;
   /** Sends the selected transaction back to UNMATCHED, as `RejectKind` names it. */
   reject: () => void;
-  noReceipt: (category: NoReceiptCategory) => void;
+  /** Marks the selected transaction as needing no receipt for the reason with this id. */
+  noReceipt: (reason: string) => void;
   /** Reads the focused receipt again. */
   rescan: () => void;
   /** Shows or hides the focused receipt enlarged. */
@@ -70,16 +69,13 @@ export interface ReviewCommands {
 }
 
 const FILTER_MENU: Record<string, Filter> = Object.fromEntries(FILTERS.map((filter) => [`filter_${filter}`, filter]));
-const NO_RECEIPT_MENU: Record<string, NoReceiptCategory> = Object.fromEntries(
-  NO_RECEIPT_CATEGORIES.map((category) => [`no_receipt_${category}`, category]),
-);
 
 /** The command a menu item (an id from src-tauri/src/menu.rs) runs in the review, or null. */
 export function menuCommand(id: string): ReviewCommand | null {
   if (id in FILTER_MENU) {
     return "setFilter";
   }
-  if (id in NO_RECEIPT_MENU || id === "no_receipt") {
+  if (id === "no_receipt" || id.startsWith(REASON_MENU_PREFIX)) {
     return "noReceipt";
   }
   switch (id) {
@@ -122,8 +118,8 @@ export function runMenuCommand(commands: ReviewCommands, id: string): boolean {
       commands.setFilter(FILTER_MENU[id]);
       break;
     case "noReceipt":
-      if (id in NO_RECEIPT_MENU) {
-        commands.noReceipt(NO_RECEIPT_MENU[id]);
+      if (id.startsWith(REASON_MENU_PREFIX)) {
+        commands.noReceipt(id.slice(REASON_MENU_PREFIX.length));
       }
       break;
     default:
@@ -139,7 +135,6 @@ export function menuState(can: ReviewAvailability): Record<string, boolean> {
     "accept",
     "reject",
     "no_receipt",
-    ...Object.keys(NO_RECEIPT_MENU),
     "rescan",
     "quick_look",
     "open_in_preview",

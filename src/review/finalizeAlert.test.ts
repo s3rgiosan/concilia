@@ -20,7 +20,7 @@ describe("finalizeAlert", () => {
     expect(lines(request.message)).toEqual([
       "38 receipts will be sorted: 31 matched, 2 still to review, and 5 unmatched.",
       "Concilia sorts the receipts into folders inside this month's receipts folder and saves the Excel report.",
-      "To change decisions later, use Reconcile Again.",
+      "To change decisions later, use Reopen Month.",
     ]);
     expect(request).toMatchObject({ confirm: "Finalize", cancel: "Cancel", alternate: undefined });
   });

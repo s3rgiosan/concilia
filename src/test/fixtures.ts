@@ -1,6 +1,6 @@
 // Fabricated backend data for tests.
 
-import type { AppStateView, PeriodStatus, ReceiptMeta, ReviewData, Rule, ServiceAccountInfo, Settings, Transaction } from "../lib/tauri";
+import type { AppStateView, PeriodStatus, Reason, ReceiptMeta, ReviewData, Rule, ServiceAccountInfo, Settings, Transaction } from "../lib/tauri";
 
 export const ACCOUNT: ServiceAccountInfo = {
   client_email: "reader@acme-test.iam.gserviceaccount.com",
@@ -17,6 +17,18 @@ export function makeSettings(patch: Partial<Settings> = {}): Settings {
   };
 }
 
+/** The shipped no-receipt reasons, as the backend sends them. */
+export function makeReasons(): Reason[] {
+  const reason = (id: string, en: string, pt: string): Reason => ({ id, names: { en, pt } });
+  return [
+    reason("bank_fee", "Bank Fee", "Comissão bancária"),
+    reason("salary", "Salary", "Salário"),
+    reason("transfer", "Transfer", "Transferência"),
+    reason("refund", "Refund", "Reembolso"),
+    reason("no_receipt", "Other", "Outro"),
+  ];
+}
+
 export function makeView(patch: Partial<AppStateView> = {}): AppStateView {
   return {
     settings: makeSettings(),
@@ -26,6 +38,7 @@ export function makeView(patch: Partial<AppStateView> = {}): AppStateView {
     configured: true,
     busy: false,
     read_only: false,
+    reasons: makeReasons(),
     ...patch,
   };
 }

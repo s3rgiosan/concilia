@@ -12,6 +12,7 @@ use tauri::menu::{
 use tauri::{AppHandle, Wry};
 
 use crate::error::{fail, CommandError, CommandResult};
+use crate::model::Language;
 use crate::windows;
 use crate::zoom;
 
@@ -50,15 +51,11 @@ pub const ZOOM_OUT: &str = "zoom_out";
 pub const RECONCILE: &str = "reconcile";
 pub const SCAN: &str = "scan";
 pub const RERUN: &str = "rerun";
+pub const REOPEN: &str = "reopen";
 pub const FINALIZE: &str = "finalize";
 pub const ACCEPT: &str = "accept";
 pub const REJECT: &str = "reject";
 pub const NO_RECEIPT: &str = "no_receipt";
-pub const NO_RECEIPT_BANK_FEE: &str = "no_receipt_bank_fee";
-pub const NO_RECEIPT_SALARY: &str = "no_receipt_salary";
-pub const NO_RECEIPT_TRANSFER: &str = "no_receipt_transfer";
-pub const NO_RECEIPT_REFUND: &str = "no_receipt_refund";
-pub const NO_RECEIPT_NO_RECEIPT: &str = "no_receipt_no_receipt";
 pub const RESCAN: &str = "rescan";
 pub const QUICK_LOOK: &str = "quick_look";
 pub const OPEN_IN_PREVIEW: &str = "open_in_preview";
@@ -114,15 +111,11 @@ pub const ITEM_IDS: &[&str] = &[
     RECONCILE,
     SCAN,
     RERUN,
+    REOPEN,
     FINALIZE,
     ACCEPT,
     REJECT,
     NO_RECEIPT,
-    NO_RECEIPT_BANK_FEE,
-    NO_RECEIPT_SALARY,
-    NO_RECEIPT_TRANSFER,
-    NO_RECEIPT_REFUND,
-    NO_RECEIPT_NO_RECEIPT,
     RESCAN,
     QUICK_LOOK,
     OPEN_IN_PREVIEW,
@@ -182,15 +175,11 @@ fn english(key: &str) -> &'static str {
         RECONCILE => "Reconcile",
         SCAN => "Scan for New Receipts",
         RERUN => "Reconcile Again…",
+        REOPEN => "Reopen Month…",
         FINALIZE => "Finalize…",
         ACCEPT => "Assign Receipt",
         REJECT => "Remove Match",
         NO_RECEIPT => "No Receipt Needed",
-        NO_RECEIPT_BANK_FEE => "Bank Fee",
-        NO_RECEIPT_SALARY => "Salary",
-        NO_RECEIPT_TRANSFER => "Transfer",
-        NO_RECEIPT_REFUND => "Refund",
-        NO_RECEIPT_NO_RECEIPT => "Other",
         RESCAN => "Read Receipt Again",
         QUICK_LOOK => "Quick Look",
         OPEN_IN_PREVIEW => "Open in Preview",
@@ -245,6 +234,29 @@ impl MenuLabels {
             .unwrap_or_else(|| english(key));
         text.replace("{app}", app_name)
     }
+}
+
+/// One item of the No Receipt Needed submenu: a reason id and its name in the menu's language.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct MenuReason {
+    pub id: String,
+    pub label: String,
+}
+
+/// The submenu items for `reasons`, named in `language`.
+pub fn reason_items(reasons: &[crate::model::Reason], language: Language) -> Vec<MenuReason> {
+    reasons
+        .iter()
+        .map(|reason| MenuReason {
+            id: reason.id.clone(),
+            label: reason.names.get(language).to_string(),
+        })
+        .collect()
+}
+
+/// The menu item id of the reason `id`: the No Receipt Needed id, `_`, then the reason id.
+pub fn reason_item_id(id: &str) -> String {
+    format!("{NO_RECEIPT}_{id}")
 }
 
 /// How a chosen menu item is handled.
@@ -413,10 +425,24 @@ impl Builder<'_> {
     }
 }
 
+/// The About panel's icon. A debug build runs without an app bundle, so AppKit finds no icon
+/// of its own and the build passes one.
+#[cfg(debug_assertions)]
+fn about_icon() -> Option<tauri::image::Image<'static>> {
+    Some(tauri::include_image!("./icons/128x128@2x.png"))
+}
+
+/// The About panel's icon. A release build leaves it to AppKit, which shows the bundle's icon.
+#[cfg(not(debug_assertions))]
+fn about_icon() -> Option<tauri::image::Image<'static>> {
+    None
+}
+
 /// Builds the menu bar and the handles of its items.
 fn build(
     app: &AppHandle,
     labels: &MenuLabels,
+    reasons: &[MenuReason],
 ) -> tauri::Result<(Menu<Wry>, HashMap<String, Handle>)> {
     let name = app.package_info().name.clone();
     let mut b = Builder {
@@ -433,6 +459,7 @@ fn build(
         short_version: Some(String::new()),
         copyright: Some(COPYRIGHT.to_string()),
         credits: Some(CREDITS.to_string()),
+        icon: about_icon(),
         ..Default::default()
     };
     let check_updates = b.item(CHECK_UPDATES, None)?;
@@ -517,6 +544,7 @@ fn build(
     let reconcile = b.item(RECONCILE, Some("CmdOrCtrl+R"))?;
     let scan = b.item(SCAN, Some("CmdOrCtrl+Shift+R"))?;
     let rerun = b.item(RERUN, None)?;
+    let reopen = b.item(REOPEN, None)?;
     let finalize = b.item(FINALIZE, None)?;
     let open_report = b.item(OPEN_REPORT, None)?;
     let export_report = b.item(EXPORT_REPORT, None)?;
@@ -529,6 +557,7 @@ fn build(
             &scan,
             &b.separator()?,
             &finalize,
+            &reopen,
             &rerun,
             &b.separator()?,
             &open_report,
@@ -538,13 +567,19 @@ fn build(
 
     let accept = b.item(ACCEPT, Some("CmdOrCtrl+Enter"))?;
     let reject = b.item(REJECT, Some("CmdOrCtrl+Backspace"))?;
-    let no_receipt_items = [
-        b.item(NO_RECEIPT_BANK_FEE, None)?,
-        b.item(NO_RECEIPT_SALARY, None)?,
-        b.item(NO_RECEIPT_TRANSFER, None)?,
-        b.item(NO_RECEIPT_REFUND, None)?,
-        b.item(NO_RECEIPT_NO_RECEIPT, None)?,
-    ];
+    // The submenu is enabled as a whole, so its reason items need no handles.
+    let no_receipt_items = reasons
+        .iter()
+        .map(|reason| {
+            MenuItem::with_id(
+                app,
+                reason_item_id(&reason.id),
+                &reason.label,
+                true,
+                None::<&str>,
+            )
+        })
+        .collect::<tauri::Result<Vec<_>>>()?;
     let mut no_receipt = SubmenuBuilder::with_id(app, NO_RECEIPT, b.text(NO_RECEIPT));
     for item in &no_receipt_items {
         no_receipt = no_receipt.item(item);
@@ -608,22 +643,29 @@ fn build(
     Ok((menu, b.handles))
 }
 
-/// Sets the menu bar with the given labels and keeps the item handles in `MenuState`.
-pub fn apply(app: &AppHandle, state: &MenuState, labels: &MenuLabels) -> tauri::Result<()> {
-    let (menu, handles) = build(app, labels)?;
+/// Sets the menu bar with the given labels and no-receipt reasons, and keeps the item handles
+/// in `MenuState`.
+pub fn apply(
+    app: &AppHandle,
+    state: &MenuState,
+    labels: &MenuLabels,
+    reasons: &[MenuReason],
+) -> tauri::Result<()> {
+    let (menu, handles) = build(app, labels, reasons)?;
     app.set_menu(menu)?;
     state.install(handles);
     Ok(())
 }
 
-/// Rebuilds the menu bar with labels from the frontend.
+/// Rebuilds the menu bar with labels and no-receipt reasons from the frontend.
 #[tauri::command]
 pub fn set_menu(
     app: AppHandle,
     state: tauri::State<'_, MenuState>,
     labels: MenuLabels,
+    reasons: Vec<MenuReason>,
 ) -> CommandResult<()> {
-    apply(&app, &state, &labels).map_err(|e| fail(CommandError::internal(e)))
+    apply(&app, &state, &labels, &reasons).map_err(|e| fail(CommandError::internal(e)))
 }
 
 /// Changes the text of one menu item without rebuilding the menu; unknown ids are ignored.
@@ -677,6 +719,19 @@ mod tests {
         assert_eq!(labels.label(RECONCILE, "Concilia"), "Conciliar");
         assert_eq!(labels.label(SCAN, "Concilia"), "Scan for New Receipts");
         assert_eq!(labels.label(FINALIZE, "Concilia"), "Finalize…");
+    }
+
+    #[test]
+    fn reason_items_carry_the_reason_id_and_name() {
+        let items = reason_items(&crate::model::default_reasons(), Language::Pt);
+        assert_eq!(
+            items.first(),
+            Some(&MenuReason {
+                id: "bank_fee".into(),
+                label: "Comissão bancária".into()
+            })
+        );
+        assert_eq!(reason_item_id("reason:a"), "no_receipt_reason:a");
     }
 
     #[test]

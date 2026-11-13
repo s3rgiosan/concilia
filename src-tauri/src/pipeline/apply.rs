@@ -7,7 +7,7 @@ use crate::dates::time_now_iso;
 use crate::excel;
 use crate::finalize::{self, Move};
 use crate::fsutil::{read_json_opt, remove_if_exists, write_atomic, write_json};
-use crate::model::{Draft, Language, MatchResult, ReceiptMeta};
+use crate::model::{Draft, Language, MatchResult, Reason, ReceiptMeta};
 use crate::period::PeriodPaths;
 use crate::receipts::STATUS_FOLDERS;
 use crate::review::{effective_unmatched, merge_draft};
@@ -28,7 +28,11 @@ fn inside_receipts(paths: &PeriodPaths, file: &str) -> bool {
 /// Applies the review: moves every receipt into its status folder, writes the final match
 /// result and report, marks the period finalized and deletes the draft. Either every file
 /// moves and both files are written, or nothing changes.
-pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineError> {
+pub fn finalize(
+    paths: &PeriodPaths,
+    language: Language,
+    reasons: &[Reason],
+) -> Result<(), PipelineError> {
     let result: MatchResult =
         read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
     let draft: Draft = read_json_opt(&paths.draft())?.unwrap_or_default();
@@ -59,7 +63,8 @@ pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineE
     let prepared = write_json(&result_tmp, &final_result)
         .map_err(PipelineError::from)
         .and_then(|_| {
-            let sheets = excel::build(&final_result, &reimbursements, language);
+            let labels = excel::Labels { language, reasons };
+            let sheets = excel::build(&final_result, &reimbursements, &labels);
             excel::write(&sheets, &report_tmp).map_err(|e| io(&report_tmp, e))
         });
     if let Err(error) = prepared {
@@ -98,7 +103,7 @@ pub fn finalize(paths: &PeriodPaths, language: Language) -> Result<(), PipelineE
 /// The moves with both ends under the real `receipts/` folder: each source is its folder's
 /// real path plus its file name, so a folder swapped for a symlink after the check cannot
 /// redirect a move. Fails when a source leads outside the folder.
-fn pin_moves(paths: &PeriodPaths, moves: &[Move]) -> Result<Vec<Move>, PipelineError> {
+pub(super) fn pin_moves(paths: &PeriodPaths, moves: &[Move]) -> Result<Vec<Move>, PipelineError> {
     let receipts_real = paths
         .receipts
         .canonicalize()
@@ -128,14 +133,15 @@ fn pin_moves(paths: &PeriodPaths, moves: &[Move]) -> Result<Vec<Move>, PipelineE
         .collect()
 }
 
-/// The contents of a file before Finalize replaces it, to put back if a later step fails.
-struct Backup<'a> {
+/// The contents of a file before Finalize or Reopen replaces it, to put back if a later step
+/// fails.
+pub(super) struct Backup<'a> {
     path: &'a Path,
     bytes: Option<Vec<u8>>,
 }
 
 impl<'a> Backup<'a> {
-    fn take(path: &'a Path) -> Result<Backup<'a>, PipelineError> {
+    pub(super) fn take(path: &'a Path) -> Result<Backup<'a>, PipelineError> {
         let bytes = match std::fs::read(path) {
             Ok(bytes) => Some(bytes),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -144,16 +150,13 @@ impl<'a> Backup<'a> {
         Ok(Backup { path, bytes })
     }
 
-    fn restore(&self) {
+    pub(super) fn restore(&self) {
         let restored = match &self.bytes {
             Some(bytes) => write_atomic(self.path, bytes).map_err(|e| e.to_string()),
             None => remove_if_exists(self.path).map_err(|e| e.to_string()),
         };
         if let Err(error) = restored {
-            log::error!(
-                "finalize rollback failed for {}: {error}",
-                self.path.display()
-            );
+            log::error!("rollback failed for {}: {error}", self.path.display());
         }
     }
 }

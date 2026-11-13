@@ -19,8 +19,8 @@ use concilia_lib::bank::Bank;
 use concilia_lib::extract::{ExtractError, ExtractOptions, ReceiptExtractor};
 use concilia_lib::locks::PeriodLocks;
 use concilia_lib::model::{
-    Draft, DroppedDecision, Language, MatchResult, ReceiptMeta, StatementTransaction, Status,
-    Summary,
+    default_reasons, Draft, DroppedDecision, Language, MatchResult, ReceiptMeta,
+    StatementTransaction, Status, Summary,
 };
 use concilia_lib::period::{Period, PeriodPaths};
 use concilia_lib::pipeline::{
@@ -208,6 +208,7 @@ impl Harness {
             statements: &self.statements,
             rules: Vec::new(),
             language: Language::En,
+            reasons: default_reasons(),
             options: ExtractOptions {
                 backoff: vec![Duration::ZERO],
                 attempt_timeout: Duration::from_secs(5),
@@ -1855,7 +1856,7 @@ async fn exports_the_report_with_pending_decisions() {
     )
     .unwrap();
 
-    let report = pipeline::export_report(&h.paths, Language::En).unwrap();
+    let report = pipeline::export_report(&h.paths, Language::En, &default_reasons()).unwrap();
 
     assert_eq!(report, h.paths.report());
     assert_eq!(without_receipt_total(&report), Data::Float(-20.0));
@@ -1879,7 +1880,7 @@ async fn exports_the_plain_result_when_the_draft_does_not_apply() {
     )
     .unwrap();
 
-    let report = pipeline::export_report(&h.paths, Language::En).unwrap();
+    let report = pipeline::export_report(&h.paths, Language::En, &default_reasons()).unwrap();
 
     assert_eq!(without_receipt_total(&report), Data::Float(0.0));
 }
@@ -1887,7 +1888,12 @@ async fn exports_the_plain_result_when_the_draft_does_not_apply() {
 #[test]
 fn exporting_needs_a_match_result() {
     let dir = tempfile::tempdir().unwrap();
-    let error = pipeline::export_report(&period().paths(dir.path()), Language::En).unwrap_err();
+    let error = pipeline::export_report(
+        &period().paths(dir.path()),
+        Language::En,
+        &default_reasons(),
+    )
+    .unwrap_err();
     assert_code(&error, "not_reconciled");
 }
 
@@ -2280,7 +2286,7 @@ async fn finalizing_leaves_a_refused_file_in_place() {
     let h = Harness::new();
     let refused = reconciled_with_refused(&h, "file_too_large").await;
 
-    pipeline::finalize(&h.paths, Language::En).unwrap();
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
 
     assert!(Path::new(&refused).is_file());
     assert!(!h.paths.receipts.join("_unmatched/huge.pdf").exists());
@@ -2308,4 +2314,165 @@ async fn rescanning_a_refused_file_returns_its_code_without_calling_the_reader()
 
     assert_code(&error, "unrecognized_file");
     assert_eq!(h.extractor.call_count(), 0);
+}
+
+// Reopen.
+
+#[tokio::test]
+async fn reopening_moves_receipts_back_and_keeps_the_decisions() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let initech = h.receipt("initech.png");
+    pipeline::save_draft(&h.paths, &assigned_to_globex(&initech, 5000, "INITECH")).unwrap();
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+    assert!(h.paths.receipts.join("_matched/initech.png").is_file());
+    h.extractor.take_calls();
+
+    let report = pipeline::reopen(&h.paths, &[]).unwrap();
+
+    assert_eq!(report.restored, 2);
+    assert_eq!(report.kept_decisions, 1);
+    assert!(!h.paths.applied_marker().exists());
+    assert!(h.paths.receipts.join("acme.pdf").is_file());
+    assert!(h.paths.receipts.join("initech.png").is_file());
+    assert!(!h.paths.receipts.join("_matched/initech.png").exists());
+    let (pool, globex) = pool_and_globex(&h);
+    assert_eq!(globex, std::slice::from_ref(&initech));
+    assert!(pool.is_empty(), "{pool:?}");
+    let acme = h
+        .paths
+        .receipts
+        .join("acme.pdf")
+        .to_string_lossy()
+        .into_owned();
+    let result = h.match_result();
+    let acme_tx = result
+        .transactions
+        .iter()
+        .find(|t| t.id == ACME_ID)
+        .unwrap();
+    assert_eq!(acme_tx.receipt_files, [acme]);
+    assert_eq!(files(&h.receipts_cache()).len(), 2);
+
+    h.extractor.knows("hooli.pdf", 700, "HOOLI");
+    h.receipt("hooli.pdf");
+    let outcome = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert_eq!(h.extractor.take_calls(), ["hooli.pdf"]);
+    assert_eq!(outcome.new_receipts, 1);
+    assert!(outcome.dropped_decisions.is_empty());
+    let (pool, globex) = pool_and_globex(&h);
+    assert_eq!(globex, [initech]);
+    assert_eq!(
+        pool,
+        [h.paths
+            .receipts
+            .join("hooli.pdf")
+            .to_string_lossy()
+            .into_owned()]
+    );
+}
+
+#[tokio::test]
+async fn a_transaction_keeps_two_receipts_through_finalize_and_reopen() {
+    let h = Harness::new();
+    let statement = h.standard();
+    h.extractor.knows("meal.pdf", 1500, "GLOBEX KITCHEN");
+    h.extractor.knows("delivery.pdf", 500, "GLOBEX DELIVERY");
+    let meal = h.receipt("meal.pdf");
+    let delivery = h.receipt("delivery.pdf");
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    pipeline::save_draft(
+        &h.paths,
+        &draft(json!({
+            GLOBEX_ID: {
+                "status": "MATCHED",
+                "receipt_files": [meal, delivery],
+                "receipt_meta": [
+                    receipt_meta(&meal, 1500, "GLOBEX KITCHEN"),
+                    receipt_meta(&delivery, 500, "GLOBEX DELIVERY")
+                ],
+                "notes": "manual_match"
+            }
+        })),
+    )
+    .unwrap();
+
+    // Both receipts belong to GLOBEX, so no other transaction can take them.
+    let (pool, globex) = pool_and_globex(&h);
+    assert_eq!(globex, [meal.clone(), delivery.clone()]);
+    assert!(
+        !pool.contains(&meal) && !pool.contains(&delivery),
+        "{pool:?}"
+    );
+
+    // The report lists one Matched row per receipt.
+    let report = pipeline::export_report(&h.paths, Language::En, &default_reasons()).unwrap();
+    let matched: Vec<String> = report_rows(&report, "Matched")
+        .iter()
+        .skip(1)
+        .map(|row| row[0].to_string())
+        .collect();
+    assert!(matched.contains(&"meal.pdf".to_string()), "{matched:?}");
+    assert!(matched.contains(&"delivery.pdf".to_string()), "{matched:?}");
+
+    // Finalize moves both into _matched and records both.
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+    assert!(h.paths.receipts.join("_matched/meal.pdf").is_file());
+    assert!(h.paths.receipts.join("_matched/delivery.pdf").is_file());
+    let finalized = h.match_result();
+    let globex_tx = finalized
+        .transactions
+        .iter()
+        .find(|t| t.id == GLOBEX_ID)
+        .unwrap();
+    assert_eq!(globex_tx.receipt_files.len(), 2);
+
+    // Reopen moves both back and keeps the decision with both receipts.
+    let reopened = pipeline::reopen(&h.paths, &[]).unwrap();
+    assert!(reopened.kept_decisions >= 1);
+    assert!(Path::new(&meal).is_file());
+    assert!(Path::new(&delivery).is_file());
+    let (pool, globex) = pool_and_globex(&h);
+    assert_eq!(globex, [meal.clone(), delivery.clone()]);
+    assert!(
+        !pool.contains(&meal) && !pool.contains(&delivery),
+        "{pool:?}"
+    );
+}
+
+#[tokio::test]
+async fn reopening_leaves_hidden_files_in_the_sorted_folders() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+    write_file(&h.paths.receipts.join("_matched/.DS_Store"), b"finder");
+    write_file(&h.paths.receipts.join(".DS_Store"), b"finder");
+
+    let report = pipeline::reopen(&h.paths, &[]).unwrap();
+
+    assert_eq!(report.restored, 2);
+    assert!(h.paths.receipts.join("_matched/.DS_Store").is_file());
+    assert!(!h.paths.receipts.join("-restored.DS_Store").exists());
+}
+
+#[tokio::test]
+async fn reopening_a_month_in_review_is_refused() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+
+    let error = pipeline::reopen(&h.paths, &[]).unwrap_err();
+
+    assert_code(&error, "not_finalized");
 }

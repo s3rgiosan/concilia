@@ -40,12 +40,24 @@ export interface AppStateView {
   configured: boolean;
   busy: boolean;
   read_only: boolean;
+  /** The no-receipt reasons, in menu order. */
+  reasons: Reason[];
+}
+
+/** Why a transaction needs no receipt, named in each app language. A blank name shows the other one. */
+export interface Reason {
+  /** A shipped reason's id, or `reason:` and a unique part for one the user added. */
+  id: string;
+  names: { en: string; pt: string };
 }
 
 export interface Rule {
   id: string;
+  /** Empty for a no-receipt rule. */
   receiptVendor: string;
   transactionDescription: string;
+  /** The reason id of a rule that marks the transaction as needing no receipt. */
+  noReceipt?: string;
 }
 
 export interface PopplerStatus {
@@ -273,6 +285,11 @@ export function saveRules(rules: Rule[]): Promise<Rule[]> {
   return invoke<Rule[]>("save_rules", { rules });
 }
 
+/** Saves the no-receipt reasons. Rules that named a removed reason change to Other. */
+export function saveReasons(reasons: Reason[]): Promise<AppStateView> {
+  return invoke<AppStateView>("save_reasons", { reasons });
+}
+
 export function periodStatus(year: string, month: string): Promise<PeriodStatus> {
   return invoke<PeriodStatus>("period_status", { year, month });
 }
@@ -362,6 +379,19 @@ export function finalize(year: string, month: string): Promise<void> {
   return invoke("finalize", { year, month });
 }
 
+/** What reopening a finalized month did. */
+export interface ReopenReport {
+  /** Receipts moved back into the receipts folder. */
+  restored: number;
+  /** Decisions kept because the matcher does not find them on its own. */
+  keptDecisions: number;
+}
+
+/** Returns a finalized month to review, keeping its decisions. */
+export function reopenPeriod(year: string, month: string): Promise<ReopenReport> {
+  return invoke("reopen", { year, month });
+}
+
 export function rescanReceipt(year: string, month: string, relPath: string): Promise<ReceiptMeta> {
   return invoke<ReceiptMeta>("rescan_receipt", { year, month, relPath });
 }
@@ -440,9 +470,15 @@ export function requestAttention(): Promise<void> {
   return getCurrentWindow().requestUserAttention(UserAttentionType.Informational);
 }
 
-/** Rebuilds the menu bar with these labels, by the keys in src-tauri/src/menu.rs. */
-export function setMenu(labels: Record<string, string>): Promise<void> {
-  return invoke("set_menu", { labels });
+/** A No Receipt Needed menu item: a reason id and its name in the menu's language. */
+export interface MenuReason {
+  id: string;
+  label: string;
+}
+
+/** Rebuilds the menu bar with these labels, by the keys in src-tauri/src/menu.rs, and these reasons. */
+export function setMenu(labels: Record<string, string>, reasons: MenuReason[]): Promise<void> {
+  return invoke("set_menu", { labels, reasons });
 }
 
 /** Changes the text of one menu item by id, without rebuilding the menu. */

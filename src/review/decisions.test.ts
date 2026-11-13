@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeReceipt, makeTransaction } from "../test/fixtures";
-import { assign, changedIds, confirm, forDraft, noReceipt, unmatch } from "./decisions";
+import { addReceipt, assign, changedIds, confirm, forDraft, noReceipt, removeReceipt, unmatch } from "./decisions";
 
 const ACME = makeReceipt("acme.pdf", { vendor: "ACME" });
 const GLOBEX = makeReceipt("globex.pdf", { vendor: "GLOBEX" });
@@ -28,6 +28,28 @@ describe("confirm", () => {
 
   it("notes an amount match when the transaction has no note", () => {
     expect(confirm({ ...tx, notes: "" }, ACME).notes).toBe("amount_match");
+  });
+});
+
+describe("addReceipt and removeReceipt", () => {
+  const tx = makeTransaction("tx-1", { status: "MATCHED", receipt_meta: [ACME], notes: "amount_match" });
+
+  it("adds a receipt after the ones the transaction holds", () => {
+    expect(addReceipt(tx, GLOBEX)).toEqual({
+      status: "MATCHED",
+      receipt_meta: [ACME, GLOBEX],
+      receipt_files: [ACME.file, GLOBEX.file],
+      notes: "manual_match",
+    });
+  });
+
+  it("removes one receipt and keeps the rest matched", () => {
+    const both = { ...tx, receipt_meta: [ACME, GLOBEX] };
+    expect(removeReceipt(both, ACME.file)).toEqual({ status: "MATCHED", receipt_meta: [GLOBEX], receipt_files: [GLOBEX.file], notes: "manual_match" });
+  });
+
+  it("sends the transaction back to UNMATCHED when its last receipt goes", () => {
+    expect(removeReceipt(tx, ACME.file)).toEqual(unmatch());
   });
 });
 

@@ -42,3 +42,7 @@ show these differences are kept out of the fixtures.
   `Sem associação`, the capitalised words in column headers are lower case ("Data da
   transação", "Ficheiro do recibo", …), "Regra de correspondência" is "Regra de associação",
   and "FX" in notes reads "moeda estrangeira".
+- **No-receipt reasons in notes.** The report names a no-receipt transaction by its reason's
+  name, which the user can change in Settings. With the shipped reasons, "Bank fee (auto)" reads
+  "Bank Fee" and "No receipt" reads "Other"; in Portuguese, "Comissão bancária (auto)" reads
+  "Comissão bancária" and "Sem recibo" reads "Outro".

@@ -1,7 +1,7 @@
 //! Per-period locks.
 //!
 //! A period runs at most one exclusive job at a time (reconcile, scan, adding statements,
-//! Finalize or report export), never alongside a receipt rescan. Rescans of different files may run together,
+//! Finalize, Reopen or report export), never alongside a receipt rescan. Rescans of different files may run together,
 //! but their writes to the period's JSON files go through one mutex per period.
 
 use std::collections::{HashMap, HashSet};
@@ -21,6 +21,7 @@ pub enum RunKind {
     Scan,
     AddStatements,
     Finalize,
+    Reopen,
     Report,
 }
 

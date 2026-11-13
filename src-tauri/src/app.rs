@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 
-use crate::config::{ConfigStore, RulesStore, Settings};
+use crate::config::{ConfigStore, ReasonsStore, RulesStore, Settings};
 use crate::error::{CommandError, CommandResult, ErrorKind};
 use crate::gemini::client::{GeminiClient, GeminiConfig, ServiceAccount};
 use crate::locks::PeriodLocks;
@@ -57,11 +57,14 @@ pub struct AppStateView {
     pub configured: bool,
     pub busy: bool,
     pub read_only: bool,
+    /// The no-receipt reasons, in menu order.
+    pub reasons: Vec<crate::model::Reason>,
 }
 
 pub struct AppState {
     config: Mutex<ConfigStore>,
     rules: Mutex<RulesStore>,
+    reasons: Mutex<ReasonsStore>,
     pub accounts: ServiceAccountStore,
     pub locks: Arc<PeriodLocks>,
     pub poppler: Poppler,
@@ -78,12 +81,14 @@ impl AppState {
     pub fn new(
         config: ConfigStore,
         rules: RulesStore,
+        reasons: ReasonsStore,
         accounts: ServiceAccountStore,
         poppler: Poppler,
     ) -> AppState {
         AppState {
             config: Mutex::new(config),
             rules: Mutex::new(rules),
+            reasons: Mutex::new(reasons),
             accounts,
             locks: PeriodLocks::new(),
             poppler,
@@ -155,9 +160,44 @@ impl AppState {
         &self,
         rules: Vec<crate::model::Rule>,
     ) -> CommandResult<Vec<crate::model::Rule>> {
+        let reasons = lock(&self.reasons);
         let mut store = lock(&self.rules);
-        store.replace(rules)??;
+        store.replace(rules, reasons.reasons())??;
         Ok(store.rules().to_vec())
+    }
+
+    pub fn reasons(&self) -> Vec<crate::model::Reason> {
+        lock(&self.reasons).reasons().to_vec()
+    }
+
+    /// Saves the no-receipt reasons. Rules that name a reason no longer in the list change to
+    /// the Other reason.
+    pub fn save_reasons(&self, reasons: Vec<crate::model::Reason>) -> CommandResult<AppStateView> {
+        {
+            let mut store = lock(&self.reasons);
+            store.replace(reasons)??;
+            let mut rules = lock(&self.rules);
+            let kept = |id: &String| store.reasons().iter().any(|r| &r.id == id);
+            if rules
+                .rules()
+                .iter()
+                .any(|rule| rule.no_receipt.as_ref().is_some_and(|id| !kept(id)))
+            {
+                let moved = rules
+                    .rules()
+                    .iter()
+                    .cloned()
+                    .map(|mut rule| {
+                        if rule.no_receipt.as_ref().is_some_and(|id| !kept(id)) {
+                            rule.no_receipt = Some(crate::model::OTHER_REASON.to_string());
+                        }
+                        rule
+                    })
+                    .collect();
+                rules.replace(moved, store.reasons())??;
+            }
+        }
+        Ok(self.view())
     }
 
     /// The Gemini client for the current settings and service account, built on first use.
@@ -229,6 +269,7 @@ impl AppState {
             settings,
             busy: self.locks.busy(),
             read_only,
+            reasons: self.reasons(),
         }
     }
 
@@ -308,6 +349,7 @@ mod tests {
         AppState::new(
             ConfigStore::in_memory(Settings::default()),
             RulesStore::in_memory(Vec::new()),
+            ReasonsStore::in_memory(crate::model::default_reasons()),
             ServiceAccountStore::new(Box::new(MemoryStore::default())),
             Poppler::resolve(None),
         )
@@ -357,6 +399,7 @@ mod tests {
         let fresh = AppState::new(
             ConfigStore::in_memory(language.clone()),
             RulesStore::in_memory(Vec::new()),
+            ReasonsStore::in_memory(crate::model::default_reasons()),
             ServiceAccountStore::new(Box::new(MemoryStore::default())),
             Poppler::resolve(None),
         );
@@ -460,10 +503,46 @@ mod tests {
             id: "r1".into(),
             receipt_vendor: " ".into(),
             transaction_description: "ACME".into(),
+            no_receipt: None,
         };
         assert_eq!(
             state.save_rules(vec![rule]).unwrap_err().kind,
             ErrorKind::InvalidInput
         );
+    }
+
+    #[test]
+    fn rules_of_a_removed_reason_move_to_other() {
+        use crate::model::{default_reasons, Rule, OTHER_REASON};
+        let state = state();
+        let rule = |id: &str, reason: &str| Rule {
+            id: id.into(),
+            receipt_vendor: String::new(),
+            transaction_description: "TRF".into(),
+            no_receipt: Some(reason.into()),
+        };
+        state
+            .save_rules(vec![rule("r1", "salary"), rule("r2", "transfer")])
+            .unwrap();
+        let without_salary: Vec<_> = default_reasons()
+            .into_iter()
+            .filter(|r| r.id != "salary")
+            .collect();
+
+        let view = state.save_reasons(without_salary.clone()).unwrap();
+
+        assert_eq!(view.reasons, without_salary);
+        assert_eq!(
+            state.rules(),
+            [rule("r1", OTHER_REASON), rule("r2", "transfer")]
+        );
+    }
+
+    #[test]
+    fn invalid_reasons_change_nothing() {
+        let state = state();
+        let error = state.save_reasons(Vec::new()).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert_eq!(state.reasons(), crate::model::default_reasons());
     }
 }

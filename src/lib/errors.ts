@@ -25,6 +25,7 @@ export type ErrorKind = (typeof ERROR_KINDS)[number];
 export const ERROR_CODES = [
   "no_transactions",
   "not_reconciled",
+  "not_finalized",
   "no_bank_match",
   "not_pdf",
   "file_missing",

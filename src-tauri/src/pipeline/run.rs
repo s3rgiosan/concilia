@@ -91,9 +91,10 @@ pub async fn reconcile(
 
     (ctx.progress)(RunEvent::Exporting);
     let language = ctx.language;
+    let reasons = ctx.reasons.clone();
     let report = ctx.paths.report();
     off_thread(move || {
-        write_report(&result, &reimbursements, language, &report)?;
+        write_report(&result, &reimbursements, language, &reasons, &report)?;
         Ok::<_, PipelineError>(summary(&result, receipt_count))
     })
     .await?

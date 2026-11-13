@@ -21,6 +21,7 @@
     "allow-poppler-status",
     "allow-get-rules",
     "allow-save-rules",
+    "allow-save-reasons",
     "allow-check-for-updates",
     "allow-install-update",
     "allow-get-appearance",

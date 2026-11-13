@@ -5,6 +5,7 @@
 mod apply;
 mod draft;
 mod periods;
+mod reopen;
 mod report;
 mod rescan;
 mod run;
@@ -20,7 +21,7 @@ use crate::error::ErrorKind;
 use crate::extract::{ExtractAllError, ExtractOptions, ReceiptExtractor};
 use crate::filecheck::{self, FileCheckError, FileKind};
 use crate::fsutil::{read_json_lenient, FsError};
-use crate::model::{Language, ReceiptMeta, Rule};
+use crate::model::{Language, Reason, ReceiptMeta, Rule};
 use crate::period::PeriodPaths;
 use crate::poppler::{Poppler, PopplerError};
 
@@ -30,6 +31,7 @@ pub use periods::{
     ensure_period_dirs, list_periods, period_status, period_summary, read_statements, reset_period,
     PeriodState, PeriodStatus, PeriodSummary, ResetReport,
 };
+pub use reopen::{reopen, ReopenReport};
 pub use report::{export_report, review_data, ReceiptView, ReviewData, ReviewTransaction};
 pub use rescan::{rescan, resolve_period_file, PeriodFile, RescanKind};
 pub use run::{
@@ -180,6 +182,8 @@ pub struct RunContext<'a> {
     pub statements: &'a dyn StatementText,
     pub rules: Vec<Rule>,
     pub language: Language,
+    /// Names the no-receipt reasons in the report.
+    pub reasons: Vec<Reason>,
     pub options: ExtractOptions,
     pub progress: &'a (dyn Fn(RunEvent) + Send + Sync),
     pub cancel: CancellationToken,

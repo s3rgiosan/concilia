@@ -15,6 +15,7 @@ import { useDockProgress } from "../lib/hooks/useDockProgress";
 import { useExtractionEta } from "../lib/hooks/useExtractionEta";
 import { useMenu } from "../lib/hooks/useMenu";
 import { useAppState } from "../lib/hooks/useAppState";
+import { ReasonsContext } from "../lib/reasons";
 import { useRun, useRunEvents } from "../lib/hooks/useRun";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
 import { useStableCallback } from "../lib/hooks/useStableCallback";
@@ -42,14 +43,17 @@ import {
   openReport,
   openSettings,
   revealPeriod,
+  reopenPeriod,
   showAlert,
   startReconcile,
   type AppStateView,
+  type Reason,
   type PeriodSummary,
   type RunEvent,
   type Summary,
 } from "../lib/tauri";
 import { NewMonthSheet } from "./NewMonthSheet";
+import { reopenAlert } from "./reopenAlert";
 import { rerunAlert } from "./rerunAlert";
 import { RunPanel } from "./RunPanel";
 import { Sidebar, type RunningMonth } from "./Sidebar";
@@ -110,6 +114,9 @@ function runProgress(events: RunEvent[]): { current: number; total: number } | n
  * The main window: a toolbar, the months in a sidebar and the selected month in the detail area,
  * by where the month stands. Before the app is configured it shows the welcome steps instead.
  */
+/** No reasons, before the app state loads. */
+const NO_REASONS: readonly Reason[] = [];
+
 export function Main({ initialState = null }: { initialState?: AppStateView | null }) {
   const { t, i18n } = useTranslation();
   const { state, error: loadError, replace, reload } = useAppState(initialState);
@@ -126,6 +133,8 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
   /** Whether the last run read every receipt again, so Try Again repeats it the same way. */
   const lastClearCache = useRef(false);
   const [lastRun, setLastRun] = useState<{ key: string; summary: Summary } | null>(null);
+  /** How many times each month was reopened, by period key, so its review loads again. */
+  const [reopened, setReopened] = useState<Record<string, number>>({});
   const [message, setMessage] = useState<unknown>(null);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [subtitleSlot, setSubtitleSlot] = useState<HTMLElement | null>(null);
@@ -147,6 +156,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
   const [setUp, setSetUp] = useState(false);
 
   const configured = state?.configured === true;
+  const reasons = state?.reasons ?? NO_REASONS;
   const root = state?.settings.receipts_root ?? null;
   const [compact, setCompact] = useState(isCompact);
   /** Whether the sidebar shows over the content in a narrow window. */
@@ -304,6 +314,24 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
     }, setMessage);
   });
 
+  /** Confirms Reopen Month in a native alert, then returns the finalized month to review. */
+  const askReopen = useStableCallback(() => {
+    const target = selected;
+    showAlert(reopenAlert(label, t))
+      .then((choice) => {
+        if (choice !== "confirm") {
+          return;
+        }
+        setMessage(null);
+        return reopenPeriod(target.year, target.month).then(() => {
+          const done = periodKey(target);
+          setReopened((prev) => ({ ...prev, [done]: (prev[done] ?? 0) + 1 }));
+          refresh();
+        });
+      })
+      .catch(setMessage);
+  });
+
   function reconcile(clearCache: boolean) {
     const target = selected;
     const files = (statements[periodKey(target)] ?? []).map(({ path, bank }) => ({ path, bank }));
@@ -362,6 +390,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
   const listReady = listed !== null || listError !== null;
   const existingKeys = useMemo(() => new Set(periods.map(periodKey)), [periods]);
   const reviewable = isReviewable(summary);
+  const finalized = summary.status === "finalized";
 
   const onStatementsScreen = Boolean(state?.configured) && listReady && !runHere && !reviewable;
   const reviewShown = Boolean(state?.configured) && listReady && !runHere && reviewable;
@@ -372,6 +401,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
       acceptsStatements: onStatementsScreen && !running,
       canReconcile: hasReceipts && hasStatements,
       hasResult: reviewable,
+      finalized,
       running,
       reviewShown,
     },
@@ -386,6 +416,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
       },
       reconcile: () => reconcile(false),
       rerun: askRerun,
+      reopen: askReopen,
       openReport: () => {
         openReport(selected.year, selected.month).catch(setMessage);
       },
@@ -394,6 +425,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
     },
     reviewCommands,
     reviewMenu,
+    reasons,
   );
 
   const monthActions = useMemo<PopUpAction[]>(() => {
@@ -407,11 +439,14 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
       },
       { label: t("month.showInFinder"), onSelect: () => revealPeriod(selected.year, selected.month).catch(setMessage) },
     ];
+    if (finalized) {
+      entries.push({ label: t("month.reopen"), onSelect: askReopen, disabled: running });
+    }
     if (reviewable) {
       entries.push({ label: t("month.rerun"), onSelect: askRerun, disabled: running });
     }
     return entries;
-  }, [t, selected, reviewable, running, askRerun]);
+  }, [t, selected, reviewable, finalized, running, askRerun, askReopen]);
   const toolbarSlots = useMemo(() => ({ subtitle: subtitleSlot, trailing: trailingSlot }), [subtitleSlot, trailingSlot]);
 
   /** A month's context menu in the sidebar. */
@@ -422,7 +457,11 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
     }
     entries.push({ label: t("month.showInFinder"), onSelect: () => revealMonth(month) });
     if (isReviewable(month)) {
-      entries.push("separator", { label: t("month.rerun"), onSelect: askRerun, disabled: running });
+      entries.push("separator");
+      if (month.status === "finalized") {
+        entries.push({ label: t("month.reopen"), onSelect: askReopen, disabled: running });
+      }
+      entries.push({ label: t("month.rerun"), onSelect: askRerun, disabled: running });
     }
     return entries;
   }
@@ -479,20 +518,22 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
       trailing = <div ref={setTrailingSlot} className="titlebar__slot" />;
       detail = (
         <Suspense fallback={<ToolbarPortal target={subtitleSlot}>{runSummary ?? status}</ToolbarPortal>}>
-          <Review
-            key={key}
-            ref={reviewCommands}
-            period={selected}
-            toolbar={toolbarSlots}
-            status={status}
-            runSummary={runSummary}
-            moreActions={actions}
-            onChanged={refresh}
-            onSaved={refreshSummary}
-            onError={setMessage}
-            onAvailabilityChange={reviewMenu.setCan}
-            onRejectKindChange={reviewMenu.setRejectKind}
-          />
+          <ReasonsContext.Provider value={reasons}>
+            <Review
+              key={`${key}:${reopened[key] ?? 0}`}
+              ref={reviewCommands}
+              period={selected}
+              toolbar={toolbarSlots}
+              status={status}
+              runSummary={runSummary}
+              moreActions={actions}
+              onChanged={refresh}
+              onSaved={refreshSummary}
+              onError={setMessage}
+              onAvailabilityChange={reviewMenu.setCan}
+              onRejectKindChange={reviewMenu.setRejectKind}
+            />
+          </ReasonsContext.Provider>
         </Suspense>
       );
     } else {

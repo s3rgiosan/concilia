@@ -1,30 +1,5 @@
 import type { TFunction } from "i18next";
-import { isNoReceipt, type NoReceiptCategory } from "./effective";
-
-const NO_RECEIPT_KEYS: Record<NoReceiptCategory, string> = {
-  bank_fee: "review.noReceiptCategories.bankFee",
-  salary: "review.noReceiptCategories.salary",
-  transfer: "review.noReceiptCategories.transfer",
-  refund: "review.noReceiptCategories.refund",
-  no_receipt: "review.noReceiptCategories.noReceipt",
-};
-
-export function noReceiptLabel(category: NoReceiptCategory, t: TFunction): string {
-  return t(NO_RECEIPT_KEYS[category]);
-}
-
-const NO_RECEIPT_TITLE_KEYS: Record<NoReceiptCategory, string> = {
-  bank_fee: "menu.no_receipt_bank_fee",
-  salary: "menu.no_receipt_salary",
-  transfer: "menu.no_receipt_transfer",
-  refund: "menu.no_receipt_refund",
-  no_receipt: "menu.no_receipt_no_receipt",
-};
-
-/** A category as a button or menu item names it, in Title Case in English. */
-export function noReceiptTitle(category: NoReceiptCategory, t: TFunction): string {
-  return t(NO_RECEIPT_TITLE_KEYS[category]);
-}
+import { isNoReceipt } from "./effective";
 
 const COUNTED: [RegExp, string][] = [
   [/^(\d+) receipts match name\+amount \(unknown currency\)$/, "review.matchReason.multipleNameAmountUnknownCurrency"],
@@ -34,8 +9,11 @@ const COUNTED: [RegExp, string][] = [
   [/^(\d+) receipts match by filename$/, "review.matchReason.multipleFilename"],
 ];
 
-/** Why a transaction has its status, from the matcher's note code. Unknown codes are shown as they are. */
-export function matchReason(notes: string, t: TFunction): string {
+/**
+ * Why a transaction has its status, from the matcher's note code. A reason id reads as
+ * `reasonName` gives it. Unknown codes are shown as they are.
+ */
+export function matchReason(notes: string, t: TFunction, reasonName: (id: string) => string = (id) => id): string {
   switch (notes) {
     case "":
       return "";
@@ -57,7 +35,7 @@ export function matchReason(notes: string, t: TFunction): string {
       break;
   }
   if (isNoReceipt(notes)) {
-    return noReceiptLabel(notes, t);
+    return reasonName(notes);
   }
   const detail = notes.match(/\(([^)]+)\)/)?.[1] ?? "";
   if (notes.startsWith("fx_match")) {

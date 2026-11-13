@@ -14,8 +14,10 @@ use std::sync::LazyLock;
 use regex::Regex;
 use rust_xlsxwriter::{Color, Format, Workbook, XlsxError};
 
-use crate::model::{basename, Language, MatchResult, ReceiptMeta, Status, Transaction};
-use crate::review::NO_RECEIPT_NOTES;
+use crate::model::{
+    basename, is_other_reason, is_reason_id, reason_label, Language, MatchResult, Reason,
+    ReceiptMeta, Status, Transaction,
+};
 use crate::text::js_len;
 use strings::{strings, Strings};
 
@@ -157,15 +159,20 @@ fn detail(notes: &str) -> &str {
         .map_or("", |m| m.as_str())
 }
 
-/// The matcher's note code as a label in the report's language. Unknown codes are kept.
-fn format_notes(notes: &str, s: &Strings) -> String {
+/// The report's language and the names of the no-receipt reasons.
+pub struct Labels<'a> {
+    pub language: Language,
+    pub reasons: &'a [Reason],
+}
+
+/// The matcher's note code as a label in the report's language. A reason id reads as the
+/// reason's name. Unknown codes are kept.
+fn format_notes(notes: &str, s: &Strings, labels: &Labels) -> String {
+    if is_reason_id(notes) {
+        return reason_label(labels.reasons, notes, labels.language);
+    }
     match notes {
         "" => return String::new(),
-        "bank_fee" => return s.bank_fee_auto.to_string(),
-        "salary" => return s.no_receipt_salary.to_string(),
-        "transfer" => return s.no_receipt_transfer.to_string(),
-        "refund" => return s.no_receipt_refund.to_string(),
-        "no_receipt" => return s.no_receipt_none.to_string(),
         "name_amount_match" => return s.name_amount_match.to_string(),
         "name_amount_date_match" => return s.name_amount_date_match.to_string(),
         "amount_match" => return s.amount_match.to_string(),
@@ -205,7 +212,7 @@ fn format_notes(notes: &str, s: &Strings) -> String {
     plural(template, n)
 }
 
-fn validated_sheet(transactions: &[Transaction], s: &Strings) -> Sheet {
+fn validated_sheet(transactions: &[Transaction], s: &Strings, labels: &Labels) -> Sheet {
     let rows = transactions
         .iter()
         .map(|tx| {
@@ -233,7 +240,7 @@ fn validated_sheet(transactions: &[Transaction], s: &Strings) -> Sheet {
                 })),
                 Cell::text(join(&|m| confidence(m.confidence.as_deref(), s))),
                 Cell::text(join(&|m| m.currency.clone().unwrap_or_default())),
-                Cell::text(format_notes(&tx.notes, s)),
+                Cell::text(format_notes(&tx.notes, s, labels)),
             ]
         })
         .collect();
@@ -263,10 +270,11 @@ fn totals_sheet(
     unmatched: &[ReceiptMeta],
     reimbursements: &[ReceiptMeta],
     s: &Strings,
+    reasons: &[Reason],
 ) -> Sheet {
     let without_receipt: i64 = transactions
         .iter()
-        .filter(|t| t.status == Status::Matched && t.notes == "no_receipt")
+        .filter(|t| t.status == Status::Matched && is_other_reason(reasons, &t.notes))
         .map(|t| t.amount_cents)
         .sum();
     let mut rows = vec![
@@ -319,7 +327,7 @@ fn transaction_receipts_sheet(
     let rows = transactions
         .iter()
         .filter(|tx| tx.status == status)
-        .filter(|tx| !(status == Status::Matched && NO_RECEIPT_NOTES.contains(&tx.notes.as_str())))
+        .filter(|tx| !(status == Status::Matched && is_reason_id(&tx.notes)))
         .flat_map(|tx| {
             tx.receipt_meta.iter().map(move |m| {
                 let mut row = receipt_cells(m, s);
@@ -362,16 +370,18 @@ fn reimbursements_sheet(reimbursements: &[ReceiptMeta], s: &Strings) -> Sheet {
 }
 
 /// Lays out the report's sheets.
-pub fn build(
-    result: &MatchResult,
-    reimbursements: &[ReceiptMeta],
-    language: Language,
-) -> Vec<Sheet> {
-    let s = strings(language);
+pub fn build(result: &MatchResult, reimbursements: &[ReceiptMeta], labels: &Labels) -> Vec<Sheet> {
+    let s = strings(labels.language);
     let txs = &result.transactions;
     let mut sheets = vec![
-        totals_sheet(txs, &result.unmatched_receipts, reimbursements, s),
-        validated_sheet(txs, s),
+        totals_sheet(
+            txs,
+            &result.unmatched_receipts,
+            reimbursements,
+            s,
+            labels.reasons,
+        ),
+        validated_sheet(txs, s, labels),
         transaction_receipts_sheet(s.sheet_matched, txs, Status::Matched, s),
         transaction_receipts_sheet(s.sheet_review, txs, Status::Review, s),
         unmatched_sheet(&result.unmatched_receipts, s),
@@ -444,45 +454,67 @@ mod tests {
 
     #[test]
     fn labels_note_codes() {
+        let reasons = crate::model::default_reasons();
+        let en_labels = Labels {
+            language: Language::En,
+            reasons: &reasons,
+        };
+        let pt_labels = Labels {
+            language: Language::Pt,
+            reasons: &reasons,
+        };
         let en = strings(Language::En);
+        let pt = strings(Language::Pt);
         assert_eq!(
-            format_notes("fx_match (USD ±10%)", en),
+            format_notes("fx_match (USD ±10%)", en, &en_labels),
             "Foreign-currency match (USD ±10%)"
         );
-        assert_eq!(format_notes("rule_match (ACME)", en), "Rule match (ACME)");
         assert_eq!(
-            format_notes("rule_match_amount (ACME)", en),
+            format_notes("rule_match (ACME)", en, &en_labels),
+            "Rule match (ACME)"
+        );
+        assert_eq!(
+            format_notes("rule_match_amount (ACME)", en, &en_labels),
             "Rule match, different amount (ACME)"
         );
         assert_eq!(
-            format_notes("rule_match_amount (ACME)", strings(Language::Pt)),
+            format_notes("rule_match_amount (ACME)", pt, &pt_labels),
             "Regra de associação, valor diferente (ACME)"
         );
         assert_eq!(
-            format_notes("filename_match (acme.pdf)", en),
+            format_notes("filename_match (acme.pdf)", en, &en_labels),
             "Filename match — verify amounts"
         );
         assert_eq!(
-            format_notes("1 receipts match amount", en),
+            format_notes("1 receipts match amount", en, &en_labels),
             "1 receipt matches amount"
         );
         assert_eq!(
-            format_notes("3 fx receipts within ±10%", en),
+            format_notes("3 fx receipts within ±10%", en, &en_labels),
             "3 foreign-currency receipts within ±10%"
         );
         assert_eq!(
-            format_notes("1 fx receipts within ±10%", en),
+            format_notes("1 fx receipts within ±10%", en, &en_labels),
             "1 foreign-currency receipt within ±10%"
         );
         assert_eq!(
-            format_notes("2 receipts match name+amount (unknown currency)", en),
+            format_notes(
+                "2 receipts match name+amount (unknown currency)",
+                en,
+                &en_labels
+            ),
             "2 receipts match name & amount (currency unverified)"
         );
-        assert_eq!(format_notes("something new", en), "something new");
         assert_eq!(
-            format_notes("bank_fee", strings(Language::Pt)),
-            "Comissão bancária (auto)"
+            format_notes("something new", en, &en_labels),
+            "something new"
         );
+        assert_eq!(
+            format_notes("bank_fee", pt, &pt_labels),
+            "Comissão bancária"
+        );
+        assert_eq!(format_notes("salary", en, &en_labels), "Salary");
+        assert_eq!(format_notes("reason:gone", pt, &pt_labels), "Outro");
     }
 
     #[test]

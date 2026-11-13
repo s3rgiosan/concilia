@@ -11,7 +11,7 @@ use crate::excel;
 use crate::finalize::TRANSIENT_FIELDS;
 use crate::fsutil::{read_json_lenient, read_json_opt};
 use crate::model::{
-    Draft, Language, MatchResult, ReceiptMeta, StatementRecord, Status, Transaction,
+    Draft, Language, MatchResult, Reason, ReceiptMeta, StatementRecord, Status, Transaction,
 };
 use crate::period::PeriodPaths;
 use crate::review::merge_draft;
@@ -21,9 +21,11 @@ pub(super) fn write_report(
     result: &MatchResult,
     reimbursements: &[ReceiptMeta],
     language: Language,
+    reasons: &[Reason],
     path: &Path,
 ) -> Result<(), PipelineError> {
-    let sheets = excel::build(result, reimbursements, language);
+    let labels = excel::Labels { language, reasons };
+    let sheets = excel::build(result, reimbursements, &labels);
     let tmp = path.with_extension("xlsx.tmp");
     excel::write(&sheets, &tmp).map_err(|e| io(&tmp, e))?;
     std::fs::rename(&tmp, path).map_err(|e| io(path, e))
@@ -87,7 +89,11 @@ pub struct ReviewData {
 
 /// Writes the report from the match result with pending review decisions applied, and
 /// returns its path. Decisions that cannot be applied are left out.
-pub fn export_report(paths: &PeriodPaths, language: Language) -> Result<PathBuf, PipelineError> {
+pub fn export_report(
+    paths: &PeriodPaths,
+    language: Language,
+    reasons: &[Reason],
+) -> Result<PathBuf, PipelineError> {
     let result: MatchResult =
         read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
     let draft: Draft = read_json_lenient(&paths.draft()).unwrap_or_default();
@@ -103,7 +109,7 @@ pub fn export_report(paths: &PeriodPaths, language: Language) -> Result<PathBuf,
         }
     };
     let reimbursements = read_reimbursements(paths);
-    write_report(&shown, &reimbursements, language, &paths.report())?;
+    write_report(&shown, &reimbursements, language, reasons, &paths.report())?;
     Ok(paths.report())
 }
 

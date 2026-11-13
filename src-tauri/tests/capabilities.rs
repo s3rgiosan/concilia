@@ -98,6 +98,7 @@ fn the_settings_window_cannot_run_jobs_or_open_files() {
         "add_statements",
         "scan_receipts",
         "finalize",
+        "reopen",
         "open_receipt",
         "open_report",
         "export_report",

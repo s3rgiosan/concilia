@@ -1,12 +1,14 @@
 //! Month folders: listing, summaries, creation and reset, plus the period's statement list.
 
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::Value;
 
 use super::{io, PipelineError};
 use crate::error::ErrorKind;
+use crate::finalize::Move;
 use crate::fsutil::{read_json_lenient, remove_if_exists};
 use crate::model::{Draft, MatchResult, StatementRecord, Status};
 use crate::period::{Period, PeriodPaths};
@@ -196,33 +198,66 @@ fn restored_name(name: &str, n: usize) -> String {
     }
 }
 
+/// The moves that bring every sorted receipt back into `receipts/`, sorted by source. Only
+/// regular files move: hidden files such as `.DS_Store`, subfolders, symlinks and status
+/// folders that are symlinks stay where they are. Name clashes get a `-restored` suffix; a
+/// file with no free name is left out and reported in `warnings`.
+pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> Vec<Move> {
+    let mut sources: Vec<PathBuf> = Vec::new();
+    for folder in STATUS_FOLDERS {
+        let dir = paths.receipts.join(folder);
+        let is_real_dir = std::fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir());
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        if !is_real_dir {
+            warnings.push(format!("{folder} is not a folder; its files stay in place"));
+            continue;
+        }
+        sources.extend(
+            entries
+                .flatten()
+                .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
+                .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+                .map(|entry| entry.path()),
+        );
+    }
+    sources.sort();
+    let mut reserved: HashSet<PathBuf> = HashSet::new();
+    let mut moves = Vec::new();
+    for from in sources {
+        let name = from
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let taken = |path: &Path| path.exists() || reserved.contains(path);
+        let mut target = paths.receipts.join(&name);
+        let mut n = 1;
+        while taken(&target) && n <= 10_000 {
+            target = paths.receipts.join(restored_name(&name, n));
+            n += 1;
+        }
+        if taken(&target) {
+            warnings.push(format!("no free name to restore {name}"));
+            continue;
+        }
+        reserved.insert(target.clone());
+        moves.push(Move { from, to: target });
+    }
+    moves
+}
+
 /// Moves finalized receipts back into `receipts/` and deletes the extraction cache, the match
 /// result and the finalized marker. Transactions, reimbursements, the draft and the report
 /// stay. Name clashes get a `-restored` suffix.
 pub fn reset_period(paths: &PeriodPaths) -> ResetReport {
     let mut report = ResetReport::default();
-    for folder in STATUS_FOLDERS {
-        let dir = paths.receipts.join(folder);
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let mut target = paths.receipts.join(&name);
-            let mut n = 1;
-            while target.exists() && n <= 10_000 {
-                target = paths.receipts.join(restored_name(&name, n));
-                n += 1;
-            }
-            if target.exists() {
-                report
-                    .warnings
-                    .push(format!("no free name to restore {name}"));
-                continue;
-            }
-            match std::fs::rename(entry.path(), &target) {
-                Ok(()) => report.restored += 1,
-                Err(error) => report.warnings.push(format!("{name}: {error}")),
+    for step in restore_moves(paths, &mut report.warnings) {
+        match std::fs::rename(&step.from, &step.to) {
+            Ok(()) => report.restored += 1,
+            Err(error) => {
+                let name = step.from.file_name().unwrap_or_default().to_string_lossy();
+                report.warnings.push(format!("{name}: {error}"));
             }
         }
     }

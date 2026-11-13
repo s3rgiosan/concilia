@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import type { Draft, ReceiptMeta, ReviewData } from "../lib/tauri";
 import {
+  addableReceipts,
   claimedFiles,
   filterCounts,
+  isNoReceipt,
   mergeDraft,
   pendingCount,
   relPaths,
@@ -54,7 +56,15 @@ export function useReviewList(data: ReviewData | null, draft: Draft) {
   }
 
   const receipts = useMemo(() => rowReceipts(selected, pool, claimed), [selected, pool, claimed]);
-  const focusedChoice = focus && selected && focus.rowId === selected.id ? receipts.find((r) => r.file === focus.file) : undefined;
+  /** Pool receipts the selected MATCHED transaction can add to its receipts. */
+  const addable = useMemo(
+    () => (selectedTx && selectedTx.status === "MATCHED" && !isNoReceipt(selectedTx.notes) ? addableReceipts(pool, selectedTx) : []),
+    [selectedTx, pool],
+  );
+  const focusedChoice =
+    focus && selected && focus.rowId === selected.id
+      ? (receipts.find((r) => r.file === focus.file) ?? addable.find((r) => r.file === focus.file))
+      : undefined;
   const focused: ReceiptMeta | null = focusedChoice ?? receipts[0] ?? null;
 
   const nextPendingIndex = findPending(rows, selectedIndex, 1);
@@ -86,6 +96,7 @@ export function useReviewList(data: ReviewData | null, draft: Draft) {
     selectedIndex,
     selectedTx,
     receipts,
+    addable,
     focused,
     nextPendingIndex,
     previousPendingIndex,

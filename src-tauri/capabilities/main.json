@@ -36,6 +36,7 @@
     "allow-get-draft",
     "allow-save-draft",
     "allow-finalize",
+    "allow-reopen",
     "allow-rescan-receipt",
     "allow-rescan-reimbursement",
     "allow-export-report",

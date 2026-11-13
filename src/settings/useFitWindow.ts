@@ -4,7 +4,11 @@ import { onZoomChanged, setWindowSize, subscribe } from "../lib/tauri";
 
 /** Width of the Settings window; src-tauri/src/windows.rs creates it with the same value. */
 const SETTINGS_WIDTH = 640;
-const MIN_HEIGHT = 240;
+/**
+ * The shortest window that shows every Settings sheet without a scroll bar: the tallest one
+ * (Add Rule with its warning, 230 px) plus the 12 px gap above and below a sheet.
+ */
+const MIN_HEIGHT = 260;
 const MAX_HEIGHT = 640;
 const DURATION_MS = 160;
 

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use common::{read_json_file, receipt_meta, report_sheet_names, write_file, write_json_file};
 use concilia_lib::model::{
-    Language, MatchResult, ReceiptMeta, ReceiptsByStatus, Status, Transaction,
+    default_reasons, Language, MatchResult, ReceiptMeta, ReceiptsByStatus, Status, Transaction,
 };
 use concilia_lib::period::{Period, PeriodPaths};
 use concilia_lib::pipeline::{self, PipelineError};
@@ -78,7 +78,7 @@ impl Fixture {
     }
 
     fn finalize(&self) -> Result<(), PipelineError> {
-        pipeline::finalize(&self.paths, Language::En)
+        pipeline::finalize(&self.paths, Language::En, &default_reasons())
     }
 
     /// Contents of a file under `receipts/`.

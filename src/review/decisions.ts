@@ -1,7 +1,6 @@
 // Review decisions, as the transaction fields each one overrides.
 
 import type { Draft, ReceiptMeta, Transaction } from "../lib/tauri";
-import type { NoReceiptCategory } from "./effective";
 
 export type Decision = Pick<Transaction, "status" | "receipt_meta" | "receipt_files" | "notes">;
 
@@ -21,9 +20,24 @@ export function assign(receipt: ReceiptMeta): Decision {
   return { status: "MATCHED", receipt_meta: [receipt], receipt_files: [receipt.file], notes: "manual_match" };
 }
 
-/** Marks a transaction as needing no receipt. */
-export function noReceipt(category: NoReceiptCategory): Decision {
-  return { status: "MATCHED", receipt_meta: [], receipt_files: [], notes: category };
+/** Adds a pool receipt to a MATCHED transaction's receipts. */
+export function addReceipt(tx: Transaction, receipt: ReceiptMeta): Decision {
+  const meta = [...tx.receipt_meta, receipt];
+  return { status: "MATCHED", receipt_meta: meta, receipt_files: meta.map((m) => m.file), notes: "manual_match" };
+}
+
+/** Takes one receipt off a MATCHED transaction. The last one sends it back to UNMATCHED. */
+export function removeReceipt(tx: Transaction, file: string): Decision {
+  const meta = tx.receipt_meta.filter((m) => m.file !== file);
+  if (meta.length === 0) {
+    return unmatch();
+  }
+  return { status: "MATCHED", receipt_meta: meta, receipt_files: meta.map((m) => m.file), notes: "manual_match" };
+}
+
+/** Marks a transaction as needing no receipt for the reason with this id. */
+export function noReceipt(reason: string): Decision {
+  return { status: "MATCHED", receipt_meta: [], receipt_files: [], notes: reason };
 }
 
 /** A decision as stored in the draft, without display-only fields. */

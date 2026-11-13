@@ -4,24 +4,25 @@ import { Icon } from "../components/Icon";
 import { shortDate } from "../lib/dates";
 import { formatMoney, formatSignedMoney } from "../lib/money";
 import type { Status } from "../lib/tauri";
+import { reasonLabel, useReasons } from "../lib/reasons";
 import { isNoReceipt } from "./effective";
-import { noReceiptTitle } from "./notes";
 import { receiptTitle } from "./receipts";
 import type { ListRow } from "./rows";
 
 const STATUS_DOT: Record<Status, string> = { MATCHED: "dot--green", REVIEW: "dot--orange", UNMATCHED: "dot--red" };
 
 /**
- * A status as a dot and its label: a transaction's status, No Receipt with its category for a
+ * A status as a dot and its label: a transaction's status, No Receipt with its reason for a
  * transaction marked as needing none (`notes`), or a reimbursement's kind when `status` is absent.
  */
 export function StatusLabel({ status, notes }: { status?: Status; notes?: string }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const reasons = useReasons();
   let label: string;
   if (!status) {
     label = t("review.reimbursements.label");
   } else if (status === "MATCHED" && notes !== undefined && isNoReceipt(notes)) {
-    label = t("review.status.noReceipt", { category: noReceiptTitle(notes, t) });
+    label = t("review.status.noReceipt", { reason: reasonLabel(reasons, notes, i18n.language) });
   } else {
     label = t(`review.status.${status.toLowerCase()}`);
   }

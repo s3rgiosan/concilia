@@ -82,6 +82,7 @@
     "openReport": "Open Report",
     "reconcile": "Reconcile",
     "rerun": "Reconcile Again…",
+    "reopen": "Reopen Month…",
     "summary": {
       "transactions_one": "{{count}} transaction",
       "transactions_other": "{{count}} transactions",
@@ -96,6 +97,11 @@
     "title": "New Month",
     "create": "Create",
     "exists": "{{month}} is already in the sidebar."
+  },
+  "reopen": {
+    "title": "Reopen {{period}}?",
+    "message": "Receipts that were sorted move back to the receipts folder. Your decisions are kept, and you can scan for new receipts.",
+    "confirm": "Reopen"
   },
   "rerun": {
     "title": "Reconcile {{period}} again?",
@@ -166,7 +172,7 @@
       "review": "Needs Review",
       "unmatched": "Unmatched",
       "matched": "Matched",
-      "noReceipt": "No Receipt · {{category}}"
+      "noReceipt": "No Receipt · {{reason}}"
     },
     "search": "Search Transactions",
     "scan": "Scan for New Receipts",
@@ -210,6 +216,7 @@
     "sections": {
       "candidates": "Suggested Receipts",
       "assignable": "Unmatched Receipts",
+      "addable": "Add a Receipt",
       "receipts_one": "Receipt",
       "receipts_other": "Receipts"
     },
@@ -219,7 +226,9 @@
       "removeMatch": "Remove Match",
       "rescan": "Read Again",
       "quickLook": "Quick Look",
-      "needsReceipt": "Needs a Receipt"
+      "needsReceipt": "Needs a Receipt",
+      "addReceipt": "Add Receipt…",
+      "remove": "Remove"
     },
     "receiptActions": "Actions for {{name}}",
     "assignReceipt": "Assign {{name}}",
@@ -228,19 +237,15 @@
     "noPreview": "No Preview",
     "previewOf": "Preview of {{name}}",
     "quickLookOf": "Quick Look of {{name}}",
+    "receiptsTotal": "Total {{amount}}",
+    "removeReceipt": "Remove {{name}}",
     "mismatch": {
       "amount": "Differs by {{amount}}",
       "fx": "Differs by more than 10% ({{currency}} receipt)"
     },
     "noReceiptMenu": "No Receipt Needed",
-    "noReceiptNeeded": "No receipt needed: {{category}}",
-    "noReceiptCategories": {
-      "bankFee": "Bank fee",
-      "salary": "Salary",
-      "transfer": "Transfer",
-      "refund": "Refund",
-      "noReceipt": "No receipt"
-    },
+    "noReceiptNeeded": "No receipt needed: {{reason}}",
+    "noReceipts": "No receipt",
     "candidatesTaken": "Every candidate was assigned to another transaction.",
     "noCandidates": "No receipts to assign.",
     "showAllReceipts": "Show All {{count}} Receipts",
@@ -295,7 +300,7 @@
         "unmatched_other": "{{count}} unmatched"
       },
       "report": "Concilia sorts the receipts into folders inside this month's receipts folder and saves the Excel report.",
-      "later": "To change decisions later, use Reconcile Again.",
+      "later": "To change decisions later, use Reopen Month.",
       "refused_one": "{{count}} file stays in the receipts folder because Concilia can't read it.",
       "refused_other": "{{count}} files stay in the receipts folder because Concilia can't read them.",
       "reviewRemaining": "Review Remaining",
@@ -305,11 +310,12 @@
     },
     "resizeDetails": "Resize Details",
     "clearSearch": "Clear Search",
-    "finalizedNote": "This month is finalized. Reconcile it again to change decisions.",
+    "finalizedNote": "This month is finalized. Reopen it to change decisions.",
     "finalizedBanner": "{{period}} is finalized. The receipts are sorted and the report is ready.",
     "rule": {
       "alwaysMatch": "Always Match “{{vendor}}” to “{{description}}”",
       "added": "Rule added. It applies the next time Concilia matches receipts.",
+      "alwaysNoReceipt": "Always Mark “{{description}}” as {{reason}}",
       "exists": "That rule already exists."
     },
     "loadFailed": "Couldn't Open This Month"
@@ -324,7 +330,8 @@
       "general": "General",
       "folder": "Folder",
       "gemini": "Gemini",
-      "rules": "Rules"
+      "rules": "Rules",
+      "reasons": "Reasons"
     },
     "busy": "The folder and Gemini settings can't change while a month is being processed.",
     "readOnly": "These settings were saved by a newer version of Concilia and can't be changed here.",
@@ -376,8 +383,11 @@
     },
     "rules": {
       "title": "Match rules",
-      "description": "Rules run before automatic matching. A rule links a receipt to a transaction when both keywords are found. Upper and lower case don't matter.",
+      "description": "Rules run before automatic matching. A rule links a receipt to a transaction when both keywords are found, or marks a transaction as needing no receipt when its keyword is found. Upper and lower case don't matter.",
       "none": "No rules yet.",
+      "kind": "Rule",
+      "kindReceipt": "Match a receipt",
+      "kindNoReceipt": "No receipt: {{reason}}",
       "receipt": "Receipt keyword",
       "transaction": "Transaction keyword",
       "receiptPlaceholder": "e.g. acme",
@@ -385,11 +395,35 @@
       "addRule": "Add Rule…",
       "addRuleTitle": "Add Rule",
       "deleteRule": "Delete Rule",
-      "incomplete": "Fill in both keywords of every rule.",
+      "incomplete": "Fill in every keyword of the rule.",
       "editRuleTitle": "Edit Rule",
       "editRule": "Edit…",
       "removed": "Rule removed.",
       "undoRemove": "Undo"
+    },
+    "reasons": {
+      "title": "No-receipt reasons",
+      "description": "Reasons you can give when a transaction needs no receipt. The No Receipt Needed menu lists them in this order. Drag a row, or press ⌥↑ or ⌥↓, to move it.",
+      "english": "English",
+      "portuguese": "Portuguese",
+      "add": "Add Reason…",
+      "addTitle": "Add Reason",
+      "remove": "Delete Reason",
+      "edit": "Edit…",
+      "editTitle": "Edit Reason",
+      "otherKept": "This reason cannot be deleted.",
+      "nameEn": "Name in English",
+      "namePt": "Name in Portuguese",
+      "namePlaceholderEn": "e.g. Bank Fee",
+      "namePlaceholderPt": "e.g. Comissão bancária",
+      "fallback": "A blank name shows the name in the other language.",
+      "duplicate": "Another reason has this name.",
+      "empty": "Enter a name in at least one language.",
+      "removeTitle": "Delete “{{name}}”?",
+      "removeMessage": "Transactions marked with this reason will show as “{{other}}”.",
+      "removeMessageRules_one": "{{count}} rule uses this reason. The rule and the transactions marked with this reason will show as “{{other}}”.",
+      "removeMessageRules_other": "{{count}} rules use this reason. The rules and the transactions marked with this reason will show as “{{other}}”.",
+      "removeConfirm": "Delete"
     }
   },
   "update": {
@@ -410,7 +444,7 @@
     "network": "Concilia can't reach Google. Check your internet connection and try again.",
     "poppler_missing": "The PDF tools Concilia needs are missing. Reinstall Concilia.",
     "parse": "Concilia couldn't read the statement. Check that it comes from the bank selected for it.",
-    "finalized": "This month is finalized. Reconcile it again to scan for receipts.",
+    "finalized": "This month is finalized. Reopen it to scan for receipts.",
     "cancelled": "Reconciliation stopped.",
     "timeout": "Reconciliation took longer than 30 minutes and was stopped. Try again.",
     "read_only": "The settings were saved by a newer version of Concilia and are read-only.",
@@ -420,6 +454,7 @@
     "codes": {
       "no_transactions": "Add a bank statement to this month, then reconcile it.",
       "not_reconciled": "This month hasn't been reconciled yet. Reconcile it first.",
+      "not_finalized": "This month isn't finalized, so there is nothing to reopen.",
       "no_bank_match": "Concilia found no transactions in the statements. Check the bank selected for each statement.",
       "not_pdf": "Only PDF statements can be added.",
       "file_missing": "The receipt file is no longer in the receipts folder.",
@@ -482,17 +517,13 @@
     "reconcile": "Reconcile",
     "scan": "Scan for New Receipts",
     "rerun": "Reconcile Again…",
+    "reopen": "Reopen Month…",
     "finalize": "Finalize…",
     "accept": "Assign Receipt",
     "reject": "Remove Match",
     "reject_review": "None of These",
     "reject_no_receipt": "Needs a Receipt",
     "no_receipt": "No Receipt Needed",
-    "no_receipt_bank_fee": "Bank Fee",
-    "no_receipt_salary": "Salary",
-    "no_receipt_transfer": "Transfer",
-    "no_receipt_refund": "Refund",
-    "no_receipt_no_receipt": "Other",
     "rescan": "Read Receipt Again",
     "quick_look": "Quick Look",
     "open_in_preview": "Open in Preview",

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import i18n from "../i18n";
-import { NO_RECEIPT_CATEGORIES } from "./effective";
-import { matchReason, noReceiptLabel } from "./notes";
+import { matchReason } from "./notes";
 
 const t = i18n.t.bind(i18n);
 
@@ -37,14 +36,6 @@ describe("matchReason", () => {
     expect(matchReason("fx_match", t)).toBe("Foreign-currency match ()");
   });
 
-  it.each([
-    ["salary", "Salary"],
-    ["transfer", "Transfer"],
-    ["refund", "Refund"],
-    ["no_receipt", "No receipt"],
-  ])("labels the %s category", (notes, text) => {
-    expect(matchReason(notes, t)).toBe(text);
-  });
 
   it.each([
     ["1 receipts match name+amount", "1 receipt matches name & amount"],
@@ -73,8 +64,9 @@ describe("matchReason", () => {
   });
 });
 
-describe("noReceiptLabel", () => {
-  it("labels every category", () => {
-    expect(NO_RECEIPT_CATEGORIES.map((c) => noReceiptLabel(c, t))).toEqual(["Bank fee", "Salary", "Transfer", "Refund", "No receipt"]);
+describe("matchReason for reasons", () => {
+  it("names a reason id with the given lookup", () => {
+    expect(matchReason("reason:lunch", t, (id) => `name of ${id}`)).toBe("name of reason:lunch");
+    expect(matchReason("salary", t, () => "Salário")).toBe("Salário");
   });
 });

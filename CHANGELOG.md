@@ -4,6 +4,30 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-13
+
+### Changed
+
+- Concilia is a native Tauri app with a Rust backend. Matching, statement parsing, Gemini extraction, the Excel report and the reconcile, scan, rescan and finalize flows run in Rust.
+- The main window has a month sidebar, a toolbar and native macOS menus with keyboard shortcuts. Each month goes from receipts and statements to review, and the review is a transaction list with a details column.
+- Settings is a separate window with Folder, Gemini, Rules, Reasons and General panes. Changes save at once.
+- Finalize, Reconcile Again and removing the service account key ask for confirmation in native alerts.
+- The app follows the macOS accent colour and appearance, supports zoom, and remembers the main window's size and position.
+- Updates download and install from the app. Release builds sign the update and include poppler.
+
+### Added
+
+- A month in review accepts more bank statements. New transactions merge with the ones already there, duplicates are skipped, and review decisions are kept.
+- The review lists receipt files Concilia refuses to read (over 50 MB, or not a real PDF or image) with the reason. These files stay in the receipts folder on Finalize.
+- A matched transaction can hold more than one receipt. Add Receipt… lists the unmatched receipts, and each receipt of a transaction with several has a Remove button. The details show the receipts' total and how it differs from the transaction's amount.
+- Rules can mark a transaction as needing no receipt. A no-receipt rule pairs a transaction keyword with a no-receipt reason and runs before the bank fee check and the receipt rules. Add one in Settings › Rules or with Always Mark from a transaction's context menu.
+- Settings › Reasons edits the no-receipt reasons. Add, rename, delete or reorder them, with a name in English and in Portuguese. Concilia ships with Bank Fee, Salary, Transfer, Refund and Other; Other cannot be deleted, and rules and transactions that use a deleted reason show as Other.
+- Reopen Month returns a finalized month to review. The sorted receipts move back to the receipts folder, every decision is kept, and no receipt is read again, so Scan for New Receipts can add a late receipt to the review.
+
+### Removed
+
+- The Electron app and the Express server.
+
 ## [1.3.1] - 2026-08-28
 
 ### Fixed
@@ -151,3 +175,12 @@ Initial release.
 - Single-threaded matching: transaction processing order can affect which receipt binds first when amounts are tied.
 - No persistence between runs beyond per-period `<year>/<month>/docs/` JSON artifacts; each reconciliation starts fresh.
 - Bank description abbreviations (e.g. `SHOPCO MKT`) may not match vendor names extracted by Gemini.
+
+[Unreleased]: https://github.com/s3rgiosan/concilia/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/s3rgiosan/concilia/compare/1.3.1...2.0.0
+[1.3.1]: https://github.com/s3rgiosan/concilia/compare/1.3.0...1.3.1
+[1.3.0]: https://github.com/s3rgiosan/concilia/compare/1.2.0...1.3.0
+[1.2.0]: https://github.com/s3rgiosan/concilia/compare/1.1.0...1.2.0
+[1.1.0]: https://github.com/s3rgiosan/concilia/compare/1.0.1...1.1.0
+[1.0.1]: https://github.com/s3rgiosan/concilia/compare/1.0.0...1.0.1
+[1.0.0]: https://github.com/s3rgiosan/concilia/releases/tag/1.0.0

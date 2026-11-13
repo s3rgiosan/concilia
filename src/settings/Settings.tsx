@@ -12,10 +12,11 @@ import { onMenu, saveSettings, subscribe, type AppStateView, type Settings as Se
 import { FolderTab } from "./FolderTab";
 import { GeminiTab } from "./GeminiTab";
 import { GeneralTab } from "./GeneralTab";
+import { ReasonsTab } from "./ReasonsTab";
 import { RulesTab } from "./RulesTab";
 import { useFitWindow } from "./useFitWindow";
 
-const PANES = ["folder", "gemini", "rules", "general"] as const;
+const PANES = ["folder", "gemini", "rules", "reasons", "general"] as const;
 type Pane = (typeof PANES)[number];
 
 const PANE_ICONS: Record<Pane, IconName> = {
@@ -23,13 +24,14 @@ const PANE_ICONS: Record<Pane, IconName> = {
   folder: "folder",
   gemini: "sparkles",
   rules: "rules",
+  reasons: "reasons",
 };
 
 function isPane(value: string): value is Pane {
   return (PANES as readonly string[]).includes(value);
 }
 
-/** The Settings window: General, Folder, Gemini and Rules panes. Every change saves at once. */
+/** The Settings window: Folder, Gemini, Rules, Reasons and General panes. Every change saves at once. */
 export function Settings({ initialState = null }: { initialState?: AppStateView | null }) {
   const { t } = useTranslation();
   const { state, error: loadError, replace, reload } = useAppState(initialState);
@@ -204,7 +206,8 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
             {pane === "general" ? <GeneralTab state={state} save={save} onError={report} /> : null}
             {pane === "folder" ? <FolderTab state={state} save={save} onError={report} /> : null}
             {pane === "gemini" ? <GeminiTab state={state} save={save} replace={replace} onError={report} /> : null}
-            {pane === "rules" ? <RulesTab onError={report} readOnly={state.read_only} registerUndo={undoRule} /> : null}
+            {pane === "rules" ? <RulesTab onError={report} readOnly={state.read_only} registerUndo={undoRule} reasons={state.reasons} /> : null}
+            {pane === "reasons" ? <ReasonsTab state={state} replace={replace} onError={report} /> : null}
           </div>
         </div>
       </main>

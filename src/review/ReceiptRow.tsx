@@ -14,7 +14,7 @@ import { receiptTitle } from "./receipts";
  * A receipt in the details column: vendor, amount, date and file, with a note when its amount
  * differs from the transaction's. Clicking it shows it in the preview below, and an eye marks the
  * one shown. Its `•••` menu and its context menu read it again or open it in Preview; `action` is
- * the Assign button at the end when `onAssign` is given. A receipt Gemini couldn't read says so
+ * the Assign button at the end when `onAssign` is given, and Remove when `onRemove` is. A receipt Gemini couldn't read says so
  * under it, with Read Again unless it is read-only. A read-only receipt cannot be read again.
  * Memoized: its handlers take the receipt, so a list passes the same functions to every row.
  */
@@ -25,6 +25,7 @@ export const ReceiptRow = memo(function ReceiptRow({
   rescanning,
   readOnly,
   onAssign,
+  onRemove,
   onFocus,
   onRescan,
   onOpen,
@@ -36,6 +37,7 @@ export const ReceiptRow = memo(function ReceiptRow({
   rescanning: boolean;
   readOnly?: boolean;
   onAssign?: (receipt: ReceiptMeta) => void;
+  onRemove?: (receipt: ReceiptMeta) => void;
   onFocus: (receipt: ReceiptMeta) => void;
   onRescan: (receipt: ReceiptMeta) => void;
   onOpen: (receipt: ReceiptMeta) => void;
@@ -99,6 +101,11 @@ export const ReceiptRow = memo(function ReceiptRow({
         {onAssign ? (
           <button type="button" data-details-action aria-label={t("review.assignReceipt", { name: title })} onClick={() => onAssign(receipt)}>
             {t("review.actions.assign")}
+          </button>
+        ) : null}
+        {onRemove ? (
+          <button type="button" data-details-action aria-label={t("review.removeReceipt", { name: title })} onClick={() => onRemove(receipt)}>
+            {t("review.actions.remove")}
           </button>
         ) : null}
       </span>

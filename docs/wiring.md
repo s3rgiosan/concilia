@@ -35,12 +35,13 @@ Routes, from `menu::route` and `handle_menu_event` in `src-tauri/src/lib.rs`:
 | Month | Reconcile | `reconcile` | ⌘R | Main | `MenuActions.reconcile` |
 | Month | Scan for New Receipts | `scan` | ⇧⌘R | Main | review: `scan` |
 | Month | Finalize… | `finalize` | | Main | review: `finalize`, which shows the Finalize alert |
+| Month | Reopen Month… | `reopen` | | Main | `MenuActions.reopen`, which shows the Reopen alert; enabled for a finalized month |
 | Month | Reconcile Again… | `rerun` | | Main | `MenuActions.rerun`, which shows the Reconcile Again alert |
 | Month | Open Report | `open_report` | | Main | `MenuActions.openReport` |
 | Month | Export Report… | `export_report` | | Main | review: `exportReport` |
 | Transaction | Assign Receipt | `accept` | ⌘↩ | Main | review: `accept` |
 | Transaction | Remove Match (text follows the selection) | `reject` | ⌘⌫ | Main | review: `reject` |
-| Transaction | No Receipt Needed › Bank Fee, Salary, Transfer, Refund, Other | `no_receipt_*` | | Main | review: `noReceipt` |
+| Transaction | No Receipt Needed › one item per reason, in the order of Settings › Reasons | `no_receipt_<reason id>` | | Main | review: `noReceipt` with the reason id; `useMenu` sends the reasons with the labels (`set_menu`) |
 | Transaction | Read Receipt Again | `rescan` | ⌥⌘R | Main | review: `rescan` |
 | Transaction | Quick Look | `quick_look` | ⌘Y | Main | review: `quickLook` |
 | Transaction | Open in Preview | `open_in_preview` | ⌥⌘O | Main | review: `openInPreview` |
@@ -54,11 +55,12 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 
 | Where | Built in | Items |
 |---|---|---|
-| Sidebar month (right click) | `monthMenu` in `src/main/Main.tsx`, shown by `src/main/Sidebar.tsx` | Open Report, Show in Finder, Reconcile Again… |
-| Month toolbar More Actions | `monthActions` in `src/main/Main.tsx` | Open Report, Show in Finder, Reconcile Again… |
+| Sidebar month (right click) | `monthMenu` in `src/main/Main.tsx`, shown by `src/main/Sidebar.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
+| Month toolbar More Actions | `monthActions` in `src/main/Main.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
 | Statement row (right click) | `src/main/Statements.tsx` | Remove |
-| Transaction row (right click) | `rowMenu` in `src/review/rowMenu.ts`, shown by `src/review/Review.tsx` | Quick Look, Open in Preview, Read Receipt Again, Assign Receipt, Remove Match, No Receipt Needed, Always Match rule |
+| Transaction row (right click) | `rowMenu` in `src/review/rowMenu.ts`, shown by `src/review/Review.tsx` | Quick Look, Open in Preview, Read Receipt Again, Assign Receipt, Remove Match, No Receipt Needed, Always Match rule, Always Mark rule |
 | Receipt row (right click) | `src/review/ReceiptRow.tsx` | Read Receipt Again, Open in Preview |
+| Rule sheet Rule pop-up | `src/settings/RulesTab.tsx` | Match a receipt, then No receipt: <reason> for each reason in Settings › Reasons |
 | Toolbar pop-up buttons | `src/components/PopUpButton.tsx` with entries from `ReviewToolbar.tsx` and `Details.tsx` | the entries each pane passes |
 | Text fields | WebKit | the system text menu (`App.tsx` keeps it for text fields only) |
 
@@ -69,7 +71,9 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 | Alert | Asked from | Buttons |
 |---|---|---|
 | Finalize <month>? | `askFinalize` in `src/review/Review.tsx` (`finalizeAlert.ts`) | Finalize, Review Remaining (while transactions need a decision), Cancel |
+| Reopen <month>? | `askReopen` in `src/main/Main.tsx` (`reopenAlert.ts`) | Reopen, Cancel |
 | Reconcile <month> again? | `askRerun` in `src/main/Main.tsx` (`rerunAlert.ts`) | Reconcile Again, Cancel |
+| Delete “<reason>”? | `askRemove` in `src/settings/ReasonsTab.tsx` | Delete, Cancel |
 | Remove the service account key? | `askRemove` in `src/settings/GeminiTab.tsx` | Remove Key, Cancel |
 
 ## Events
@@ -79,7 +83,7 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 | `menu` | `handle_menu_event` (`lib.rs`) | main, or Settings for Undo, Redo and Delete while it has focus | `onMenu` in `useMenu.ts` and `Settings.tsx` |
 | `appearance-changed` | `appearance::refresh` on window focus and theme change | all windows | `installAppearance` (`src/lib/appearance.ts`) |
 | `zoom-changed` | `zoom::apply` | the zoomed window | `onZoomChanged` in `useFitWindow.ts` |
-| `settings-changed` | `commands.rs` after a settings change | all windows | `onSettingsChanged` |
+| `settings-changed` | `commands.rs` after a settings or reasons change | all windows | `onSettingsChanged` |
 | `busy-changed` | the lock watcher set up in `lib.rs` | all windows | `onBusyChanged` |
 | `update-progress` | `install_update` in `commands.rs` | all windows | `onUpdateProgress` |
 | `update-check-result` | `check_for_updates_from_menu` in `lib.rs` | main | `onUpdateCheckResult` |
@@ -91,6 +95,6 @@ App commands are declared in `src-tauri/build.rs` (`COMMANDS`); each window may 
 | Capability | File | Window | Grants |
 |---|---|---|---|
 | `main` | `src-tauri/capabilities/main.json` | main | core app version, event listen, menu new and popup, window title, progress bar, attention and dragging; the month, review, report, menu-state, update, `get_appearance` and `show_alert` commands |
-| `settings` | `src-tauri/capabilities/settings.json` | settings | core app version, event listen, window size, title and dragging; the settings, key, Gemini, rules, update, `get_appearance` and `show_alert` commands |
+| `settings` | `src-tauri/capabilities/settings.json` | settings | core app version, event listen, window size, title and dragging; the settings, key, Gemini, rules, `save_reasons`, update, `get_appearance` and `show_alert` commands |
 
 Plugins used from Rust only (no webview permission): `tauri-plugin-window-state` restores the main window's size and position, `tauri-plugin-dialog` shows file pickers and alerts, `tauri-plugin-opener` opens the help and key pages.
