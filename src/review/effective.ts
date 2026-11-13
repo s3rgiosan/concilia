@@ -126,6 +126,28 @@ export function receiptsTotal(receipts: ReceiptMeta[]): number | null {
 }
 
 /**
+ * The sum of the reimbursement amounts and its currency, or null when the amounts use more than
+ * one currency. A reimbursement without a currency counts as euro. Receipts without an amount
+ * add nothing.
+ */
+export function reimbursementsTotal(reimbursements: ReceiptMeta[]): { cents: number; currency: string } | null {
+  let cents = 0;
+  let currency: string | null = null;
+  for (const reimbursement of reimbursements) {
+    if (reimbursement.amount_cents === null) {
+      continue;
+    }
+    const own = reimbursement.currency || "EUR";
+    if (currency !== null && currency !== own) {
+      return null;
+    }
+    currency = own;
+    cents += reimbursement.amount_cents;
+  }
+  return { cents, currency: currency ?? "EUR" };
+}
+
+/**
  * How the euro total of several receipts differs from their transaction's amount, in cents, or
  * null when it fits or `receiptsTotal` gives none.
  */

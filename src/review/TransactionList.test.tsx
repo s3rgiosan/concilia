@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeTransaction } from "../test/fixtures";
+import { makeReceipt, makeTransaction } from "../test/fixtures";
 import type { ListRow } from "./rows";
 import { TransactionList } from "./TransactionList";
 
@@ -11,12 +11,12 @@ function row(id: string, description: string): ListRow {
 
 const ROWS = [row("a", "ACME CORP"), row("b", "EXAMPLE SHOP"), row("c", "SAMPLE CAFE")];
 
-function renderList(rows: ListRow[], viewKey = "pending|") {
+function renderList(rows: ListRow[], viewKey = "pending|", reimbursementTotal: { cents: number; currency: string } | null = { cents: 0, currency: "EUR" }) {
   const props = {
     listId: "list",
     selectedId: null,
     edited: new Set(["b"]),
-    reimbursementTotal: 0,
+    reimbursementTotal,
     listRef: { current: null },
     onSelect: vi.fn(),
     onOpen: vi.fn(),
@@ -38,6 +38,20 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   delete (Element.prototype as Partial<Element>).getAnimations;
+});
+
+describe("TransactionList reimbursements header", () => {
+  const rows: ListRow[] = [{ kind: "reimbursement", id: "reimbursement:a.pdf", receipt: makeReceipt("a.pdf", { amount_cents: 1000 }) }];
+
+  it("shows the total in its currency", () => {
+    renderList(rows, "all|", { cents: 5000, currency: "USD" });
+    expect(screen.getByRole("group", { name: "Reimbursements · US$50.00 total" })).toBeTruthy();
+  });
+
+  it("shows no total for mixed currencies", () => {
+    renderList(rows, "all|", null);
+    expect(screen.getByRole("group", { name: "Reimbursements" })).toBeTruthy();
+  });
 });
 
 describe("TransactionList", () => {

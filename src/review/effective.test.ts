@@ -18,6 +18,7 @@ import {
   pendingCount,
   relPaths,
   receiptsTotal,
+  reimbursementsTotal,
   totalMismatch,
   unmatchedPool,
   visibleReimbursements,
@@ -374,6 +375,29 @@ describe("totalMismatch", () => {
     expect(receiptsTotal([five, makeReceipt("usd.pdf", { currency: "USD", amount_cents: 500 })])).toBeNull();
     expect(totalMismatch([five, makeReceipt("x.pdf", { amount_cents: null })], 1200)).toBeNull();
     expect(totalMismatch([five, makeReceipt("usd.pdf", { currency: "USD", amount_cents: 500 })], 1200)).toBeNull();
+  });
+});
+
+describe("reimbursementsTotal", () => {
+  const eur = (name: string, cents: number) => makeReceipt(name, { amount_cents: cents, currency: "EUR" });
+  const usd = (name: string, cents: number) => makeReceipt(name, { amount_cents: cents, currency: "USD" });
+
+  it("adds amounts that share one currency and names it", () => {
+    expect(reimbursementsTotal([eur("a.pdf", 10000), eur("b.pdf", 2500)])).toEqual({ cents: 12500, currency: "EUR" });
+    expect(reimbursementsTotal([usd("a.pdf", 5000), usd("b.pdf", 1000)])).toEqual({ currency: "USD", cents: 6000 });
+  });
+
+  it("counts a receipt without a currency as euro", () => {
+    expect(reimbursementsTotal([makeReceipt("a.pdf", { amount_cents: 1000, currency: null }), eur("b.pdf", 500)])).toEqual({ cents: 1500, currency: "EUR" });
+  });
+
+  it("is null for mixed currencies", () => {
+    expect(reimbursementsTotal([eur("a.pdf", 10000), usd("b.pdf", 5000)])).toBeNull();
+  });
+
+  it("is zero euro for no reimbursements and skips receipts without an amount", () => {
+    expect(reimbursementsTotal([])).toEqual({ cents: 0, currency: "EUR" });
+    expect(reimbursementsTotal([usd("a.pdf", 5000), makeReceipt("b.pdf", { amount_cents: null, currency: "EUR" })])).toEqual({ cents: 5000, currency: "USD" });
   });
 });
 

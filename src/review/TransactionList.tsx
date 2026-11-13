@@ -101,7 +101,8 @@ export function TransactionList({
   /** IDs of the transactions the user decided. */
   edited: Set<string>;
   /** The sum of every reimbursement, in cents. */
-  reimbursementTotal: number;
+  /** The sum of the reimbursements, or null when they use more than one currency. */
+  reimbursementTotal: { cents: number; currency: string } | null;
   listRef: Ref<HTMLDivElement>;
   onSelect: (row: ListRow) => void;
   onOpen: (row: ListRow) => void;
@@ -152,7 +153,10 @@ export function TransactionList({
   });
   const transactions = items.filter((item) => item.kind === "transaction").map((item) => item.node);
   const reimbursements = items.filter((item) => item.kind === "reimbursement").map((item) => item.node);
-  const header = t("review.reimbursements.header", { total: formatMoney(reimbursementTotal, "EUR", i18n.language) });
+  const header =
+    reimbursementTotal === null
+      ? t("review.reimbursements.headerMixed")
+      : t("review.reimbursements.header", { total: formatMoney(reimbursementTotal.cents, reimbursementTotal.currency, i18n.language) });
 
   return (
     <div

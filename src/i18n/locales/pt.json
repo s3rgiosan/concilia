@@ -284,6 +284,7 @@
     },
     "reimbursements": {
       "header": "Reembolsos · {{total}} no total",
+      "headerMixed": "Reembolsos",
       "label": "Reembolso",
       "subtitle": "Pago pessoalmente com o NIF da empresa. Não tem transação bancária."
     },

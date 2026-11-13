@@ -284,6 +284,7 @@
     },
     "reimbursements": {
       "header": "Reimbursements · {{total}} total",
+      "headerMixed": "Reimbursements",
       "label": "Reimbursement",
       "subtitle": "Paid personally with the company's tax number. It has no bank transaction."
     },

@@ -7,6 +7,7 @@ import {
   isNoReceipt,
   mergeDraft,
   pendingCount,
+  reimbursementsTotal,
   relPaths,
   unmatchedPool,
   visibleReimbursements,
@@ -43,7 +44,7 @@ export function useReviewList(data: ReviewData | null, draft: Draft) {
   const visible = useMemo(() => visibleTransactions(merged, filter, search), [merged, filter, search]);
   const shownReimbursements = useMemo(() => (data ? visibleReimbursements(data.reimbursements, filter, search) : []), [data, filter, search]);
   const rows = useMemo(() => buildRows(visible, shownReimbursements), [visible, shownReimbursements]);
-  const reimbursementTotal = data ? data.reimbursements.reduce((sum, r) => sum + (r.amount_cents ?? 0), 0) : 0;
+  const reimbursementTotal = useMemo(() => reimbursementsTotal(data?.reimbursements ?? []), [data]);
   const edited = useMemo(() => new Set(Object.keys(draft)), [draft]);
 
   const selected = selection.id === null ? initialSelection(rows) : resolveSelection(rows, selection.id, selection.index, selection.advance);

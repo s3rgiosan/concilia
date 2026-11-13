@@ -43,6 +43,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Review decisions are saved again when you leave a month after a failed save, and a failure then shows an error. The sidebar count for the month updates after that save.
 - Settings reads the match rules again when the main window adds a rule, so adding a rule in Settings no longer removes it. A rule whose reason was deleted opens with Other chosen.
 - The Add Rule and Edit Rule sheets refuse a rule that has the same keywords as another rule, even when the case differs, and say so.
+- The reimbursements header adds amounts only when they share one currency and shows that currency. With mixed currencies it shows no total.
 
 ### Changed
 
