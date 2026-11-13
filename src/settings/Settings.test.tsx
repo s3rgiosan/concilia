@@ -783,6 +783,19 @@ describe("Gemini pane", () => {
     expect(screen.queryByText("Connected")).toBeNull();
   });
 
+  it.each([
+    ["Project", "globex-project"],
+    ["Region", "europe-west4"],
+    ["Model", "gemini-2.5-pro"],
+  ])("clears the test result when %s changes", async (label, value) => {
+    vi.mocked(testGeminiConnection).mockResolvedValue(undefined);
+    await renderSettings(makeView(), "gemini");
+    fireEvent.click(button("Test Connection"));
+    await screen.findByText("Connected");
+    commitText(label, value);
+    await waitFor(() => expect(screen.queryByText("Connected")).toBeNull());
+  });
+
   it("clears the failure message when a later test succeeds", async () => {
     vi.mocked(testGeminiConnection).mockRejectedValueOnce({ kind: "network", message: "" }).mockResolvedValueOnce(undefined);
     await renderSettings(makeView(), "gemini");

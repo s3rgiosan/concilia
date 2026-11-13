@@ -38,6 +38,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Check for Updates in the menu now says when Concilia is up to date or when the check fails, and shows the update banner again for a version you put off with Later.
 - A double click on the main window title bar zooms the window.
 - Pressing Escape in a text setting puts the saved value back and no longer saves the typed text.
+- The Gemini connection status resets when you change the project, region or model.
 
 ### Changed
 

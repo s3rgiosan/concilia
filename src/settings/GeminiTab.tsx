@@ -5,7 +5,7 @@ import { FormRow, FormSection } from "../components/Form";
 import { Icon } from "../components/Icon";
 import { TextSetting } from "../components/TextSetting";
 import { useSafeStorage } from "../lib/hooks/useSafeStorage";
-import { importServiceAccount, removeServiceAccount, showAlert, testGeminiConnection, type AppStateView } from "../lib/tauri";
+import { importServiceAccount, removeServiceAccount, showAlert, testGeminiConnection, type AppStateView, type GeminiSettings } from "../lib/tauri";
 import type { PaneProps } from "./types";
 
 const REGIONS = ["europe-west1", "europe-west4", "europe-west9", "us-central1", "us-east4", "asia-southeast1"];
@@ -23,6 +23,12 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
   const [advancedSetting, setAdvancedSetting] = useSafeStorage("settings.geminiAdvanced", "collapsed");
   const advanced = advancedSetting === "expanded";
   const advancedId = useId();
+
+  /** Saves a connection setting and drops the test result, which no longer matches it. */
+  function saveConnection(update: (g: GeminiSettings) => GeminiSettings) {
+    setTest({ kind: "idle" });
+    save((s) => ({ ...s, gemini: update(s.gemini) }));
+  }
 
   function importKey() {
     setTest({ kind: "idle" });
@@ -106,7 +112,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
             value={gemini.project ?? ""}
             placeholder={projectPlaceholder}
             disabled={locked}
-            onCommit={(project) => save((s) => ({ ...s, gemini: { ...s.gemini, project: project || null } }))}
+            onCommit={(project) => saveConnection((g) => ({ ...g, project: project || null }))}
           />
         </FormRow>
         <FormRow label={t("settings.gemini.connection")}>
@@ -150,7 +156,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
                 placeholder="europe-west1"
                 suggestions={REGIONS}
                 disabled={locked}
-                onCommit={(location) => save((s) => ({ ...s, gemini: { ...s.gemini, location } }))}
+                onCommit={(location) => saveConnection((g) => ({ ...g, location }))}
               />
             </FormRow>
             <FormRow label={t("settings.gemini.model")} htmlFor="model">
@@ -161,7 +167,7 @@ export function GeminiTab({ state, save, replace, onError }: PaneProps & { repla
                 placeholder="gemini-2.5-flash"
                 suggestions={MODELS}
                 disabled={locked}
-                onCommit={(model) => save((s) => ({ ...s, gemini: { ...s.gemini, model } }))}
+                onCommit={(model) => saveConnection((g) => ({ ...g, model }))}
               />
             </FormRow>
           </div>
