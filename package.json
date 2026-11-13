@@ -1,7 +1,7 @@
 {
   "name": "concilia",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.0-rc.1",
   "type": "module",
   "description": "Bank statement reconciliation desktop app",
   "author": "Sérgio Santos",

@@ -1,6 +1,6 @@
 [package]
 name = "concilia"
-version = "2.0.0"
+version = "2.0.0-rc.1"
 description = "Bank statement reconciliation desktop app"
 authors = ["Sérgio Santos"]
 license = "GPL-3.0-or-later"
