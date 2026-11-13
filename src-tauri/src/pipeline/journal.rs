@@ -1,6 +1,7 @@
 //! The move journal: the receipt moves of a Finalize, Reopen or reset, written before the first
-//! move and deleted when the job is done. A journal that a stopped app left behind is undone
-//! before the next job on the period.
+//! move and deleted when the job is done. It also names the JSON files that the job replaces,
+//! each with a backup copy in `docs/`. A journal that a stopped app left behind is undone
+//! before the next job on the period, or before the review loads.
 
 use std::path::{Component, Path};
 
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{create_dir, io, PipelineError};
 use crate::finalize::{relative_text, Move};
-use crate::fsutil::{read_json_opt, remove_if_exists, rename_no_replace, write_json};
+use crate::fsutil::{read_json_opt, remove_if_exists, rename_no_replace, write_atomic, write_json};
 use crate::period::PeriodPaths;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,7 +17,21 @@ struct Journal {
     /// Whether the period is finalized when the job is done. A period already in this state
     /// finished its job, so its moves stay.
     finalized: bool,
+    /// The files of `docs/` that the job replaces, with a backup of each.
+    replaced: Vec<Replaced>,
     moves: Vec<JournalMove>,
+}
+
+/// A file of `docs/` that a job replaces. Its backup is `<file>.bak`, kept only when the file
+/// existed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Replaced {
+    file: String,
+    existed: bool,
+}
+
+fn backup_path(paths: &PeriodPaths, file: &str) -> std::path::PathBuf {
+    paths.docs.join(format!("{file}.bak"))
 }
 
 /// One move, both paths relative to the period's `receipts/` folder.
@@ -27,11 +42,13 @@ struct JournalMove {
 }
 
 /// Writes the journal for `moves`, whose paths are under the real `receipts/` folder.
-/// `finalized` is the state the job leaves the period in.
+/// `finalized` is the state the job leaves the period in. `replaced` are the files of `docs/`
+/// that the job replaces; each gets a backup copy before the journal is written.
 pub(super) fn write(
     paths: &PeriodPaths,
     moves: &[Move],
     finalized: bool,
+    replaced: &[std::path::PathBuf],
 ) -> Result<(), PipelineError> {
     let receipts_real = paths
         .receipts
@@ -54,13 +71,68 @@ pub(super) fn write(
             })
         })
         .collect::<Result<Vec<_>, PipelineError>>()?;
-    let journal = Journal { finalized, moves };
     create_dir(&paths.docs)?;
+    let replaced = replaced
+        .iter()
+        .map(|path| back_up(paths, path))
+        .collect::<Result<Vec<_>, PipelineError>>()?;
+    let journal = Journal {
+        finalized,
+        replaced,
+        moves,
+    };
     Ok(write_json(&paths.moves_journal(), &journal)?)
 }
 
-/// Deletes the journal of a job that is done or fully rolled back.
+/// Copies `path`, a file of `docs/`, to its backup. A file that does not exist has none.
+fn back_up(paths: &PeriodPaths, path: &Path) -> Result<Replaced, PipelineError> {
+    let file = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|_| path.parent() == Some(paths.docs.as_path()))
+        .ok_or_else(|| {
+            PipelineError::InvalidInput(format!("{} is not inside the docs folder", path.display()))
+        })?
+        .to_string();
+    let backup = backup_path(paths, &file);
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            write_atomic(&backup, &bytes)?;
+            Ok(Replaced {
+                file,
+                existed: true,
+            })
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            remove_if_exists(&backup).map_err(|e| io(&backup, e))?;
+            Ok(Replaced {
+                file,
+                existed: false,
+            })
+        }
+        Err(error) => Err(io(path, error)),
+    }
+}
+
+/// Puts a replaced file back from its backup, or deletes it when it did not exist before.
+fn restore(paths: &PeriodPaths, replaced: &Replaced) -> Result<(), String> {
+    let target = paths.docs.join(&replaced.file);
+    if replaced.existed {
+        let bytes = std::fs::read(backup_path(paths, &replaced.file))
+            .map_err(|e| format!("{}: {e}", replaced.file))?;
+        write_atomic(&target, &bytes).map_err(|e| format!("{}: {e}", replaced.file))
+    } else {
+        remove_if_exists(&target).map_err(|e| format!("{}: {e}", replaced.file))
+    }
+}
+
+/// Deletes the journal of a job that is done or fully rolled back, and its backups.
 pub(super) fn clear(paths: &PeriodPaths) {
+    if let Ok(Some(journal)) = read_json_opt::<Journal>(&paths.moves_journal()) {
+        for replaced in &journal.replaced {
+            let _ = remove_if_exists(&backup_path(paths, &replaced.file));
+        }
+    }
     if let Err(error) = remove_if_exists(&paths.moves_journal()) {
         log::warn!(
             "could not delete the move journal of {}: {error}",
@@ -76,9 +148,10 @@ fn inside(paths: &PeriodPaths, relative: &str) -> Option<std::path::PathBuf> {
     (plain && path.components().next().is_some()).then(|| paths.receipts.join(path))
 }
 
-/// Undoes the moves of a job that stopped before it was done, and deletes its journal. Only a
-/// move whose target exists and whose source does not is undone. Returns the number of files
-/// moved back. When a file cannot move back, the journal stays and the error names the file.
+/// Undoes a job that stopped before it was done, and deletes its journal. Only a move whose
+/// target exists and whose source does not is undone. The replaced JSON files return to their
+/// backups. Returns the number of files moved back. When a file cannot move or be restored,
+/// the journal stays and the error names the file.
 pub fn recover(paths: &PeriodPaths) -> Result<usize, PipelineError> {
     let Some(journal) = read_json_opt::<Journal>(&paths.moves_journal())? else {
         return Ok(0);
@@ -112,10 +185,21 @@ pub fn recover(paths: &PeriodPaths) -> Result<usize, PipelineError> {
             Err(error) => stuck.push(format!("{}: {error}", step.to)),
         }
     }
+    let unrestored: Vec<String> = journal
+        .replaced
+        .iter()
+        .filter_map(|replaced| restore(paths, replaced).err())
+        .collect();
     if !stuck.is_empty() {
         return Err(PipelineError::Io(format!(
             "a job on this month stopped before it was done, and these receipts could not move back: {}",
             stuck.join("; ")
+        )));
+    }
+    if !unrestored.is_empty() {
+        return Err(PipelineError::Io(format!(
+            "a job on this month stopped before it was done, and these files could not be restored: {}",
+            unrestored.join("; ")
         )));
     }
     clear(paths);
@@ -137,6 +221,7 @@ mod tests {
     fn journal(paths: &PeriodPaths, finalized: bool, moves: &[(&str, &str)]) {
         let journal = Journal {
             finalized,
+            replaced: Vec::new(),
             moves: moves
                 .iter()
                 .map(|(from, to)| JournalMove {
@@ -157,7 +242,7 @@ mod tests {
             from: real.join("sub/acme.pdf"),
             to: real.join("_matched/acme.pdf"),
         };
-        write(&paths, &[step], true).unwrap();
+        write(&paths, &[step], true, &[]).unwrap();
         let written: Journal = read_json_opt(&paths.moves_journal()).unwrap().unwrap();
         assert_eq!(
             written.moves,
@@ -192,6 +277,54 @@ mod tests {
             b"acme"
         );
         assert!(paths.receipts.join("globex.pdf").is_file());
+        assert!(!paths.moves_journal().exists());
+    }
+
+    #[test]
+    fn restores_the_files_a_stopped_publish_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        std::fs::write(paths.receipts.join("_matched/acme.pdf"), b"acme").unwrap();
+        std::fs::write(paths.match_result(), b"old result").unwrap();
+        let step = Move {
+            from: paths.receipts.canonicalize().unwrap().join("acme.pdf"),
+            to: paths
+                .receipts
+                .canonicalize()
+                .unwrap()
+                .join("_matched/acme.pdf"),
+        };
+        write(
+            &paths,
+            &[step],
+            true,
+            &[paths.match_result(), paths.report()],
+        )
+        .unwrap();
+        std::fs::write(paths.match_result(), b"new result").unwrap();
+        std::fs::write(paths.report(), b"new report").unwrap();
+
+        assert_eq!(recover(&paths).unwrap(), 1);
+
+        assert_eq!(std::fs::read(paths.match_result()).unwrap(), b"old result");
+        assert!(!paths.report().exists());
+        assert!(!paths.docs.join("match-result.json.bak").exists());
+        assert!(!paths.moves_journal().exists());
+    }
+
+    #[test]
+    fn keeps_the_replaced_files_of_a_job_that_finished() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        std::fs::write(paths.match_result(), b"old result").unwrap();
+        write(&paths, &[], true, &[paths.match_result()]).unwrap();
+        std::fs::write(paths.match_result(), b"new result").unwrap();
+        std::fs::write(paths.applied_marker(), b"2030-04-01T00:00:00Z").unwrap();
+
+        assert_eq!(recover(&paths).unwrap(), 0);
+
+        assert_eq!(std::fs::read(paths.match_result()).unwrap(), b"new result");
+        assert!(!paths.docs.join("match-result.json.bak").exists());
         assert!(!paths.moves_journal().exists());
     }
 

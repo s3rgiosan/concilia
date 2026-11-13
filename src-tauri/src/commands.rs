@@ -439,10 +439,14 @@ pub async fn get_review(
 ) -> CommandResult<ReviewData> {
     let period = period(&year, &month).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
-    blocking(move || pipeline::review_data(&paths))
-        .await
-        .map_err(fail)?
-        .map_err(fail)
+    let app = shared(&state);
+    blocking(move || {
+        app.recover_interrupted(&period, &paths)?;
+        pipeline::review_data(&paths)
+    })
+    .await
+    .map_err(fail)?
+    .map_err(fail)
 }
 
 #[tauri::command]
@@ -531,6 +535,7 @@ async fn rescan(
 ) -> CommandResult<ReceiptView> {
     let period = period(year, month)?;
     let paths = state.period_paths(&period)?;
+    state.recover_interrupted(&period, &paths)?;
     let file = pipeline::resolve_period_file(&paths, kind, rel_path)?;
     let client = state.gemini()?;
     let _guard = state.locks.try_rescan(&period, file.canonical.clone())?;

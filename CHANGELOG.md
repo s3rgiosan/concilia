@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- After the app stops during Finalize or Reopen, opening the review or rescanning a receipt moves the receipts back and restores the match result, report, cache and draft that the step had replaced, instead of showing the half-done month until the next job.
 - When Gemini answers HTTP 400 or 413 for one receipt, such as a damaged or very large PDF, Concilia lists that file as unreadable with its HTTP status and the run continues. The run still stops for an unknown model (HTTP 404) and for a rate limit or server error that retries do not clear.
 - The main-window menu items are disabled while Settings has focus, so shortcuts such as Cmd+Backspace edit text in the Settings fields.
 - A no-receipt rule ignores spaces around its keyword, and a keyword with only spaces matches no transaction, as for receipt rules.

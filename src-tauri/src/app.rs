@@ -10,8 +10,9 @@ use serde::Serialize;
 use crate::config::{ConfigStore, ReasonsStore, RulesStore, Settings};
 use crate::error::{CommandError, CommandResult, ErrorKind};
 use crate::gemini::client::{GeminiClient, GeminiConfig, ServiceAccount};
-use crate::locks::PeriodLocks;
+use crate::locks::{PeriodLocks, RunKind};
 use crate::period::{Period, PeriodPaths};
+use crate::pipeline::{self, PipelineError};
 use crate::poppler::Poppler;
 use crate::secrets::ServiceAccountStore;
 
@@ -144,6 +145,23 @@ impl AppState {
     pub fn receipts_root(&self) -> Option<PathBuf> {
         let root = lock(&self.config).settings().receipts_root.clone();
         root.filter(|root| root.is_dir())
+    }
+
+    /// Undoes a job that a stopped app left half done in the period, before something reads the
+    /// month. Does nothing without a journal. When another job holds the period, that job
+    /// recovers it, so this skips.
+    pub fn recover_interrupted(
+        &self,
+        period: &Period,
+        paths: &PeriodPaths,
+    ) -> Result<(), PipelineError> {
+        if !paths.moves_journal().exists() {
+            return Ok(());
+        }
+        let Ok(_guard) = self.locks.try_exclusive(period, RunKind::Recover) else {
+            return Ok(());
+        };
+        pipeline::recover(paths).map(|_| ())
     }
 
     pub fn period_paths(&self, period: &Period) -> CommandResult<PeriodPaths> {
@@ -375,7 +393,6 @@ fn not_granted(path: &Path) -> CommandError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::locks::RunKind;
     use crate::secrets::MemoryStore;
 
     fn state() -> AppState {
@@ -542,6 +559,35 @@ mod tests {
             state.remove_service_account().unwrap_err().kind,
             ErrorKind::Busy
         );
+    }
+
+    #[test]
+    fn recovers_an_interrupted_move_before_a_read_of_the_month() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state();
+        let period = Period::parse("2030", "03").unwrap();
+        let paths = period.paths(dir.path());
+        std::fs::create_dir_all(paths.receipts.join("_matched")).unwrap();
+        std::fs::create_dir_all(&paths.docs).unwrap();
+        std::fs::write(paths.receipts.join("_matched/acme.pdf"), b"acme").unwrap();
+        std::fs::write(
+            paths.moves_journal(),
+            r#"{"finalized":true,"replaced":[],"moves":[{"from":"acme.pdf","to":"_matched/acme.pdf"}]}"#,
+        )
+        .unwrap();
+
+        let job = state
+            .locks
+            .try_exclusive(&period, RunKind::Finalize)
+            .unwrap();
+        state.recover_interrupted(&period, &paths).unwrap();
+        assert!(paths.receipts.join("_matched/acme.pdf").is_file());
+        drop(job);
+
+        state.recover_interrupted(&period, &paths).unwrap();
+        assert!(paths.receipts.join("acme.pdf").is_file());
+        assert!(!paths.moves_journal().exists());
+        assert_eq!(state.locks.running(&period), None);
     }
 
     #[test]

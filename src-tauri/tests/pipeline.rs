@@ -2730,6 +2730,7 @@ async fn the_next_job_undoes_the_moves_of_a_finalize_that_stopped() {
         &h.paths.docs.join("moves.json"),
         &json!({
             "finalized": true,
+            "replaced": [],
             "moves": [
                 { "from": "acme.pdf", "to": "_matched/acme.pdf" },
                 { "from": "initech.png", "to": "_unmatched/initech.png" }

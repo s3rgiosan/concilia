@@ -82,11 +82,10 @@ pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, Pipel
         staged.discard();
         return Err(error);
     }
-    if !pinned.is_empty() {
-        if let Err(error) = journal::write(paths, &pinned, false) {
-            staged.discard();
-            return Err(error);
-        }
+    let replaced = [paths.receipts_cache(), paths.match_result(), paths.draft()];
+    if let Err(error) = journal::write(paths, &pinned, false, &replaced) {
+        staged.discard();
+        return Err(error);
     }
     if let Err(failure) = finalize::execute(&pinned) {
         staged.discard();

@@ -92,7 +92,7 @@ Debug builds use `config.dev.json`, `rules.dev.json` and `reasons.dev.json`. The
     ├── match-result.json     matcher output (after Finalize: the final result)
     ├── review-draft.json     decisions not yet finalized, laid over match-result.json
     ├── report.xlsx           Excel report
-    ├── moves.json            receipt moves of a Finalize, Reopen or reset still in progress
+    ├── moves.json            receipt moves of a Finalize, Reopen or reset still in progress, and the JSON files it replaces
     └── .applied              marks the month as finalized
 ```
 
@@ -108,7 +108,7 @@ The JSON files store receipt paths relative to the month folder (`receipts/acme.
 - **Reopen**: move the sorted receipts back to their original folders and names, rebuild the cache with the new paths, keep the decisions that differ from a fresh match as the draft, remove the marker. All-or-nothing with backups.
 - **Reconcile Again**: reconcile with a reset first: move sorted receipts back to their original folders and names, keep a finalized month's review decisions in the draft as Reopen does, delete the extraction cache, the match result and the finalized marker, then read every receipt again. A receipt that cannot move back stops the run before anything is deleted, and the moves already made are undone. A finalized marker that cannot be deleted stops the run the same way; a match result or cache file that cannot be deleted stops it with an error.
 
-Finalize, Reopen and the reset write `moves.json` before the first receipt moves and delete it when they are done. If the app stops in between, the next job on the month (reconcile, scan, add statements, Finalize, Reopen, report export) moves the files back from the journal first, unless the finalized marker shows the job finished. A file that cannot move back, then or in a rollback, is named in the error.
+Finalize, Reopen and the reset write `moves.json` before the first receipt moves and delete it when they are done. If the app stops in between, the next job on the month (reconcile, scan, add statements, Finalize, Reopen, report export) moves the files back from the journal first, unless the finalized marker shows the job finished. The journal also names the JSON files that the publish step of Finalize and Reopen replaces, each with a `<name>.bak` copy in `docs/`, and the recovery puts those files back. The review load (`get_review`) and a receipt rescan run the same recovery under the month's exclusive lock when a journal exists, and skip it when another job holds the lock. A file that cannot move back, then or in a rollback, is named in the error.
 
 A month runs one exclusive job at a time (`locks.rs`). Rescans of different files can run together; their writes go through one mutex per month. A draft save is refused while a job runs and on a finalized month; a job that starts during a save waits for it. The review retries a save refused by a running job, and flushes pending decisions before Reconcile Again.
 

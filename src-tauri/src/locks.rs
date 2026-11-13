@@ -26,6 +26,7 @@ pub enum RunKind {
     Finalize,
     Reopen,
     Report,
+    Recover,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

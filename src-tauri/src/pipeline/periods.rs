@@ -298,7 +298,7 @@ pub fn reset_period(paths: &PeriodPaths, rules: &[Rule]) -> Result<ResetReport, 
     if !moves.is_empty() {
         pinned = pin_moves(paths, &moves)?;
         create_target_dirs(paths, &pinned)?;
-        journal::write(paths, &pinned, false)?;
+        journal::write(paths, &pinned, false, &[])?;
         if let Err(failure) = finalize::execute(&pinned) {
             if failure.stuck.is_empty() {
                 journal::clear(paths);

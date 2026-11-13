@@ -89,11 +89,10 @@ pub fn finalize(
             return Err(error);
         }
     };
-    if !moves.is_empty() {
-        if let Err(error) = journal::write(paths, &moves, true) {
-            cleanup();
-            return Err(error);
-        }
+    let replaced = [paths.match_result(), paths.report()];
+    if let Err(error) = journal::write(paths, &moves, true, &replaced) {
+        cleanup();
+        return Err(error);
     }
     if let Err(failure) = finalize::execute(&moves) {
         cleanup();
