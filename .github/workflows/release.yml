@@ -28,7 +28,9 @@ jobs:
             exit 1
           fi
 
+      # A prerelease ships no updater bundle, so it needs no signing key.
       - name: Check that the updater signing secrets are set
+        if: ${{ !contains(github.ref_name, '-') }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -92,7 +94,8 @@ jobs:
 
       - run: npm ci
 
-      # Also signs the updater bundle (the .app.tar.gz) and uploads latest.json to the release.
+      # For a release without a tag suffix, also signs the updater bundle (the .app.tar.gz) and
+      # uploads latest.json.
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -104,4 +107,4 @@ jobs:
           releaseBody: 'Build for macOS on Apple silicon, with poppler included. See the README for first-launch steps.'
           # A prerelease has no latest.json, so installed apps never update to it.
           uploadUpdaterJson: ${{ !contains(github.ref_name, '-') }}
-          args: --config '{"bundle":{"createUpdaterArtifacts":true,"targets":["app","dmg"],"resources":{"../build/poppler":"poppler"}}}'
+          args: --config '{"bundle":{"createUpdaterArtifacts":${{ !contains(github.ref_name, '-') }},"targets":["app","dmg"],"resources":{"../build/poppler":"poppler"}}}'
