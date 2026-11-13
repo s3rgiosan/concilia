@@ -7,7 +7,7 @@ use super::{create_dir, io, off_thread, PipelineError};
 use crate::error::ErrorKind;
 use crate::extract::{ExtractError, ReceiptExtractor};
 use crate::fsutil::{read_json_opt, write_json};
-use crate::model::{MatchResult, ReceiptMeta};
+use crate::model::{FileIdentity, MatchResult, ReceiptMeta};
 use crate::period::PeriodPaths;
 use crate::receipts::is_receipt_name;
 
@@ -108,6 +108,9 @@ pub async fn rescan(
     if off_thread(move || marker.exists()).await? {
         return Err(PipelineError::Finalized);
     }
+    // The identity is taken before the read, so a change during the read makes a later miss.
+    let canonical = file.canonical.clone();
+    let identity = off_thread(move || FileIdentity::of(&canonical)).await?;
     let extracted = tokio::time::timeout(RESCAN_TIMEOUT, extractor.extract(&file.canonical))
         .await
         .map_err(|_| {
@@ -126,6 +129,7 @@ pub async fn rescan(
         }
     };
     meta.file = file.stored.clone();
+    meta.identity = identity;
 
     let _writing = write_lock.lock().await;
     let (paths, file, stored) = (paths.clone(), file.clone(), meta.clone());

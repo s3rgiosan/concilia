@@ -19,7 +19,7 @@ use concilia_lib::bank::Bank;
 use concilia_lib::extract::{ExtractError, ExtractOptions, ReceiptExtractor};
 use concilia_lib::locks::PeriodLocks;
 use concilia_lib::model::{
-    default_reasons, Draft, DroppedDecision, Language, MatchResult, ReceiptMeta,
+    default_reasons, Draft, DroppedDecision, FileIdentity, Language, MatchResult, ReceiptMeta,
     StatementTransaction, Status, Summary,
 };
 use concilia_lib::period::{Period, PeriodPaths};
@@ -265,6 +265,14 @@ impl Harness {
 
     fn receipts_cache(&self) -> Vec<ReceiptMeta> {
         read_json_file(&self.paths.receipts_cache())
+    }
+}
+
+/// `receipt_meta` for a file read as it is now on disk.
+fn read_now(file: &str, amount_cents: i64, vendor: &str) -> ReceiptMeta {
+    ReceiptMeta {
+        identity: FileIdentity::of(Path::new(file)),
+        ..receipt_meta(file, amount_cents, vendor)
     }
 }
 
@@ -1763,7 +1771,7 @@ fn rescan_fixture(stored_root: &Path) -> (PeriodPaths, String, String) {
 fn assert_rescanned(paths: &PeriodPaths, acme: &str, globex: &str) {
     let cache: Vec<ReceiptMeta> = read_json_file(&paths.receipts_cache());
     assert_eq!(cache.len(), 2);
-    assert_eq!(cache[0], receipt_meta(acme, 1000, "ACME"));
+    assert_eq!(cache[0], read_now(acme, 1000, "ACME"));
     assert_eq!(cache[1], receipt_meta(globex, 2000, "GLOBEX"));
 
     let result: MatchResult = read_json_file(&paths.match_result());
@@ -1772,14 +1780,11 @@ fn assert_rescanned(paths: &PeriodPaths, acme: &str, globex: &str) {
     assert_eq!(
         tx.receipt_meta,
         [
-            receipt_meta(acme, 1000, "ACME"),
+            read_now(acme, 1000, "ACME"),
             receipt_meta(globex, 2000, "GLOBEX")
         ]
     );
-    assert_eq!(
-        result.unmatched_receipts,
-        [receipt_meta(acme, 1000, "ACME")]
-    );
+    assert_eq!(result.unmatched_receipts, [read_now(acme, 1000, "ACME")]);
 }
 
 #[tokio::test]
@@ -1803,7 +1808,7 @@ async fn rescanning_replaces_every_stored_reading_of_the_receipt() {
     .await
     .unwrap();
 
-    assert_eq!(meta, receipt_meta(&acme, 1000, "ACME"));
+    assert_eq!(meta, read_now(&acme, 1000, "ACME"));
     assert_rescanned(&paths, &acme, &globex);
 }
 
@@ -1865,10 +1870,7 @@ async fn rescanning_an_uncached_receipt_appends_it() {
 
     let cache: Vec<ReceiptMeta> = read_json_file(&paths.receipts_cache());
     assert_eq!(cache.len(), 3);
-    assert_eq!(
-        cache[2],
-        receipt_meta(&hooli.to_string_lossy(), 3000, "HOOLI")
-    );
+    assert_eq!(cache[2], read_now(&hooli.to_string_lossy(), 3000, "HOOLI"));
     let result_after: Value = read_json_file(&paths.match_result());
     let result_before: Value = serde_json::from_slice(&result_before).unwrap();
     assert_eq!(result_after, result_before);
@@ -1905,7 +1907,7 @@ async fn rescanning_a_reimbursement_creates_its_file() {
     let reimbursements: Vec<ReceiptMeta> = read_json_file(&paths.reimbursements_cache());
     assert_eq!(
         reimbursements,
-        [receipt_meta(&taxi.to_string_lossy(), 1500, "TAXI CO")]
+        [read_now(&taxi.to_string_lossy(), 1500, "TAXI CO")]
     );
     assert!(!paths.receipts_cache().exists());
 }
@@ -2472,6 +2474,33 @@ async fn a_replaced_file_is_read_on_the_next_scan() {
 }
 
 #[tokio::test]
+async fn a_receipt_replaced_under_the_same_name_is_read_again() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    h.extractor.take_calls();
+
+    write_file(
+        &h.paths.receipts.join("initech.png"),
+        b"a different receipt with the same name",
+    );
+    h.extractor.knows("initech.png", 2000, "GLOBEX");
+    pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert_eq!(h.extractor.take_calls(), ["initech.png"]);
+    let result = h.match_result();
+    let globex = result
+        .transactions
+        .iter()
+        .find(|t| t.id == GLOBEX_ID)
+        .unwrap();
+    assert_eq!(globex.status, Status::Matched);
+    assert_eq!(globex.receipt_meta[0].amount_cents, Some(2000));
+}
+
+#[tokio::test]
 async fn a_still_refused_file_is_checked_again_on_the_next_scan() {
     let h = Harness::new();
     reconciled_with_refused(&h, "file_too_large").await;
@@ -2540,7 +2569,12 @@ async fn reopening_moves_receipts_back_and_keeps_the_decisions() {
     pipeline::reconcile(&h.ctx(), &[statement], false)
         .await
         .unwrap();
-    let initech = h.receipt("initech.png");
+    let initech = h
+        .paths
+        .receipts
+        .join("initech.png")
+        .to_string_lossy()
+        .into_owned();
     pipeline::save_draft(&h.paths, &assigned_to_globex(&initech, 5000, "INITECH")).unwrap();
     pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
     assert!(h.paths.receipts.join("_matched/initech.png").is_file());
@@ -2659,6 +2693,46 @@ async fn a_transaction_keeps_two_receipts_through_finalize_and_reopen() {
         !pool.contains(&meal) && !pool.contains(&delivery),
         "{pool:?}"
     );
+}
+
+#[tokio::test]
+async fn reopening_never_gives_an_old_reading_to_a_new_file_with_the_same_name() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+    assert!(h.paths.receipts.join("_matched/acme.pdf").is_file());
+    write_file(
+        &h.paths.receipts.join("acme.pdf"),
+        b"a new receipt that reuses the name",
+    );
+    h.extractor.knows("acme.pdf", 2000, "GLOBEX");
+    h.extractor.take_calls();
+
+    pipeline::reopen(&h.paths, &[]).unwrap();
+
+    let acme = h.paths.receipts.join("acme.pdf");
+    let acme = acme.to_string_lossy();
+    let restored = h.paths.receipts.join("acme-restored.pdf");
+    let restored = restored.to_string_lossy();
+    let cached = h.receipts_cache();
+    assert!(
+        cached
+            .iter()
+            .all(|r| r.file != acme || r.amount_cents != Some(1000)),
+        "{cached:?}"
+    );
+    let old = cached.iter().find(|r| r.file == restored).unwrap();
+    assert_eq!(old.amount_cents, Some(1000));
+
+    pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert_eq!(h.extractor.take_calls(), ["acme.pdf"]);
+    let cached = h.receipts_cache();
+    let new = cached.iter().find(|r| r.file == acme).unwrap();
+    assert_eq!(new.amount_cents, Some(2000));
 }
 
 #[tokio::test]

@@ -63,8 +63,38 @@ pub struct ReceiptMeta {
     /// was read or tried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<String>,
+    /// The size and modification time of the file when it was read. A cached reading counts
+    /// only while the file still has them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<FileIdentity>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+/// The size and modification time of a file. The time is split into seconds and nanoseconds,
+/// so each number stays exact in JavaScript.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FileIdentity {
+    pub size: u64,
+    pub modified_secs: u64,
+    pub modified_nanos: u32,
+}
+
+impl FileIdentity {
+    /// The identity of the file at `path`, or none when the file or its time cannot be read.
+    pub fn of(path: &std::path::Path) -> Option<FileIdentity> {
+        let metadata = std::fs::metadata(path).ok()?;
+        let modified = metadata
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?;
+        Some(FileIdentity {
+            size: metadata.len(),
+            modified_secs: modified.as_secs(),
+            modified_nanos: modified.subsec_nanos(),
+        })
+    }
 }
 
 impl ReceiptMeta {

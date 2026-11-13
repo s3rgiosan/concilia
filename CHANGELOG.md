@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Reconcile and Reconcile Again keep a receipt assigned by hand in the review away from other transactions, so one receipt no longer ends up on two transactions.
 - Reconcile Again stops with an error when a sorted receipt cannot move back to the receipts folder, and leaves the month as it was, so no receipt is left behind in a sorted folder.
 - A review decision cannot be lost to a job that runs on the month at the same time: a save that a running job refuses is tried again until the job ends, Reconcile Again saves pending decisions before it starts, and a finalized month refuses draft saves.
+- A receipt file replaced by another file with the same name is read again, also after Reopen Month, so the new receipt no longer gets the old receipt's amount, vendor and date.
 
 ## [2.0.0] - 2026-11-13
 

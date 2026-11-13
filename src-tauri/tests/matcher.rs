@@ -33,6 +33,7 @@ fn receipt(
         date: date.map(str::to_string),
         provider_used: Some("gemini".to_string()),
         refused: None,
+        identity: None,
         extra: Map::new(),
     }
 }

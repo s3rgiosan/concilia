@@ -1,7 +1,7 @@
 //! Reconcile, scan and add statements: the jobs that read the statements and receipts and
 //! write the match result.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -20,8 +20,8 @@ use crate::error::ErrorKind;
 use crate::extract::{extract_all_observed, ExtractProgress};
 use crate::fsutil::{read_json_lenient, read_json_opt, write_json, FsError};
 use crate::model::{
-    Draft, DroppedDecision, MatchResult, RawTransaction, ReceiptMeta, Rule, StatementRecord,
-    StatementTransaction, Status, Summary,
+    Draft, DroppedDecision, FileIdentity, MatchResult, RawTransaction, ReceiptMeta, Rule,
+    StatementRecord, StatementTransaction, Status, Summary,
 };
 use crate::period::PeriodPaths;
 use crate::receipts::{is_pdf, walk};
@@ -398,16 +398,31 @@ async fn extract_to_cache(
 ) -> Result<Vec<ReceiptMeta>, PipelineError> {
     let total = files.len();
     (ctx.progress)(event(0, total));
-    let cache = if force {
-        Vec::new()
-    } else {
+    let (cache, identities) = {
         let path = cache_path.to_path_buf();
-        off_thread(move || read_cache(&path)).await?
+        let listed = files.to_vec();
+        off_thread(move || {
+            let identities: Vec<Option<FileIdentity>> = listed
+                .iter()
+                .map(|file| FileIdentity::of(Path::new(file)))
+                .collect();
+            let cache = if force {
+                Vec::new()
+            } else {
+                unchanged(read_cache(&path), &listed, &identities)
+            };
+            (cache, identities)
+        })
+        .await?
+    };
+    let stamped = |index: usize, meta: &ReceiptMeta| ReceiptMeta {
+        identity: identities.get(index).copied().flatten(),
+        ..meta.clone()
     };
     let writer = CacheWriter::new(cache_path.to_path_buf(), files, &cache);
     let progress = |progress: ExtractProgress<'_>| {
         if let Some((index, meta)) = progress.extracted {
-            writer.record(index, meta);
+            writer.record(index, &stamped(index, meta));
         }
         (ctx.progress)(event(progress.done, total));
     };
@@ -423,6 +438,11 @@ async fn extract_to_cache(
     .await;
     match outcome {
         Ok(receipts) => {
+            let receipts: Vec<ReceiptMeta> = receipts
+                .iter()
+                .enumerate()
+                .map(|(index, meta)| stamped(index, meta))
+                .collect();
             writer.finish(receipts.clone()).await?;
             Ok(receipts)
         }
@@ -431,6 +451,28 @@ async fn extract_to_cache(
             Err(error.into())
         }
     }
+}
+
+/// The entries of `cache` for files in `files` whose identity has not changed since they were
+/// read. An entry without an identity, or for a file that cannot be read, is left out, so the
+/// file is read again.
+fn unchanged(
+    cache: Vec<ReceiptMeta>,
+    files: &[String],
+    identities: &[Option<FileIdentity>],
+) -> Vec<ReceiptMeta> {
+    let current: HashMap<&str, FileIdentity> = files
+        .iter()
+        .zip(identities)
+        .filter_map(|(file, identity)| identity.map(|identity| (file.as_str(), identity)))
+        .collect();
+    cache
+        .into_iter()
+        .filter(|meta| {
+            meta.identity
+                .is_some_and(|identity| current.get(meta.file.as_str()) == Some(&identity))
+        })
+        .collect()
 }
 
 /// Extracts the receipts in the period's `receipts/` folder, through the cache. Files refused

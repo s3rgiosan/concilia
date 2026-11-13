@@ -17,7 +17,8 @@ use crate::finalize;
 use crate::fsutil::{read_json_opt, remove_if_exists, write_json};
 use crate::matcher::match_transactions;
 use crate::model::{
-    Draft, MatchResult, ReceiptMeta, ReceiptsByStatus, Rule, StatementTransaction, Transaction,
+    Draft, FileIdentity, MatchResult, ReceiptMeta, ReceiptsByStatus, Rule, StatementTransaction,
+    Transaction,
 };
 use crate::period::PeriodPaths;
 use crate::receipts::{is_receipt_name, walk};
@@ -82,11 +83,22 @@ pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, Pipel
     );
     let moved: HashMap<String, String> =
         moves.iter().map(|m| (text(&m.from), text(&m.to))).collect();
+    // A move keeps a file's size and time, so a file still to move back is checked at its
+    // source.
+    let sources: HashMap<String, &Path> = moves
+        .iter()
+        .map(|m| (text(&m.to), m.from.as_path()))
+        .collect();
+    let identity = |file: &str| match sources.get(file) {
+        Some(from) => FileIdentity::of(from),
+        None => FileIdentity::of(Path::new(file)),
+    };
     let reopened = reopened(
         &relocated(&finalized, &moved),
         &transactions,
         &cache,
         &present,
+        &identity,
         rules,
     );
 
@@ -115,15 +127,17 @@ fn moved_receipt(path: &Path) -> bool {
         .is_some_and(|name| is_receipt_name(&name.to_string_lossy()))
 }
 
-/// The cache, match result and draft for the receipts in `present`.
+/// The cache, match result and draft for the receipts in `present`. `identity` gives the
+/// current identity of a present file.
 fn reopened(
     finalized: &MatchResult,
     transactions: &[StatementTransaction],
     cache: &[ReceiptMeta],
     present: &HashSet<String>,
+    identity: &dyn Fn(&str) -> Option<FileIdentity>,
     rules: &[Rule],
 ) -> Reopened {
-    let cache = rebuilt_cache(finalized, cache, present);
+    let cache = rebuilt_cache(finalized, cache, present, identity);
     let receipts: Vec<ReceiptMeta> = readable(cache.clone())
         .into_iter()
         .filter(|r| present.contains(&r.file))
@@ -244,11 +258,14 @@ fn relocated(result: &MatchResult, moved: &HashMap<String, String>) -> MatchResu
 }
 
 /// The extraction cache for the files now in `receipts/`: the finalized result's metadata for
-/// the receipts it holds, then the earlier cache entries of the other files.
+/// the receipts it holds, then the earlier cache entries of the other files. An entry counts
+/// only when its identity is the current identity of the file, so a new file with an old name
+/// is read again.
 fn rebuilt_cache(
     finalized: &MatchResult,
     cache: &[ReceiptMeta],
     present: &HashSet<String>,
+    identity: &dyn Fn(&str) -> Option<FileIdentity>,
 ) -> Vec<ReceiptMeta> {
     let mut entries: Vec<ReceiptMeta> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -258,7 +275,12 @@ fn rebuilt_cache(
         .flat_map(|tx| &tx.receipt_meta)
         .chain(&finalized.unmatched_receipts);
     for meta in held.chain(cache) {
-        if present.contains(&meta.file) && seen.insert(meta.file.clone()) {
+        if !present.contains(&meta.file) || seen.contains(&meta.file) {
+            continue;
+        }
+        let current = identity(&meta.file);
+        if meta.identity.is_some() && meta.identity == current {
+            seen.insert(meta.file.clone());
             entries.push(meta.clone());
         }
     }
@@ -396,28 +418,69 @@ mod tests {
         assert_eq!(back.receipts_by_status.matched, ["/r/a.pdf"]);
     }
 
+    const SAME: Option<FileIdentity> = Some(FileIdentity {
+        size: 10,
+        modified_secs: 1_900_000_000,
+        modified_nanos: 5,
+    });
+
+    fn same(_: &str) -> Option<FileIdentity> {
+        SAME
+    }
+
     #[test]
     fn rebuilds_the_cache_for_present_files_preferring_the_finalized_metadata() {
-        let finalized = result(vec![tx("t1", Status::Matched, &["/r/a.pdf"], "x")]);
+        let mut finalized = result(vec![tx("t1", Status::Matched, &["/r/a.pdf"], "x")]);
+        finalized.transactions[0].receipt_meta[0].identity = SAME;
         let cache = vec![
             ReceiptMeta {
                 file: "/r/a.pdf".into(),
                 amount_cents: Some(5),
+                identity: SAME,
                 ..Default::default()
             },
             ReceiptMeta {
                 file: "/r/new.pdf".into(),
+                identity: SAME,
                 ..Default::default()
             },
             ReceiptMeta {
                 file: "/r/gone.pdf".into(),
+                identity: SAME,
                 ..Default::default()
             },
         ];
         let present = HashSet::from(["/r/a.pdf".to_string(), "/r/new.pdf".to_string()]);
-        let rebuilt = rebuilt_cache(&finalized, &cache, &present);
+        let rebuilt = rebuilt_cache(&finalized, &cache, &present, &same);
         let files: Vec<&str> = rebuilt.iter().map(|m| m.file.as_str()).collect();
         assert_eq!(files, ["/r/a.pdf", "/r/new.pdf"]);
         assert_eq!(rebuilt[0].amount_cents, Some(1000));
+    }
+
+    #[test]
+    fn leaves_out_entries_whose_file_changed_or_has_no_identity() {
+        let finalized = result(vec![tx("t1", Status::Matched, &["/r/a.pdf"], "x")]);
+        let changed = Some(FileIdentity {
+            size: 99,
+            ..SAME.unwrap()
+        });
+        let cache = vec![
+            ReceiptMeta {
+                file: "/r/a.pdf".into(),
+                amount_cents: Some(5),
+                identity: SAME,
+                ..Default::default()
+            },
+            ReceiptMeta {
+                file: "/r/b.pdf".into(),
+                identity: changed,
+                ..Default::default()
+            },
+        ];
+        let present = HashSet::from(["/r/a.pdf".to_string(), "/r/b.pdf".to_string()]);
+        let rebuilt = rebuilt_cache(&finalized, &cache, &present, &same);
+        let files: Vec<&str> = rebuilt.iter().map(|m| m.file.as_str()).collect();
+        assert_eq!(files, ["/r/a.pdf"]);
+        assert_eq!(rebuilt[0].amount_cents, Some(5));
     }
 }

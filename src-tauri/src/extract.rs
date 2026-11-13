@@ -105,6 +105,7 @@ fn found(file: &str, extracted: Extracted) -> ReceiptMeta {
         date: extracted.date,
         provider_used: Some("gemini".into()),
         refused: None,
+        identity: None,
         extra: Default::default(),
     }
 }

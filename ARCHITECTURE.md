@@ -86,7 +86,8 @@ Debug builds use `config.dev.json`, `rules.dev.json` and `reasons.dev.json`. The
 └── docs/
     ├── statements.json       statements added to the month
     ├── transactions.json     parsed transactions
-    ├── receipts.json         extraction cache (high-confidence entries are reused)
+    ├── receipts.json         extraction cache (high-confidence entries are reused while
+    │                         the file keeps its size and modification time)
     ├── reimbursements.json   reimbursement extraction cache
     ├── match-result.json     matcher output (after Finalize: the final result)
     ├── review-draft.json     decisions not yet finalized, laid over match-result.json
