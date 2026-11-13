@@ -129,11 +129,19 @@ fn without_taken_candidates(expected: &Value) -> Value {
     result
 }
 
+/// Indexes of the matcher cases where Node settled a rule hit on a receipt whose amount does not
+/// fit. Rust differs there on purpose (see DIFFERENCES.md, "Rule matches check the amount"),
+/// and every later pass differs with it. The test checks Rust's rule notes in these cases
+/// and compares every other case in full.
+const SKIPPED_RULE_HITS: &[usize] = &[
+    16, 60, 107, 140, 145, 163, 199, 241, 242, 245, 270, 309, 383,
+];
+
 #[test]
 fn matcher_matches_the_node_implementation() {
     let cases: Vec<Case<MatcherInput, Value>> = cases("matcher");
     assert!(!cases.is_empty());
-    let mut compared = 0;
+    let mut skipped: Vec<usize> = Vec::new();
     for (i, case) in cases.iter().enumerate() {
         let input = &case.input;
         let actual = serde_json::to_value(match_transactions(
@@ -162,6 +170,7 @@ fn matcher_matches_the_node_implementation() {
                     );
                 }
             }
+            skipped.push(i);
             continue;
         }
         assert_eq!(
@@ -169,11 +178,10 @@ fn matcher_matches_the_node_implementation() {
             without_taken_candidates(&case.expected),
             "matcher case {i}"
         );
-        compared += 1;
     }
-    assert!(
-        compared >= cases.len() - 20,
-        "only {compared} cases compared"
+    assert_eq!(
+        skipped, SKIPPED_RULE_HITS,
+        "the cases the test skips changed"
     );
 }
 

@@ -34,14 +34,15 @@ show these differences are kept out of the fixtures.
   receipts are REVIEW with `rule_match (vendor)`. When no receipt of any matching rule fits, the
   transaction is REVIEW with `rule_match_amount (vendor)` and every receipt sharing the first
   rule's keywords. A later rule with a fitting receipt wins over an earlier one without. The
-  matcher fixtures keep the Node output; `tests/golden.rs` skips the cases where Node settled a
-  rule hit on a receipt that does not fit, and checks Rust's rule notes in those cases.
+  matcher fixtures keep the Node output; `tests/golden.rs` lists the indexes of the cases where
+  Node settled a rule hit on a receipt that does not fit, and checks Rust's rule notes in
+  those cases. It compares every other case in full.
 - **Finalize input.** Finalize derives the reviewed state from `match-result.json` and the
   saved draft, and only touches receipts inside the period's `receipts/` folder. Node took
   both lists from the review screen.
 - **Report labels.** The Rust report words some sheet names and labels differently. The
-  fixtures keep the Node wording; `tests/excel.rs` maps it to the current wording before
-  comparing, and recomputes the width of any column whose labels changed. English: sheet
+  Excel fixture holds the current wording, with the width of each column that changed
+  recomputed from its longest cell, and `tests/excel.rs` compares it as it is. English: sheet
   `Validated` is `All Transactions`, sheet `Review` is `Needs Review`, the totals header
   `Label` is `Category`, and "FX" in notes reads "Foreign-currency". Portuguese: sheet
   `Validados` is `Todas as transações`, `Revisão` is `Por rever`, `Sem Associação` is

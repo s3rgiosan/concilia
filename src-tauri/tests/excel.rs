@@ -61,103 +61,6 @@ fn as_fixture(sheets: &[Sheet]) -> Value {
     )
 }
 
-/// Cell texts and sheet names the report words differently from the Node implementation.
-fn renamed(lang: Language) -> &'static [(&'static str, &'static str)] {
-    match lang {
-        Language::En => &[
-            ("Validated", "All Transactions"),
-            ("Review", "Needs Review"),
-            ("Label", "Category"),
-            ("Bank fee (auto)", "Bank Fee"),
-            ("No receipt", "Other"),
-        ],
-        Language::Pt => &[
-            ("Validados", "Todas as transações"),
-            ("Revisão", "Por rever"),
-            ("Sem Associação", "Sem associação"),
-            ("Comissão bancária (auto)", "Comissão bancária"),
-            ("Sem recibo", "Outro"),
-            ("Data da Transação", "Data da transação"),
-            ("Descrição da Transação", "Descrição da transação"),
-            ("Valor da Transação", "Valor da transação"),
-            ("Ficheiro do Recibo", "Ficheiro do recibo"),
-            ("Valor do Recibo", "Valor do recibo"),
-            ("Confiança do Recibo", "Confiança do recibo"),
-            ("Moeda do Recibo", "Moeda do recibo"),
-        ],
-    }
-}
-
-/// Phrases inside notes that the report words differently from the Node implementation.
-fn renamed_phrases(lang: Language) -> &'static [(&'static str, &'static str)] {
-    match lang {
-        Language::En => &[
-            ("FX match (", "Foreign-currency match ("),
-            ("FX receipt within", "foreign-currency receipt within"),
-            ("FX receipts within", "foreign-currency receipts within"),
-        ],
-        Language::Pt => &[
-            ("Regra de correspondência (", "Regra de associação ("),
-            (
-                "Correspondência FX (",
-                "Correspondência em moeda estrangeira (",
-            ),
-            ("recibo FX dentro", "recibo em moeda estrangeira dentro"),
-            ("recibos FX dentro", "recibos em moeda estrangeira dentro"),
-        ],
-    }
-}
-
-fn rename_text(text: &str, lang: Language) -> String {
-    if let Some((_, new)) = renamed(lang).iter().find(|(old, _)| *old == text) {
-        return (*new).to_string();
-    }
-    renamed_phrases(lang)
-        .iter()
-        .fold(text.to_string(), |acc, (old, new)| acc.replace(old, new))
-}
-
-/// The fixture's sheets with the labels the report uses now. A column whose cells changed
-/// gets the width the report derives from its longest cell.
-fn with_current_labels(expected: &Value, lang: Language) -> Value {
-    let mut sheets = expected.clone();
-    for sheet in sheets.as_array_mut().unwrap() {
-        let name = rename_text(sheet["name"].as_str().unwrap(), lang);
-        sheet["name"] = json!(name);
-        let columns = sheet["widths"].as_array().unwrap().len();
-        let mut changed = vec![false; columns];
-        for row in sheet["rows"].as_array_mut().unwrap() {
-            for (c, cell) in row.as_array_mut().unwrap().iter_mut().enumerate() {
-                if cell["number"] == json!(false) {
-                    let old = cell["value"].as_str().unwrap().to_string();
-                    let new = rename_text(&old, lang);
-                    if new != old {
-                        changed[c] = true;
-                        cell["value"] = json!(new);
-                    }
-                }
-            }
-        }
-        for c in (0..columns).filter(|c| changed[*c]) {
-            let longest = sheet["rows"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|row| {
-                    let cell = &row[c];
-                    match cell["value"].as_str() {
-                        Some(text) => text.encode_utf16().count(),
-                        None => cell["value"].as_f64().unwrap_or(0.0).to_string().len(),
-                    }
-                })
-                .max()
-                .unwrap_or(0);
-            sheet["widths"][c] = json!((longest + 2).clamp(10, 50));
-        }
-    }
-    sheets
-}
-
 /// The first place two JSON values differ, as a path with both values.
 fn first_difference(path: String, a: &Value, b: &Value) -> Option<String> {
     match (a, b) {
@@ -191,8 +94,7 @@ fn sheets_match_the_node_implementation() {
             },
         );
         let actual = as_fixture(&sheets);
-        let expected = with_current_labels(&case.expected, case.input.lang);
-        if let Some(difference) = first_difference(String::new(), &actual, &expected) {
+        if let Some(difference) = first_difference(String::new(), &actual, &case.expected) {
             panic!("excel case {i}: {difference}");
         }
     }
