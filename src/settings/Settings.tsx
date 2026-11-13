@@ -40,7 +40,7 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
   /** The latest failure, boxed so any value can be held. */
   const [error, setError] = useState<{ cause: unknown } | null>(null);
 
-  const paneTitle = t(`settings.tabs.${pane}`);
+  const paneTitle = loadError ? t("settings.title") : t(`settings.tabs.${pane}`);
   /** The pane on screen, and whether the user has moved to another one since the window opened. */
   const [shownPane, setShownPane] = useState(pane);
   const [switched, setSwitched] = useState(false);

@@ -260,10 +260,13 @@ describe("Settings window", () => {
   });
 
   it("shows a load error with Try Again", async () => {
+    localStorage.setItem("settings.pane", "reasons");
     vi.mocked(getAppState).mockRejectedValueOnce({ kind: "io", message: "settings.json unreadable" });
     render(<Settings />);
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Details: settings.json unreadable");
+    expect(document.title).toBe("Settings");
+    expect(setWindowTitle).toHaveBeenLastCalledWith("Settings");
 
     current = makeView();
     vi.mocked(getAppState).mockResolvedValueOnce(current);
