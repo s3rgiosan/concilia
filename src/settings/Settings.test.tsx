@@ -819,6 +819,21 @@ describe("Gemini pane", () => {
   });
 });
 
+describe("Settings queued saves", () => {
+  it("does not save a failed change with the next change", async () => {
+    localStorage.setItem("settings.geminiAdvanced", "expanded");
+    const first = deferred<AppStateView>();
+    vi.mocked(saveSettings).mockReturnValueOnce(first.promise);
+    await renderSettings(makeView(), "gemini");
+    commitText("Project", "acme-billing");
+    commitText("Region", "us-central1");
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    await act(async () => first.reject(new Error("disk full")));
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2));
+    expect(lastSaved().gemini).toEqual({ project: null, location: "us-central1", model: "gemini-2.5-flash" });
+  });
+});
+
 describe("Rules pane", () => {
   const rules = [
     makeRule({ id: "rule-1", receiptVendor: "acme", transactionDescription: "acme corp" }),

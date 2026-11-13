@@ -75,38 +75,43 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
   const content = useRef<HTMLDivElement>(null);
   useFitWindow(bar, paneRef, content, state !== null);
 
-  // Saves run one after another, each from the settings the previous one produced, so a
-  // change made while another is saving keeps both.
-  const latest = useRef<SettingsData | null>(null);
+  // Saves run one after another. Each change is applied to the last settings the backend
+  // confirmed when its turn comes, so a failed change never reaches a later save.
+  const confirmed = useRef<SettingsData | null>(null);
   const pending = useRef(0);
   const queue = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (state && pending.current === 0) {
-      latest.current = state.settings;
+      confirmed.current = state.settings;
     }
   }, [state]);
 
   const save = useCallback(
     (change: (settings: SettingsData) => SettingsData) => {
-      const base = latest.current ?? state?.settings;
-      if (!base) {
+      const start = confirmed.current ?? state?.settings;
+      if (!start) {
         return;
       }
-      const next = change(base);
-      latest.current = next;
       pending.current += 1;
       setError(null);
-      const run = () =>
-        saveSettings(next)
-          .then(replace, (e) => {
-            setError({ cause: e });
-            latest.current = null;
-            reload();
-          })
+      const run = () => {
+        const next = change(confirmed.current ?? start);
+        return saveSettings(next)
+          .then(
+            (view) => {
+              confirmed.current = next;
+              replace(view);
+            },
+            (e) => {
+              setError({ cause: e });
+              reload();
+            },
+          )
           .finally(() => {
             pending.current -= 1;
           });
+      };
       queue.current = pending.current === 1 ? run() : queue.current.then(run);
     },
     [state, replace, reload],
