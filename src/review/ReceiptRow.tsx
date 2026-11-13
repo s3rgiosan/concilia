@@ -77,14 +77,18 @@ export const ReceiptRow = memo(function ReceiptRow({
         </span>
         <span className="receipt-row__text">
           <span className="receipt-row__line">
-            <span className="receipt-row__title">{title}</span>
+            <span className="receipt-row__title" title={title}>
+              {title}
+            </span>
             {receipt.amount_cents !== null ? (
               <span className="receipt-row__amount numeric">{formatMoney(receipt.amount_cents, receipt.currency, i18n.language)}</span>
             ) : null}
           </span>
           <span className="receipt-row__meta">
             <span>{receipt.date ? shortDate(receipt.date, i18n.language) : t("review.dateUnknown")}</span>
-            {receipt.vendor ? <span className="receipt-row__file">{fileName(receipt.file)}</span> : null}
+            {receipt.vendor ? <span className="receipt-row__file" title={fileName(receipt.file)}>
+                {fileName(receipt.file)}
+              </span> : null}
             {receipt.confidence && receipt.confidence !== "high" ? <span>{t("review.lowConfidence")}</span> : null}
           </span>
           {difference ? (

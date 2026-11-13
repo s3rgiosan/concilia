@@ -45,6 +45,7 @@ All notable changes to this project are documented in this file. Format follows 
 - The Add Rule and Edit Rule sheets refuse a rule that has the same keywords as another rule, even when the case differs, and say so.
 - The reimbursements header adds amounts only when they share one currency and shows that currency. With mixed currencies it shows no total.
 - Portuguese text uses the plural form for a count of 0, such as "0 transações".
+- The Details pane shows the full vendor and file name of a receipt, wrapping long names and giving a tooltip. The status column of the review list is wide enough for Portuguese labels such as "Sem recibo · Comissão bancária".
 
 ### Changed
 

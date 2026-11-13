@@ -154,7 +154,7 @@
 
 .list-row {
   display: grid;
-  grid-template-columns: 150px 48px minmax(0, 1fr) 12px 100px;
+  grid-template-columns: 200px 48px minmax(0, 1fr) 12px 100px;
   gap: 10px;
   align-items: center;
   height: 28px;
@@ -193,7 +193,7 @@
 }
 
 /* In a narrow list the status shows as its dot; the label stays for assistive technology. */
-@container review-list (max-width: 600px) {
+@container review-list (max-width: 700px) {
   .list-row {
     grid-template-columns: 8px 48px minmax(0, 1fr) 12px 100px;
   }
@@ -498,9 +498,7 @@
 .receipt-row__title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .receipt-row__amount {
@@ -509,6 +507,7 @@
 
 .receipt-row__meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 0 6px;
   min-width: 0;
   color: var(--label-secondary);
@@ -529,8 +528,8 @@
 .receipt-row__meta > .receipt-row__file {
   flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .receipt-row__mismatch {

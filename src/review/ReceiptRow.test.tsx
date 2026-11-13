@@ -33,6 +33,12 @@ describe("ReceiptRow", () => {
     expect(container.querySelector(".receipt-row__meta")?.textContent).toBe("5 Maracme.pdf");
   });
 
+  it("gives the vendor and the file name a tooltip with the full text", () => {
+    const { container } = renderRow({ receipt: makeReceipt("a-long-file-name-for-an-acme-receipt.pdf", { vendor: "ACME Industrial Supplies Limited" }) });
+    expect(container.querySelector(".receipt-row__title")?.getAttribute("title")).toBe("ACME Industrial Supplies Limited");
+    expect(container.querySelector(".receipt-row__file")?.getAttribute("title")).toBe("a-long-file-name-for-an-acme-receipt.pdf");
+  });
+
   it("falls back to the file name and says what is unknown", () => {
     const { container } = renderRow({
       receipt: makeReceipt("scan.pdf", { vendor: null, amount_cents: null, date: null, confidence: "low" }),
