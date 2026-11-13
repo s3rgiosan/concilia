@@ -54,7 +54,7 @@ describe("friendlyError", () => {
     network: "Concilia can't reach Google. Check your internet connection and try again.",
     poppler_missing: "The PDF tools Concilia needs are missing. Reinstall Concilia.",
     parse: "Concilia couldn't read the statement. Check that it comes from the bank selected for it.",
-    finalized: "This month is finalized. Reopen it to scan for receipts.",
+    finalized: "This month is finalized. Use Reopen Month to change it.",
     cancelled: "Reconciliation stopped.",
     timeout: "Reconciliation took longer than 30 minutes and was stopped. Try again.",
     read_only: "The settings were saved by a newer version of Concilia and are read-only.",

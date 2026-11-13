@@ -444,7 +444,7 @@
     "network": "O Concilia não consegue contactar a Google. Verifique a ligação à Internet e tente novamente.",
     "poppler_missing": "Faltam as ferramentas de PDF de que o Concilia precisa. Reinstale o Concilia.",
     "parse": "O Concilia não conseguiu ler o extrato. Verifique se pertence ao banco selecionado.",
-    "finalized": "Este mês está finalizado. Reabra-o para procurar recibos.",
+    "finalized": "Este mês está finalizado. Use Reabrir mês para o alterar.",
     "cancelled": "Reconciliação interrompida.",
     "timeout": "A reconciliação demorou mais de 30 minutos e foi interrompida. Tente novamente.",
     "read_only": "As definições foram guardadas por uma versão mais recente do Concilia e são só de leitura.",

@@ -53,7 +53,7 @@ pub enum PipelineError {
     PopplerMissing(String),
     #[error("{0}")]
     Unauthorized(String),
-    #[error("this period is finalized; re-run it to scan again")]
+    #[error("this period is finalized; use Reopen Month to change it")]
     Finalized,
     #[error("cancelled")]
     Cancelled,
@@ -249,6 +249,13 @@ fn read_reimbursements(paths: &PeriodPaths) -> Vec<ReceiptMeta> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_finalized_message_names_reopen() {
+        let message = PipelineError::Finalized.to_string();
+        assert!(message.contains("Reopen Month"), "{message}");
+        assert!(!message.contains("re-run"), "{message}");
+    }
 
     #[test]
     fn serializes_run_events_with_a_step_tag() {
