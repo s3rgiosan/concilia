@@ -89,6 +89,7 @@ beforeEach(() => {
     return Promise.resolve(() => undefined);
   });
   vi.mocked(saveSettings).mockImplementation((settings) => Promise.resolve({ ...current, settings }));
+  vi.mocked(setWindowTitle).mockResolvedValue(undefined);
   vi.mocked(appVersion).mockResolvedValue("2.0.0");
   vi.mocked(popplerStatus).mockResolvedValue({ version: "24.02.0", bundled: true });
   vi.mocked(getRules).mockResolvedValue([]);
@@ -141,7 +142,6 @@ function commitText(label: string, value: string) {
 
 describe("Settings window", () => {
   it("titles the window after the active pane", async () => {
-    vi.mocked(setWindowTitle).mockResolvedValue(undefined);
     await renderSettings();
     expect(document.title).toBe("Folder");
     expect(setWindowTitle).toHaveBeenLastCalledWith("Folder");
