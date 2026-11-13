@@ -10,7 +10,7 @@ Routes, from `menu::route` and `handle_menu_event` in `src-tauri/src/lib.rs`:
 
 - **Rust**: the item runs in the backend.
 - **Main**: a `menu` event with `{ id }` to the main window, handled in `useMenu.ts` (`onMenu`), month items in its `switch`, review items through `runMenuCommand` in `src/lib/menuCommands.ts`.
-- **Focused**: a `menu` event to the Settings window while it has focus (`menu::event_target`), handled in `src/settings/Settings.tsx`. Only Undo, Redo and Delete reach it; `event_target` drops every other `Main` item while Settings has focus. Without Settings focus, the event goes to the main window.
+- **Focused**: a `menu` event to the Settings window while it has focus (`menu::event_target`), handled in `src/settings/Settings.tsx`. Only Undo, Redo and Delete reach it; While Settings has focus, `MenuState` disables every other `Main` item (`Inner::effective`), so shortcuts such as ⌘⌫ reach the Settings text fields, and `event_target` drops any such event as a second guard. The items are enabled again, as the main window asked, when Settings loses focus. Without Settings focus, the event goes to the main window.
 - **AppKit**: a predefined item handled by the system.
 
 | Menu | Item | Id | Shortcut | Route | Handler |

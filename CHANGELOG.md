@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- The main-window menu items are disabled while Settings has focus, so shortcuts such as Cmd+Backspace edit text in the Settings fields.
 - A no-receipt rule ignores spaces around its keyword, and a keyword with only spaces matches no transaction, as for receipt rules.
 - A queued Settings save builds on the settings that the previous save stored, so a value that the app normalizes is not overwritten by the next change.
 - A year such as 2030 in a receipt file name and in a transaction description no longer counts as a shared name. Every year from 1900 to 2099 is ignored when Concilia compares names.

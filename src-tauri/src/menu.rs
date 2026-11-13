@@ -342,12 +342,16 @@ struct Inner {
 }
 
 impl Inner {
-    /// The flag to apply to `id`, or None when the item keeps its current state.
+    /// The flag to apply to `id`, or None when the item keeps its current state. While Settings
+    /// has focus, the items that only the main window handles are disabled, so their shortcuts
+    /// reach the Settings fields. Undo, Redo and Delete stay enabled for the Settings window.
     fn effective(&self, id: &str) -> Option<bool> {
         let requested = self.enabled.get(id).copied();
         match id {
-            UNDO | REDO => Some(undo_redo_enabled(self.settings_focused, requested)),
-            _ => requested,
+            UNDO | REDO | DELETE => Some(undo_redo_enabled(self.settings_focused, requested)),
+            _ if route(id) != Route::Frontend => requested,
+            _ if self.settings_focused => Some(false),
+            _ => Some(requested.unwrap_or(true)),
         }
     }
 }
@@ -363,12 +367,12 @@ impl MenuState {
         }
     }
 
-    /// Records whether the Settings window has focus, which keeps Undo and Redo enabled.
+    /// Records whether the Settings window has focus, and applies it to the menu items.
     pub fn set_settings_focused(&self, focused: bool) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.settings_focused = focused;
-        for id in [UNDO, REDO] {
-            if let (Some(handle), Some(enabled)) = (inner.handles.get(id), inner.effective(id)) {
+        for (id, handle) in &inner.handles {
+            if let Some(enabled) = inner.effective(id) {
                 let _ = handle.set_enabled(enabled);
             }
         }
@@ -781,6 +785,26 @@ mod tests {
         assert!(undo_redo_enabled(true, Some(false)));
         assert!(!undo_redo_enabled(false, Some(false)));
         assert!(undo_redo_enabled(false, None));
+    }
+
+    #[test]
+    fn main_window_items_are_disabled_while_settings_has_focus() {
+        let mut inner = Inner::default();
+        inner.enabled.insert(ACCEPT.to_string(), true);
+        inner.enabled.insert(DELETE.to_string(), false);
+        inner.settings_focused = true;
+        for id in ITEM_IDS {
+            let expected = match route(id) {
+                Route::Frontend => matches!(*id, UNDO | REDO | DELETE),
+                _ => true,
+            };
+            let enabled = inner.effective(id).unwrap_or(true);
+            assert_eq!(enabled, expected, "{id}");
+        }
+        inner.settings_focused = false;
+        assert_eq!(inner.effective(ACCEPT), Some(true));
+        assert_eq!(inner.effective(RECONCILE), Some(true));
+        assert_eq!(inner.effective(DELETE), Some(false));
     }
 
     #[test]
