@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFormDescription } from "./Form";
 
 /**
@@ -26,6 +26,7 @@ export function TextSetting({
   const describedBy = useFormDescription();
   const [draft, setDraft] = useState(value);
   const [editing, setEditing] = useState(false);
+  const cancelled = useRef(false);
 
   useEffect(() => {
     if (!editing) {
@@ -35,6 +36,10 @@ export function TextSetting({
 
   function commit() {
     setEditing(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
     if (draft.trim() !== value.trim()) {
       onCommit(draft.trim());
     }
@@ -63,9 +68,11 @@ export function TextSetting({
           if (e.key === "Enter") {
             e.currentTarget.blur();
           } else if (e.key === "Escape") {
+            cancelled.current = true;
             setDraft(value);
             setEditing(false);
             e.currentTarget.blur();
+            cancelled.current = false;
           }
         }}
       />

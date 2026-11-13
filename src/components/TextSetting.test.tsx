@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TextSetting } from "./TextSetting";
 
@@ -34,6 +34,17 @@ describe("TextSetting", () => {
     fireEvent.focus(field());
     fireEvent.change(field(), { target: { value: "globex" } });
     fireEvent.keyDown(field(), { key: "Escape" });
+    expect(field().value).toBe("acme");
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("does not save on Escape when the input has real focus", () => {
+    const onCommit = vi.fn();
+    render(<TextSetting id="p" label="Project" value="acme" onCommit={onCommit} />);
+    act(() => field().focus());
+    fireEvent.change(field(), { target: { value: "globex" } });
+    fireEvent.keyDown(field(), { key: "Escape" });
+    expect(document.activeElement).not.toBe(field());
     expect(field().value).toBe("acme");
     expect(onCommit).not.toHaveBeenCalled();
   });
