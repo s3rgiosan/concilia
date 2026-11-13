@@ -1,6 +1,7 @@
 //! Conversions from parser output to the canonical transaction schema: ISO dates and signed
 //! integer cents.
 
+use crate::dates::epoch_days;
 use crate::model::{RawTransaction, StatementTransaction, Status};
 use crate::text::js_round;
 
@@ -25,12 +26,11 @@ pub fn ddmmyyyy_to_iso(value: &str) -> Result<String, SchemaError> {
     if !shape_ok {
         return Err(SchemaError::Date(value.to_string()));
     }
-    Ok(format!(
-        "{}-{}-{}",
-        &value[6..10],
-        &value[3..5],
-        &value[0..2]
-    ))
+    let iso = format!("{}-{}-{}", &value[6..10], &value[3..5], &value[0..2]);
+    if epoch_days(&iso).is_none() {
+        return Err(SchemaError::Date(value.to_string()));
+    }
+    Ok(iso)
 }
 
 /// Converts a European decimal string such as `1.234,56` or `-45,99` to signed cents.
@@ -114,6 +114,23 @@ mod tests {
         assert_eq!(ddmmyyyy_to_iso("15/01/2030").unwrap(), "2030-01-15");
         assert_eq!(ddmmyyyy_to_iso("01/12/2029").unwrap(), "2029-12-01");
         assert_eq!(ddmmyyyy_to_iso("31/07/2028").unwrap(), "2028-07-31");
+    }
+
+    #[test]
+    fn rejects_impossible_calendar_dates() {
+        for value in [
+            "45/13/2030",
+            "31/04/2030",
+            "29/02/2030",
+            "00/01/2030",
+            "15/00/2030",
+        ] {
+            assert!(
+                matches!(ddmmyyyy_to_iso(value), Err(SchemaError::Date(_))),
+                "{value}"
+            );
+        }
+        assert_eq!(ddmmyyyy_to_iso("29/02/2028").unwrap(), "2028-02-29");
     }
 
     #[test]
