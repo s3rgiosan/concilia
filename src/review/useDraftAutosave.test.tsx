@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Draft } from "../lib/tauri";
 import { deferred } from "../test/fixtures";
-import { AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, useDraftAutosave } from "./useDraftAutosave";
+import { AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, useDraftAutosave, type UnmountSaveOptions } from "./useDraftAutosave";
 
 const DRAFT_A: Draft = { "tx-1": { status: "MATCHED", notes: "salary" } };
 const DRAFT_B: Draft = { "tx-1": { status: "UNMATCHED", notes: "" } };
@@ -11,8 +11,8 @@ const DRAFT_C: Draft = { "tx-2": { status: "MATCHED", notes: "transfer" } };
 
 type Props = { draft: Draft; dirty: boolean };
 
-function setup(save: (draft: Draft) => Promise<void>, initial: Props = { draft: {}, dirty: false }) {
-  return renderHook(({ draft, dirty }: Props) => useDraftAutosave(draft, dirty, save), { initialProps: initial });
+function setup(save: (draft: Draft) => Promise<void>, initial: Props = { draft: {}, dirty: false }, options?: UnmountSaveOptions) {
+  return renderHook(({ draft, dirty }: Props) => useDraftAutosave(draft, dirty, save, options), { initialProps: initial });
 }
 
 /** Lets settled promises run their callbacks. */
@@ -256,6 +256,44 @@ describe("useDraftAutosave", () => {
     unmount();
     await settle();
     expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves again on unmount after a failed save, and reports a repeated failure", async () => {
+    const error = { kind: "io", message: "disk full" };
+    const save = vi.fn().mockRejectedValue(error);
+    const onError = vi.fn();
+    const { rerender, unmount } = setup(save, undefined, { onError });
+    rerender({ draft: DRAFT_A, dirty: true });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS));
+    expect(save).toHaveBeenCalledTimes(1);
+    unmount();
+    await settle();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith(DRAFT_A);
+    expect(onError).toHaveBeenCalledWith(error);
+  });
+
+  it("reports a failed save on unmount of a pending change", async () => {
+    const error = { kind: "io", message: "disk full" };
+    const save = vi.fn().mockRejectedValue(error);
+    const onError = vi.fn();
+    const { rerender, unmount } = setup(save, undefined, { onError });
+    rerender({ draft: DRAFT_A, dirty: true });
+    unmount();
+    await settle();
+    expect(onError).toHaveBeenCalledWith(error);
+  });
+
+  it("tells the caller when a save on unmount succeeds", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const onSaved = vi.fn();
+    const onError = vi.fn();
+    const { rerender, unmount } = setup(save, undefined, { onSaved, onError });
+    rerender({ draft: DRAFT_A, dirty: true });
+    unmount();
+    await settle();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it("saves nothing on unmount once saved", async () => {

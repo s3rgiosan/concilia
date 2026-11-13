@@ -34,10 +34,14 @@ export function useReviewData({ year, month, onSaved, onError, onFirstLoad }: Re
   const draft = history.present;
   const latestDraft = useLatest(draft);
   const save = useCallback((next: Draft) => saveDraft(year, month, next), [year, month]);
-  const autosave = useDraftAutosave(draft, dirty, save);
+  const latestOnSaved = useLatest(onSaved);
+  const latestOnError = useLatest(onError);
+  const autosave = useDraftAutosave(draft, dirty, save, {
+    onSaved: () => latestOnSaved.current?.(),
+    onError: (e) => latestOnError.current(e),
+  });
 
   const saveKind = autosave.state.kind;
-  const latestOnSaved = useLatest(onSaved);
   const latestOnFirstLoad = useLatest(onFirstLoad);
   useEffect(() => {
     if (saveKind === "saved") {

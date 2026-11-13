@@ -11,10 +11,18 @@ export const AUTOSAVE_DELAY_MS = 500;
 /** Delay before a save refused while a job runs on the month is tried again. */
 export const AUTOSAVE_RETRY_MS = 1000;
 
+export interface UnmountSaveOptions {
+  /** Runs when the save on unmount succeeds, after the component can no longer show it. */
+  onSaved?: () => void;
+  /** Runs when the save on unmount fails, so the user still hears about the lost change. */
+  onError?: (error: unknown) => void;
+}
+
 /**
  * Saves the draft shortly after each change. `flush` saves at once, or again after a failed save,
  * and resolves when the draft is stored, or rejects when the save fails. `forget` clears the save
- * state for a draft loaded afresh. Pending changes are saved when the component unmounts.
+ * state for a draft loaded afresh. Pending changes, and changes whose last save failed, are saved
+ * when the component unmounts. The result of that save goes to `onSaved` or `onError`.
  *
  * The backend refuses a save while a job runs on the month. The change then stays pending and the
  * save runs again after a delay, until the job ends or the component unmounts.
@@ -23,6 +31,7 @@ export function useDraftAutosave(
   draft: Draft,
   dirty: boolean,
   save: (draft: Draft) => Promise<void>,
+  { onSaved, onError }: UnmountSaveOptions = {},
 ): { state: SaveState; flush: () => Promise<void>; forget: () => void } {
   const [state, setState] = useState<SaveState>({ kind: "idle" });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,6 +40,8 @@ export function useDraftAutosave(
   const failed = useRef(false);
   const latestDraft = useLatest(draft);
   const latestSave = useLatest(save);
+  const latestOnSaved = useLatest(onSaved);
+  const latestOnError = useLatest(onError);
   /** Saves run one at a time, in order. */
   const queue = useRef<Promise<void>>(Promise.resolve());
   const mounted = useRef(true);
@@ -90,11 +101,14 @@ export function useDraftAutosave(
 
   useEffect(
     () => () => {
-      if (pending.current) {
-        write().catch(() => undefined);
+      if (pending.current || failed.current) {
+        write().then(
+          () => latestOnSaved.current?.(),
+          (error) => latestOnError.current?.(error),
+        );
       }
     },
-    [write],
+    [write, latestOnSaved, latestOnError],
   );
 
   const flush = useCallback(() => (pending.current || failed.current ? write() : queue.current), [write]);
