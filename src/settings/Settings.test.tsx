@@ -903,6 +903,17 @@ describe("Rules pane", () => {
     expect(rows()[2].textContent).toBe("initechinitech llc");
   });
 
+  it("refuses a rule that differs from another only in case", async () => {
+    await renderRules();
+    fireEvent.click(button("Add Rule…"));
+    fireEvent.change(sheetInput("Receipt keyword"), { target: { value: "ACME" } });
+    fireEvent.change(sheetInput("Transaction keyword"), { target: { value: " ACME Corp " } });
+    expect(screen.getByText("Another rule has these keywords.")).toBeTruthy();
+    expect((within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(sheetInput("Transaction keyword"), { target: { value: "acme corp 2" } });
+    expect(screen.queryByText("Another rule has these keywords.")).toBeNull();
+  });
+
   it("does not warn about missing keywords while typing", async () => {
     await renderRules();
     fireEvent.click(button("Add Rule…"));

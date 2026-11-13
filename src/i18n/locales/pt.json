@@ -398,6 +398,7 @@
       "addRuleTitle": "Adicionar regra",
       "deleteRule": "Eliminar regra",
       "incomplete": "Preencha todas as palavras-chave da regra.",
+      "duplicate": "Já existe uma regra com estas palavras-chave.",
       "editRuleTitle": "Editar regra",
       "editRule": "Editar…",
       "removed": "Regra removida.",

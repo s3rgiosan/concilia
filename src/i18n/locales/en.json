@@ -398,6 +398,7 @@
       "addRuleTitle": "Add Rule",
       "deleteRule": "Delete Rule",
       "incomplete": "Fill in every keyword of the rule.",
+      "duplicate": "Another rule has these keywords.",
       "editRuleTitle": "Edit Rule",
       "editRule": "Edit…",
       "removed": "Rule removed.",

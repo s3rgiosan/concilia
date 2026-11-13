@@ -42,6 +42,7 @@ All notable changes to this project are documented in this file. Format follows 
 - A settings change that fails to save is no longer saved with the next change you make.
 - Review decisions are saved again when you leave a month after a failed save, and a failure then shows an error. The sidebar count for the month updates after that save.
 - Settings reads the match rules again when the main window adds a rule, so adding a rule in Settings no longer removes it. A rule whose reason was deleted opens with Other chosen.
+- The Add Rule and Edit Rule sheets refuse a rule that has the same keywords as another rule, even when the case differs, and say so.
 
 ### Changed
 

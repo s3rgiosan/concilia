@@ -29,6 +29,19 @@ interface Removed {
   index: number;
 }
 
+/** Whether another rule has the same kind and keywords, ignoring case and outer spaces. */
+function hasDuplicate(editing: Editing, rules: readonly Rule[]): boolean {
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const receipt = editing.kind === RECEIPT_KIND;
+  return rules.some(
+    (rule, i) =>
+      i !== editing.index &&
+      (rule.noReceipt ?? RECEIPT_KIND) === editing.kind &&
+      (!receipt || same(rule.receiptVendor, editing.receiptVendor)) &&
+      same(rule.transactionDescription, editing.transactionDescription),
+  );
+}
+
 function newId(): string {
   return crypto.randomUUID();
 }
@@ -214,6 +227,7 @@ export function RulesTab({
 
   const needsVendor = editing?.kind === RECEIPT_KIND;
   const incomplete = editing !== null && ((needsVendor && !editing.receiptVendor.trim()) || !editing.transactionDescription.trim());
+  const duplicate = editing !== null && !incomplete && hasDuplicate(editing, rules);
   const kindOptions: { value: RuleKind; label: string }[] = [
     { value: RECEIPT_KIND, label: t("settings.rules.kindReceipt") },
     ...reasons.map((reason) => ({
@@ -316,7 +330,7 @@ export function RulesTab({
         <Sheet
           title={editing.index === null ? t("settings.rules.addRuleTitle") : t("settings.rules.editRuleTitle")}
           submitLabel={editing.index === null ? t("common.add") : t("common.save")}
-          submitDisabled={incomplete}
+          submitDisabled={incomplete || duplicate}
           busy={saving}
           onCancel={() => setEditing(null)}
           onSubmit={submitEdit}
@@ -354,6 +368,7 @@ export function RulesTab({
             />
           </div>
           {incomplete && editing.attempted ? <SheetNote tone="warning">{t("settings.rules.incomplete")}</SheetNote> : null}
+          {duplicate ? <SheetNote tone="warning">{t("settings.rules.duplicate")}</SheetNote> : null}
         </Sheet>
       ) : null}
     </section>
