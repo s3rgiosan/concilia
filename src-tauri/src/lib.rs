@@ -253,9 +253,21 @@ pub fn run() {
                 handle.clone(),
             ))));
             let schedule_state = Arc::clone(&state);
-            tauri::async_runtime::spawn(updates::run_schedule(Arc::clone(&updates), move || {
-                schedule_state.settings().check_for_updates
-            }));
+            let schedule_app = handle.clone();
+            tauri::async_runtime::spawn(updates::run_schedule(
+                Arc::clone(&updates),
+                move || schedule_state.settings().check_for_updates,
+                move |update| {
+                    let _ = schedule_app.emit_to(
+                        windows::MAIN_LABEL,
+                        UPDATE_CHECK_RESULT_EVENT,
+                        UpdateCheckResult {
+                            update: Some(update),
+                            error: None,
+                        },
+                    );
+                },
+            ));
 
             app.manage(state);
             app.manage(updates);

@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 
 /// Emitted while an update downloads, with an `UpdateProgress` payload.
 pub const UPDATE_PROGRESS_EVENT: &str = "update-progress";
-/// Emitted to the main window after a check started from the app menu, with an `UpdateCheckResult`.
+/// Emitted to the main window with an `UpdateCheckResult` after a check started from the app
+/// menu, and with the update after a scheduled check finds one.
 pub const UPDATE_CHECK_RESULT_EVENT: &str = "update-check-result";
 
 /// The first scheduled check runs this long after launch.
@@ -143,19 +144,31 @@ impl UpdateManager {
 }
 
 /// Checks `FIRST_CHECK_DELAY` after it starts and every `CHECK_INTERVAL` after that, skipping
-/// each check while `enabled` returns false. Failures are logged at debug, since being offline is
-/// the common cause.
-pub async fn run_schedule(manager: Arc<UpdateManager>, enabled: impl Fn() -> bool + Send + Sync) {
+/// each check while `enabled` returns false. Calls `on_found` with each update a check finds.
+/// Failures are logged at debug, since being offline is the common cause.
+pub async fn run_schedule(
+    manager: Arc<UpdateManager>,
+    enabled: impl Fn() -> bool + Send + Sync,
+    on_found: impl Fn(UpdateInfo) + Send + Sync,
+) {
     tokio::time::sleep(FIRST_CHECK_DELAY).await;
     loop {
         if enabled() {
-            match manager.check_now().await {
-                Ok(Some(update)) => log::info!("update {} is available", update.version),
-                Ok(None) => log::debug!("no update available"),
-                Err(e) => log::debug!("update check failed: {e}"),
-            }
+            scheduled_check(&manager, &on_found).await;
         }
         tokio::time::sleep(CHECK_INTERVAL).await;
+    }
+}
+
+/// Runs one scheduled check and reports the update it finds to `on_found`.
+async fn scheduled_check(manager: &UpdateManager, on_found: &(impl Fn(UpdateInfo) + Send + Sync)) {
+    match manager.check_now().await {
+        Ok(Some(update)) => {
+            log::info!("update {} is available", update.version);
+            on_found(update);
+        }
+        Ok(None) => log::debug!("no update available"),
+        Err(e) => log::debug!("update check failed: {e}"),
     }
 }
 
@@ -368,6 +381,22 @@ mod tests {
 
         assert_eq!(manager.check_now().await, Ok(None));
         assert_eq!(manager.pending(), None);
+    }
+
+    #[tokio::test]
+    async fn a_scheduled_check_reports_only_an_update_it_finds() {
+        let update = FakeUpdate::new("9.9.9", Ok(()));
+        let manager = UpdateManager::new(FakeSource::scripted(vec![
+            found(&update),
+            Ok(None),
+            Err(UpdateError::Network("offline".into())),
+        ]));
+        let reported = Mutex::new(Vec::new());
+        let on_found = |info: UpdateInfo| reported.lock().unwrap().push(info);
+        scheduled_check(&manager, &on_found).await;
+        scheduled_check(&manager, &on_found).await;
+        scheduled_check(&manager, &on_found).await;
+        assert_eq!(*reported.lock().unwrap(), vec![info("9.9.9")]);
     }
 
     #[tokio::test]
