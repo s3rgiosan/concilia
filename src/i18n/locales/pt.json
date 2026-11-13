@@ -187,6 +187,8 @@
     "refusedReason": {
       "file_too_large": "demasiado grande (mais de 50 MB)",
       "unrecognized_file": "não é um PDF nem uma imagem",
+      "gemini_http_400": "rejeitado pelo Gemini (HTTP 400)",
+      "gemini_http_413": "demasiado grande para o Gemini (HTTP 413)",
       "other": "não pode ser lido"
     },
     "addStatements": {
@@ -478,6 +480,8 @@
       "unrecognized_file": "O ficheiro não é um ficheiro PDF, PNG ou JPEG.",
       "pdf_output_too_large": "O PDF tem mais texto do que o Concilia consegue ler.",
       "gemini_service": "O Gemini não conseguiu responder: o limite de pedidos pode estar esgotado, o serviço pode estar em baixo ou o nome do modelo pode estar errado. Aguarde um momento e tente de novo, ou verifique o modelo nas Definições.",
+      "gemini_http_400": "O Gemini rejeitou o ficheiro (HTTP 400).",
+      "gemini_http_413": "O Gemini rejeitou o ficheiro por ser demasiado grande (HTTP 413).",
       "stored_file_unreadable": "O Concilia não consegue ler o ficheiro de regras ou de motivos, por isso não o usa nem o altera. Corrija ou remova o ficheiro na pasta das definições e reinicie o Concilia."
     }
   },

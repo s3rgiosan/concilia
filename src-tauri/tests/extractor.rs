@@ -223,6 +223,47 @@ async fn stops_on_a_rate_limit_that_retries_do_not_clear() {
 }
 
 #[tokio::test]
+async fn refuses_the_file_when_gemini_rejects_the_request() {
+    for (status, code) in [(400, "gemini_http_400"), (413, "gemini_http_413")] {
+        let server = server().await;
+        Mock::given(path_regex(":generateContent$"))
+            .respond_with(ResponseTemplate::new(status).set_body_string("bad request"))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("acme.png");
+        std::fs::write(&file, b"\x89PNG\r\n\x1a\npng bytes").unwrap();
+
+        let error = extractor(&server, no_poppler())
+            .extract(&file)
+            .await
+            .unwrap_err();
+        match error {
+            ExtractError::Rejected { code: seen, .. } => assert_eq!(seen, code),
+            other => panic!("HTTP {status}: expected Rejected, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn stops_when_the_model_is_not_found() {
+    let server = server().await;
+    Mock::given(path_regex(":generateContent$"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("model not found"))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("acme.png");
+    std::fs::write(&file, b"\x89PNG\r\n\x1a\npng bytes").unwrap();
+
+    let error = extractor(&server, no_poppler())
+        .extract(&file)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ExtractError::Service(_)), "{error:?}");
+}
+
+#[tokio::test]
 async fn does_not_send_the_page_image_after_an_http_error() {
     let Some(poppler) = common::poppler_on_path() else {
         return;

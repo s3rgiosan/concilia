@@ -166,12 +166,26 @@ impl GeminiExtractor {
         Ok(self.render(file).await)
     }
 
-    /// Runs Gemini, stopping on authorization failures and HTTP errors and treating other failures
-    /// as no result.
+    /// Runs Gemini. Authorization failures and HTTP errors stop the run, except a 400 or 413,
+    /// which refuse only this file. Other failures count as no result.
     async fn ask(&self, file: &Path, payload: &Payload) -> Result<Option<Extracted>, ExtractError> {
         match self.client.extract(payload).await {
             Ok(result) => Ok(result),
             Err(GeminiError::Auth(message)) => Err(ExtractError::Fatal(message)),
+            Err(GeminiError::Http {
+                status: 400,
+                message,
+            }) => Err(ExtractError::Rejected {
+                code: "gemini_http_400",
+                message: format!("Gemini answered HTTP 400: {message}"),
+            }),
+            Err(GeminiError::Http {
+                status: 413,
+                message,
+            }) => Err(ExtractError::Rejected {
+                code: "gemini_http_413",
+                message: format!("Gemini answered HTTP 413: {message}"),
+            }),
             Err(error @ GeminiError::Http { .. }) => Err(ExtractError::Service(error.to_string())),
             Err(GeminiError::Setting(setting)) => Err(ExtractError::Fatal(setting.to_string())),
             Err(error) => {

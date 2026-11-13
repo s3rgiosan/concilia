@@ -61,8 +61,8 @@ pub struct ReceiptMeta {
     pub date: Option<String>,
     #[serde(default)]
     pub provider_used: Option<String>,
-    /// Why the file was not sent to Gemini, such as `file_too_large`; absent for a file that
-    /// was read or tried.
+    /// Why the file was not read, such as `file_too_large`, or `gemini_http_400` when Gemini
+    /// rejected the file; absent for a file that was read or tried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<String>,
     /// The size and modification time of the file when it was read. A cached reading counts

@@ -187,6 +187,8 @@
     "refusedReason": {
       "file_too_large": "too large (over 50 MB)",
       "unrecognized_file": "not a PDF or image file",
+      "gemini_http_400": "Gemini rejected it (HTTP 400)",
+      "gemini_http_413": "too large for Gemini (HTTP 413)",
       "other": "can't be read"
     },
     "addStatements": {
@@ -478,6 +480,8 @@
       "unrecognized_file": "The file isn't a PDF, PNG or JPEG file.",
       "pdf_output_too_large": "The PDF holds more text than Concilia can read.",
       "gemini_service": "Gemini could not answer: the rate limit may be used up, the service may be down, or the model name may be wrong. Wait a moment and try again, or check the model in Settings.",
+      "gemini_http_400": "Gemini rejected the file (HTTP 400).",
+      "gemini_http_413": "Gemini rejected the file as too large (HTTP 413).",
       "stored_file_unreadable": "Concilia can't read the rules or reasons file, so it won't use or change it. Fix or remove the file in the settings folder, then restart Concilia."
     }
   },
