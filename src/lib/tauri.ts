@@ -128,6 +128,13 @@ export interface ScanResult {
 
 export type Status = "MATCHED" | "REVIEW" | "UNMATCHED";
 
+/** The size and modification time of a file. The time is split so each number stays exact. */
+export interface FileIdentity {
+  size: number;
+  modified_secs: number;
+  modified_nanos: number;
+}
+
 export interface ReceiptMeta {
   file: string;
   amount_cents: number | null;
@@ -136,6 +143,8 @@ export interface ReceiptMeta {
   vendor: string | null;
   date: string | null;
   provider_used: string | null;
+  /** The file's size and modification time when it was read. Absent when unknown. */
+  identity?: FileIdentity;
   /** The file relative to the receipts root, for previews. Only in review data. */
   rel_path?: string | null;
 }
