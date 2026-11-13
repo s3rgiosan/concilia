@@ -572,7 +572,7 @@ fn resetting_a_period_moves_receipts_back_and_deletes_derived_files() {
         write_file(&file, b"[]");
     }
 
-    let report = pipeline::reset_period(&paths);
+    let report = pipeline::reset_period(&paths).unwrap();
 
     assert_eq!(report.restored, 3);
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
@@ -610,7 +610,7 @@ fn resetting_keeps_receipts_whose_names_differ_only_in_case() {
     write_file(&receipts.join("_matched/Invoice.pdf"), b"acme");
     write_file(&receipts.join("_review/invoice.pdf"), b"globex");
 
-    let report = pipeline::reset_period(&paths);
+    let report = pipeline::reset_period(&paths).unwrap();
 
     assert_eq!(report.restored, 2);
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
@@ -619,10 +619,79 @@ fn resetting_keeps_receipts_whose_names_differ_only_in_case() {
     assert_eq!(read("invoice-restored.pdf"), b"globex");
 }
 
+/// A finalized period with sorted receipts and the files a reset deletes.
+fn finalized_period(root: &Path) -> PeriodPaths {
+    let paths = period().paths(root);
+    write_file(&paths.receipts.join("_matched/acme.pdf"), b"acme");
+    write_file(&paths.receipts.join("_review/globex.pdf"), b"globex");
+    for file in [
+        paths.receipts_cache(),
+        paths.match_result(),
+        paths.applied_marker(),
+    ] {
+        write_file(&file, b"[]");
+    }
+    paths
+}
+
+fn assert_nothing_reset(paths: &PeriodPaths) {
+    let receipts = &paths.receipts;
+    assert_eq!(
+        std::fs::read(receipts.join("_matched/acme.pdf")).unwrap(),
+        b"acme"
+    );
+    assert_eq!(
+        std::fs::read(receipts.join("_review/globex.pdf")).unwrap(),
+        b"globex"
+    );
+    assert!(!receipts.join("acme.pdf").exists());
+    assert!(!receipts.join("globex.pdf").exists());
+    for kept in [
+        paths.receipts_cache(),
+        paths.match_result(),
+        paths.applied_marker(),
+    ] {
+        assert!(kept.exists(), "{} kept", kept.display());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn resetting_stops_and_undoes_the_moves_when_a_receipt_cannot_move_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let paths = finalized_period(dir.path());
+    let review = paths.receipts.join("_review");
+    std::fs::set_permissions(&review, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let outcome = pipeline::reset_period(&paths);
+
+    std::fs::set_permissions(&review, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(matches!(outcome, Err(PipelineError::Io(_))), "{outcome:?}");
+    assert_nothing_reset(&paths);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn reconciling_again_stops_when_a_sorted_folder_is_not_a_folder() {
+    let h = Harness::new();
+    let paths = finalized_period(h.dir.path());
+    let elsewhere = h.dir.path().join("elsewhere");
+    write_file(&elsewhere.join("initech.png"), b"initech");
+    std::os::unix::fs::symlink(&elsewhere, paths.receipts.join("_unmatched")).unwrap();
+    write_json_file(&paths.transactions(), &Vec::<Value>::new());
+
+    let error = pipeline::reconcile(&h.ctx(), &[], true).await.unwrap_err();
+
+    assert!(matches!(error, PipelineError::Io(_)), "{error:?}");
+    assert_eq!(h.extractor.call_count(), 0);
+    assert_nothing_reset(&paths);
+}
+
 #[test]
 fn resetting_an_empty_period_does_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let report = pipeline::reset_period(&period().paths(dir.path()));
+    let report = pipeline::reset_period(&period().paths(dir.path())).unwrap();
     assert_eq!(report.restored, 0);
     assert!(report.warnings.is_empty());
 }

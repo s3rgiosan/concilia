@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
+use super::apply::pin_moves;
 use super::{io, PipelineError};
 use crate::error::ErrorKind;
-use crate::finalize::{folded, Move};
-use crate::fsutil::{read_json_lenient, remove_if_exists, rename_no_replace};
+use crate::finalize::{self, folded, Move};
+use crate::fsutil::{read_json_lenient, remove_if_exists};
 use crate::model::{Draft, MatchResult, StatementRecord, Status};
 use crate::period::{Period, PeriodPaths};
 use crate::receipts::{walk, STATUS_FOLDERS};
@@ -182,6 +183,7 @@ fn pending_count(result: &MatchResult, paths: &PeriodPaths) -> usize {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResetReport {
     pub restored: usize,
+    /// Derived files that could not be deleted.
     pub warnings: Vec<String>,
 }
 
@@ -250,17 +252,26 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
 /// Moves finalized receipts back into `receipts/` and deletes the extraction cache, the match
 /// result and the finalized marker. Transactions, reimbursements, the draft and the report
 /// stay. Name clashes get a `-restored` suffix.
-pub fn reset_period(paths: &PeriodPaths) -> ResetReport {
-    let mut report = ResetReport::default();
-    for step in restore_moves(paths, &mut report.warnings) {
-        match rename_no_replace(&step.from, &step.to) {
-            Ok(()) => report.restored += 1,
-            Err(error) => {
-                let name = step.from.file_name().unwrap_or_default().to_string_lossy();
-                report.warnings.push(format!("{name}: {error}"));
-            }
-        }
+///
+/// A receipt that cannot move back stops the reset with an error. The moves already made are
+/// undone, and nothing is deleted, so no receipt is left behind in a status folder.
+pub fn reset_period(paths: &PeriodPaths) -> Result<ResetReport, PipelineError> {
+    let mut warnings = Vec::new();
+    let moves = restore_moves(paths, &mut warnings);
+    if !warnings.is_empty() {
+        return Err(PipelineError::Io(format!(
+            "cannot move every receipt back: {}",
+            warnings.join("; ")
+        )));
     }
+    if !moves.is_empty() {
+        let pinned = pin_moves(paths, &moves)?;
+        finalize::execute(&pinned).map_err(|e| io(&paths.receipts, e))?;
+    }
+    let mut report = ResetReport {
+        restored: moves.len(),
+        warnings: Vec::new(),
+    };
     for file in [
         paths.receipts_cache(),
         paths.match_result(),
@@ -270,7 +281,7 @@ pub fn reset_period(paths: &PeriodPaths) -> ResetReport {
             report.warnings.push(format!("{}: {error}", file.display()));
         }
     }
-    report
+    Ok(report)
 }
 
 #[cfg(test)]

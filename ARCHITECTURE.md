@@ -102,7 +102,7 @@ Debug builds use `config.dev.json`, `rules.dev.json` and `reasons.dev.json`. The
 - **Rescan**: read one receipt again and patch the cache and the result.
 - **Finalize**: apply the draft, move every receipt into its status folder, write the final result and report, mark the month, delete the draft. All files move or none do.
 - **Reopen**: move the sorted receipts back, rebuild the cache with the new paths, keep the decisions that differ from a fresh match as the draft, remove the marker. All-or-nothing with backups.
-- **Reconcile Again**: reconcile with a reset first: move sorted receipts back, delete the extraction cache, the match result and the finalized marker, then read every receipt again.
+- **Reconcile Again**: reconcile with a reset first: move sorted receipts back, delete the extraction cache, the match result and the finalized marker, then read every receipt again. A receipt that cannot move back stops the run before anything is deleted, and the moves already made are undone.
 
 A month runs one exclusive job at a time (`locks.rs`). Rescans of different files can run together; their writes go through one mutex per month. A draft save is refused while a job runs and on a finalized month; a job that starts during a save waits for it. The review retries a save refused by a running job, and flushes pending decisions before Reconcile Again.
 

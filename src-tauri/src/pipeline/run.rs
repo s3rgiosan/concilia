@@ -52,7 +52,7 @@ pub async fn reconcile(
         create_dir(&paths.receipts)?;
         let previous: Option<MatchResult> = read_json_lenient(&paths.match_result());
         if clear_cache {
-            let report = reset_period(&paths);
+            let report = reset_period(&paths)?;
             for warning in &report.warnings {
                 log::warn!("reset {}: {warning}", paths.prefix);
             }
