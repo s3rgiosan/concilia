@@ -90,7 +90,7 @@ describe("ReceiptRow", () => {
     expect(menuButton().getAttribute("aria-label")).toBe("Actions for ACME");
     expect(menuButton().getAttribute("aria-haspopup")).toBe("menu");
     pick("Read Again");
-    pick("Open in Preview");
+    pick("Open");
     expect(onRescan).toHaveBeenCalledTimes(1);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
@@ -99,7 +99,7 @@ describe("ReceiptRow", () => {
     const { container, onFocus, onOpen } = renderRow();
     fireEvent.contextMenu(container.querySelector("li")!, { clientX: 10, clientY: 10 });
     expect(onFocus).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Open in Preview" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
@@ -119,7 +119,7 @@ describe("ReceiptRow", () => {
     renderRow({ readOnly: true });
     fireEvent.click(menuButton());
     expect((screen.getByRole("menuitem", { name: "Read Again" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("menuitem", { name: "Open in Preview" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("menuitem", { name: "Open" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("runs its decision button", () => {

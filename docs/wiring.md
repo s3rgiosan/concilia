@@ -44,7 +44,7 @@ Routes, from `menu::route` and `handle_menu_event` in `src-tauri/src/lib.rs`:
 | Transaction | No Receipt Needed › one item per reason, in the order of Settings › Reasons | `no_receipt_<reason id>` | | Main | review: `noReceipt` with the reason id; `useMenu` sends the reasons with the labels (`set_menu`) |
 | Transaction | Read Receipt Again | `rescan` | ⌥⌘R | Main | review: `rescan` |
 | Transaction | Quick Look | `quick_look` | ⌘Y | Main | review: `quickLook` |
-| Transaction | Open in Preview | `open_in_preview` | ⌥⌘O | Main | review: `openInPreview` |
+| Transaction | Open | `open` | ⌥⌘O | Main | review: `open` |
 | Go | Next Undecided, Previous Undecided | `next_pending`, `previous_pending` | ⌘], ⌘[ | Main | review: `nextPending`, `previousPending` |
 | Window | Minimize, Zoom, Bring All to Front | predefined | system | AppKit | registered as the Window menu (`WINDOW_SUBMENU_ID`) |
 | Help | Concilia Help | `help` | | Rust | opens `menu::HELP_URL` |
@@ -58,9 +58,9 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 | Sidebar month (right click) | `monthMenu` in `src/main/Main.tsx`, shown by `src/main/Sidebar.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
 | Month toolbar More Actions | `monthActions` in `src/main/Main.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
 | Statement row (right click) | `src/main/Statements.tsx` | Remove |
-| Transaction row (right click) | `rowMenu` in `src/review/rowMenu.ts`, shown by `src/review/Review.tsx` | Assign Receipt, Remove Match, No Receipt Needed › reasons, Always Match or Always Mark rule, Quick Look, Open in Preview |
-| Reimbursement row (right click) | `rowMenu` in `src/review/rowMenu.ts` | Read Receipt Again, Quick Look, Open in Preview |
-| Receipt row (right click) | `src/review/ReceiptRow.tsx` | Read Receipt Again, Open in Preview |
+| Transaction row (right click) | `rowMenu` in `src/review/rowMenu.ts`, shown by `src/review/Review.tsx` | Assign Receipt, Remove Match, No Receipt Needed › reasons, Always Match or Always Mark rule, Quick Look, Open |
+| Reimbursement row (right click) | `rowMenu` in `src/review/rowMenu.ts` | Read Receipt Again, Quick Look, Open |
+| Receipt row (right click) | `src/review/ReceiptRow.tsx` | Read Receipt Again, Open |
 | Rule sheet Rule pop-up | `src/settings/RulesTab.tsx` | Match a receipt, then No receipt: <reason> for each reason in Settings › Reasons |
 | Toolbar pop-up buttons | `src/components/PopUpButton.tsx` with entries from `ReviewToolbar.tsx` and `Details.tsx` | the entries each pane passes |
 | Text fields | WebKit | the system text menu (`App.tsx` keeps it for text fields only) |

@@ -58,7 +58,7 @@ pub const REJECT: &str = "reject";
 pub const NO_RECEIPT: &str = "no_receipt";
 pub const RESCAN: &str = "rescan";
 pub const QUICK_LOOK: &str = "quick_look";
-pub const OPEN_IN_PREVIEW: &str = "open_in_preview";
+pub const OPEN: &str = "open";
 pub const NEXT_PENDING: &str = "next_pending";
 pub const PREVIOUS_PENDING: &str = "previous_pending";
 pub const HELP: &str = "help";
@@ -118,7 +118,7 @@ pub const ITEM_IDS: &[&str] = &[
     NO_RECEIPT,
     RESCAN,
     QUICK_LOOK,
-    OPEN_IN_PREVIEW,
+    OPEN,
     NEXT_PENDING,
     PREVIOUS_PENDING,
     HELP,
@@ -182,7 +182,7 @@ fn english(key: &str) -> &'static str {
         NO_RECEIPT => "No Receipt Needed",
         RESCAN => "Read Receipt Again",
         QUICK_LOOK => "Quick Look",
-        OPEN_IN_PREVIEW => "Open in Preview",
+        OPEN => "Open",
         NEXT_PENDING => "Next Undecided",
         PREVIOUS_PENDING => "Previous Undecided",
         HELP => "Concilia Help",
@@ -591,7 +591,7 @@ fn build(
         .insert(NO_RECEIPT.to_string(), Handle::Submenu(no_receipt.clone()));
     let rescan = b.item(RESCAN, Some("CmdOrCtrl+Alt+R"))?;
     let quick_look = b.item(QUICK_LOOK, Some("CmdOrCtrl+Y"))?;
-    let open_in_preview = b.item(OPEN_IN_PREVIEW, Some("CmdOrCtrl+Alt+O"))?;
+    let open = b.item(OPEN, Some("CmdOrCtrl+Alt+O"))?;
     let transaction_menu = b.submenu(
         MENU_TRANSACTION,
         &[
@@ -601,7 +601,7 @@ fn build(
             &b.separator()?,
             &rescan,
             &quick_look,
-            &open_in_preview,
+            &open,
         ],
     )?;
 

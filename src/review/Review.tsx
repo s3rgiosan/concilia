@@ -126,7 +126,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     noReceipt: selectedTx !== null && selectedTx.status !== "MATCHED" && decidable,
     rescan: Boolean(focused?.rel_path) && !rescanning.has(focused?.file ?? "") && !applied,
     quickLook: quickLook || Boolean(focused?.rel_path),
-    openInPreview: Boolean(focused?.rel_path),
+    open: Boolean(focused?.rel_path),
     nextPending: nextPendingIndex >= 0,
     previousPending: previousPendingIndex >= 0,
     undo: history.canUndo && decidable,
@@ -308,7 +308,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
       }
     },
     quickLook: () => setQuickLook((shown) => !shown),
-    openInPreview: () => {
+    open: () => {
       if (focused) {
         open(focused);
       }

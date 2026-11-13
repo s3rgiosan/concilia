@@ -234,7 +234,7 @@
     "receiptActions": "Actions for {{name}}",
     "assignReceipt": "Assign {{name}}",
     "rescanning": "Reading…",
-    "openInPreview": "Open in Preview",
+    "open": "Open",
     "noPreview": "No Preview",
     "previewOf": "Preview of {{name}}",
     "quickLookOf": "Quick Look of {{name}}",
@@ -534,7 +534,7 @@
     "no_receipt": "No Receipt Needed",
     "rescan": "Read Receipt Again",
     "quick_look": "Quick Look",
-    "open_in_preview": "Open in Preview",
+    "open": "Open",
     "next_pending": "Next Undecided",
     "previous_pending": "Previous Undecided",
     "help": "Concilia Help"

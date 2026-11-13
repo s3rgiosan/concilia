@@ -38,6 +38,10 @@ All notable changes to this project are documented in this file. Format follows 
 - Check for Updates in the menu now says when Concilia is up to date or when the check fails, and shows the update banner again for a version you put off with Later.
 - A double click on the main window title bar zooms the window.
 
+### Changed
+
+- The Open item for a receipt is named "Open" instead of "Open in Preview", because it opens the file in the default app.
+
 ## [2.0.0] - 2026-11-13
 
 ### Changed

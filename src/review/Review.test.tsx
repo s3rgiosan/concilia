@@ -841,7 +841,7 @@ describe("context menu", () => {
       "-Remove Match",
       "No Receipt Needed",
       "Quick Look",
-      "Open in Preview",
+      "Open",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "No Receipt Needed" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Refund" }));
@@ -979,7 +979,7 @@ describe("commands", () => {
       noReceipt: true,
       rescan: true,
       quickLook: true,
-      openInPreview: true,
+      open: true,
       nextPending: true,
       previousPending: false,
       undo: false,
@@ -1045,7 +1045,7 @@ describe("commands", () => {
 
   it("opens the focused receipt in Preview", async () => {
     const { commands } = await renderReview();
-    act(() => commands().openInPreview());
+    act(() => commands().open());
     expect(openReceipt).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/globex.pdf");
   });
 });
@@ -1053,7 +1053,7 @@ describe("commands", () => {
 describe("receipt actions", () => {
   it("opens a receipt in Preview from its menu", async () => {
     await renderReview();
-    pick("Actions for HOOLI", "Open in Preview");
+    pick("Actions for HOOLI", "Open");
     expect(openReceipt).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/hooli.jpg");
   });
 
@@ -1061,7 +1061,7 @@ describe("receipt actions", () => {
     const error = { kind: "io", message: "no viewer" };
     vi.mocked(openReceipt).mockRejectedValue(error);
     const { onError } = await renderReview();
-    pick("Actions for GLOBEX", "Open in Preview");
+    pick("Actions for GLOBEX", "Open");
     await settle();
     expect(onError).toHaveBeenCalledWith(error);
   });
@@ -1136,7 +1136,7 @@ describe("Quick Look", () => {
     await renderReview();
     fireEvent.click(button("Quick Look", details()));
     const dialog = screen.getByRole("dialog");
-    fireEvent.click(button("Open in Preview", dialog));
+    fireEvent.click(button("Open", dialog));
     expect(openReceipt).toHaveBeenCalledWith("2030", "03", "2030/03/receipts/globex.pdf");
     fireEvent.keyDown(dialog, { key: " " });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1155,7 +1155,7 @@ describe("Quick Look", () => {
     expect(selected()).toBe("INITECH SERVICES");
     expect(screen.getByRole("dialog", { name: "Quick Look of initech.pdf" })).toBeTruthy();
     const close = button("Close", dialog);
-    const open = button("Open in Preview", dialog);
+    const open = button("Open", dialog);
     open.focus();
     fireEvent.keyDown(open, { key: "Tab" });
     expect(document.activeElement).toBe(close);
@@ -1244,7 +1244,7 @@ describe("toolbar", () => {
     expect(within(details()).queryByRole("button", { name: /^Assign / })).toBeNull();
     expect(within(details()).queryByRole("button", { name: "None of These" })).toBeNull();
     expect(within(details()).queryByRole("button", { name: "No Receipt Needed" })).toBeNull();
-    expect(commands().can).toMatchObject({ accept: false, reject: false, noReceipt: false, rescan: false, quickLook: true, openInPreview: true });
+    expect(commands().can).toMatchObject({ accept: false, reject: false, noReceipt: false, rescan: false, quickLook: true, open: true });
     fireEvent.click(button("Actions for GLOBEX", receiptItem("GLOBEX")));
     expect((screen.getByRole("menuitem", { name: "Read Again" }) as HTMLButtonElement).disabled).toBe(true);
   });

@@ -122,7 +122,7 @@ export function QuickLook({
             {title}
           </span>
           <button type="button" onClick={() => receipt && onOpen(receipt)} disabled={!receipt?.rel_path}>
-            {t("review.openInPreview")}
+            {t("review.open")}
           </button>
         </header>
         <ReceiptPreview receipt={receipt} />

@@ -13,7 +13,7 @@ import { receiptTitle } from "./receipts";
 /**
  * A receipt in the details column: vendor, amount, date and file, with a note when its amount
  * differs from the transaction's. Clicking it shows it in the preview below, and an eye marks the
- * one shown. Its `•••` menu and its context menu read it again or open it in Preview; `action` is
+ * one shown. Its `•••` menu and its context menu read it again or open it; `action` is
  * the Assign button at the end when `onAssign` is given, and Remove when `onRemove` is. A receipt Gemini couldn't read says so
  * under it, with Read Again unless it is read-only. A read-only receipt cannot be read again.
  * Memoized: its handlers take the receipt, so a list passes the same functions to every row.
@@ -60,7 +60,7 @@ export const ReceiptRow = memo(function ReceiptRow({
   }
   const actions: MenuEntry[] = [
     { label: t("review.actions.rescan"), onSelect: () => onRescan(receipt), disabled: !canRescan },
-    { label: t("review.openInPreview"), onSelect: () => onOpen(receipt), disabled: !receipt.rel_path },
+    { label: t("review.open"), onSelect: () => onOpen(receipt), disabled: !receipt.rel_path },
   ];
   return (
     <li

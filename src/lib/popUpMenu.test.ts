@@ -47,13 +47,13 @@ const ENTRIES: MenuEntry[] = [
     ],
   },
   "separator",
-  { label: "Open in Preview", onSelect: open },
+  { label: "Open", onSelect: open },
 ];
 
 describe("popUpMenu in the browser", () => {
   it("lists the items, with separators and unavailable items disabled, focusing the first available one", async () => {
     await popUpMenu(ENTRIES, anchor());
-    expect(items()).toEqual(["-Assign Receipt", "No Receipt Needed", "Open in Preview"]);
+    expect(items()).toEqual(["-Assign Receipt", "No Receipt Needed", "Open"]);
     expect(document.querySelectorAll("[role=separator]")).toHaveLength(1);
     expect(document.activeElement?.textContent).toBe("No Receipt Needed");
   });
@@ -70,7 +70,7 @@ describe("popUpMenu in the browser", () => {
   it("moves with the arrow keys, opens a submenu with → and picks with a click", async () => {
     await popUpMenu(ENTRIES, anchor());
     key("ArrowDown");
-    expect(document.activeElement?.textContent).toBe("Open in Preview");
+    expect(document.activeElement?.textContent).toBe("Open");
     key("ArrowDown");
     expect(document.activeElement?.textContent).toBe("No Receipt Needed");
     key("ArrowRight");
@@ -132,7 +132,7 @@ describe("popUpMenu in the app", () => {
         ],
       },
       { item: "Separator" },
-      { text: "Open in Preview", enabled: true, action: expect.any(Function) },
+      { text: "Open", enabled: true, action: expect.any(Function) },
     ]);
     (options.items![3] as { action: (id: string) => void }).action("");
     expect(open).toHaveBeenCalledTimes(1);

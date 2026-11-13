@@ -234,7 +234,7 @@
     "receiptActions": "Ações para {{name}}",
     "assignReceipt": "Associar {{name}}",
     "rescanning": "A ler…",
-    "openInPreview": "Abrir na Pré-visualização",
+    "open": "Abrir",
     "noPreview": "Sem pré-visualização",
     "previewOf": "Pré-visualização de {{name}}",
     "quickLookOf": "Vista rápida de {{name}}",
@@ -534,7 +534,7 @@
     "no_receipt": "Recibo dispensado",
     "rescan": "Ler recibo novamente",
     "quick_look": "Vista rápida",
-    "open_in_preview": "Abrir na Pré-visualização",
+    "open": "Abrir",
     "next_pending": "Seguinte por decidir",
     "previous_pending": "Anterior por decidir",
     "help": "Ajuda do Concilia"

@@ -12,7 +12,7 @@ export const REVIEW_COMMANDS = [
   "noReceipt",
   "rescan",
   "quickLook",
-  "openInPreview",
+  "open",
   "nextPending",
   "previousPending",
   "undo",
@@ -51,7 +51,7 @@ export interface ReviewCommands {
   rescan: () => void;
   /** Shows or hides the focused receipt enlarged. */
   quickLook: () => void;
-  openInPreview: () => void;
+  open: () => void;
   nextPending: () => void;
   previousPending: () => void;
   undo: () => void;
@@ -91,8 +91,8 @@ export function menuCommand(id: string): ReviewCommand | null {
       return id;
     case "quick_look":
       return "quickLook";
-    case "open_in_preview":
-      return "openInPreview";
+    case "open":
+      return "open";
     case "next_pending":
       return "nextPending";
     case "previous_pending":
@@ -139,7 +139,7 @@ export function menuState(can: ReviewAvailability): Record<string, boolean> {
     "no_receipt",
     "rescan",
     "quick_look",
-    "open_in_preview",
+    "open",
     "next_pending",
     "previous_pending",
     "undo",

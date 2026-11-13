@@ -14,7 +14,7 @@ describe("menuCommand", () => {
   it("maps menu items to review commands", () => {
     expect(menuCommand("accept")).toBe("accept");
     expect(menuCommand("quick_look")).toBe("quickLook");
-    expect(menuCommand("open_in_preview")).toBe("openInPreview");
+    expect(menuCommand("open")).toBe("open");
     expect(menuCommand("next_pending")).toBe("nextPending");
     expect(menuCommand("previous_pending")).toBe("previousPending");
     expect(menuCommand("find")).toBe("focusSearch");

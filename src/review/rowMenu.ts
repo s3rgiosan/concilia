@@ -107,7 +107,7 @@ export function rowMenu(row: ListRow, ctx: RowMenuContext): MenuEntry[] {
       },
       disabled: !shown?.rel_path,
     },
-    { label: t("menu.open_in_preview"), onSelect: () => shown && ctx.open(shown), disabled: !shown?.rel_path },
+    { label: t("menu.open"), onSelect: () => shown && ctx.open(shown), disabled: !shown?.rel_path },
   ];
   if (row.kind === "reimbursement") {
     return [
