@@ -342,15 +342,24 @@ pub enum Language {
     Pt,
 }
 
-/// The last path segment, splitting on `/` the way stored receipt paths are written.
+/// The last path segment, splitting on `/` and on `\`.
 pub fn basename(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn basename_splits_on_both_path_separators() {
+        assert_eq!(basename("/r/2030/03/receipts/acme.pdf"), "acme.pdf");
+        assert_eq!(basename(r"C:\r\2030\03\receipts\acme.pdf"), "acme.pdf");
+        assert_eq!(basename(r"C:\r/2030\acme.pdf"), "acme.pdf");
+        assert_eq!(basename("acme.pdf"), "acme.pdf");
+        assert_eq!(basename(""), "");
+    }
 
     #[test]
     fn match_result_round_trips_with_unknown_fields() {
