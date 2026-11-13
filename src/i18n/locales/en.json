@@ -468,7 +468,8 @@
       "path_not_chosen": "Choose the file or folder again, with the button or by dragging it onto the window.",
       "file_too_large": "The file is larger than 50 MB.",
       "unrecognized_file": "The file isn't a PDF, PNG or JPEG file.",
-      "pdf_output_too_large": "The PDF holds more text than Concilia can read."
+      "pdf_output_too_large": "The PDF holds more text than Concilia can read.",
+      "gemini_service": "Gemini could not answer: the rate limit may be used up, the service may be down, or the model name may be wrong. Wait a moment and try again, or check the model in Settings."
     }
   },
   "menu": {

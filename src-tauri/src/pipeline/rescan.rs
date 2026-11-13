@@ -123,6 +123,7 @@ pub async fn rescan(
     let mut meta = match extracted {
         Ok(meta) => meta,
         Err(ExtractError::Fatal(message)) => return Err(PipelineError::Unauthorized(message)),
+        Err(ExtractError::Service(message)) => return Err(PipelineError::service(message)),
         Err(ExtractError::Failed(message)) => return Err(PipelineError::Io(message)),
         Err(ExtractError::Rejected { code, message }) => {
             return Err(PipelineError::coded(ErrorKind::InvalidInput, code, message))

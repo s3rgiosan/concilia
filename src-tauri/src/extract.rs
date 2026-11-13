@@ -28,6 +28,10 @@ pub enum ExtractError {
     /// Every receipt would fail the same way, so the run stops.
     #[error("{0}")]
     Fatal(String),
+    /// Gemini answered with an HTTP error that retries did not clear, such as a rate limit or
+    /// an unknown model. Every receipt would fail the same way, so the run stops.
+    #[error("{0}")]
+    Service(String),
     /// This attempt failed; another attempt may work.
     #[error("{0}")]
     Failed(String),
@@ -53,6 +57,8 @@ impl From<FileCheckError> for ExtractError {
 pub enum ExtractAllError {
     #[error("{0}")]
     Fatal(String),
+    #[error("{0}")]
+    Service(String),
     #[error("cancelled")]
     Cancelled,
 }
@@ -160,11 +166,13 @@ impl GeminiExtractor {
         Ok(self.render(file).await)
     }
 
-    /// Runs Gemini, stopping on authorization failures and treating other failures as no result.
+    /// Runs Gemini, stopping on authorization failures and HTTP errors and treating other failures
+    /// as no result.
     async fn ask(&self, file: &Path, payload: &Payload) -> Result<Option<Extracted>, ExtractError> {
         match self.client.extract(payload).await {
             Ok(result) => Ok(result),
             Err(GeminiError::Auth(message)) => Err(ExtractError::Fatal(message)),
+            Err(error @ GeminiError::Http { .. }) => Err(ExtractError::Service(error.to_string())),
             Err(GeminiError::Setting(setting)) => Err(ExtractError::Fatal(setting.to_string())),
             Err(error) => {
                 log::warn!("gemini failed for {}: {error}", file.display());
@@ -297,6 +305,7 @@ async fn extract_one(
                 log::debug!("no amount on attempt {number}: {file}");
             }
             Err(ExtractError::Fatal(message)) => return Err(ExtractAllError::Fatal(message)),
+            Err(ExtractError::Service(message)) => return Err(ExtractAllError::Service(message)),
             Err(ExtractError::Rejected { code, message }) => {
                 log::warn!("not reading {file}: {message}");
                 return Ok(ReceiptMeta::refused(file, code));

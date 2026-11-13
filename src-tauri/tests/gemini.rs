@@ -475,22 +475,65 @@ async fn reply_without_candidates_is_retried_then_none() {
 }
 
 #[tokio::test]
-async fn rate_limit_and_server_errors_return_none_without_retrying() {
+async fn rate_limit_and_server_errors_are_retried_then_reported() {
     for status in [429, 500, 503] {
         let server = MockServer::start().await;
         mount_token(&server, 1).await;
         mount_generate(
             &server,
-            ResponseTemplate::new(status).set_body_string("EXAMPLE ERROR"),
+            ResponseTemplate::new(status)
+                .insert_header("Retry-After", "1")
+                .set_body_string("EXAMPLE ERROR"),
+            4,
+        )
+        .await;
+
+        match client(&server).extract(&text_payload()).await {
+            Err(GeminiError::Http {
+                status: seen,
+                message,
+            }) => {
+                assert_eq!(seen, status);
+                assert!(message.contains("EXAMPLE ERROR"), "{message}");
+            }
+            other => panic!("HTTP {status}: expected Err(Http), got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_rate_limit_that_clears_is_not_an_error() {
+    let server = MockServer::start().await;
+    mount_token(&server, 1).await;
+    Mock::given(method("POST"))
+        .and(path(GENERATE_PATH))
+        .respond_with(ResponseTemplate::new(429))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_generate(&server, reply(r#"{"amount": 12.5}"#), 1).await;
+
+    let found = client(&server).extract(&text_payload()).await;
+    assert_eq!(found.map(|e| e.map(|e| e.amount_cents)), Ok(Some(1250)));
+}
+
+#[tokio::test]
+async fn unknown_model_and_bad_requests_are_reported_without_retrying() {
+    for status in [400, 404] {
+        let server = MockServer::start().await;
+        mount_token(&server, 1).await;
+        mount_generate(
+            &server,
+            ResponseTemplate::new(status).set_body_string("EXAMPLE MODEL NOT FOUND"),
             1,
         )
         .await;
 
-        assert_eq!(
-            client(&server).extract(&text_payload()).await,
-            Ok(None),
-            "HTTP {status}"
-        );
+        match client(&server).extract(&text_payload()).await {
+            Err(GeminiError::Http { status: seen, .. }) => assert_eq!(seen, status),
+            other => panic!("HTTP {status}: expected Err(Http), got {other:?}"),
+        }
     }
 }
 

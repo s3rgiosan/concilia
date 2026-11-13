@@ -12,6 +12,9 @@ use crate::poppler::PopplerError;
 use crate::secrets::{ImportError, SecretError};
 use crate::updates::UpdateError;
 
+/// The code of a Gemini HTTP error that stopped a run, such as a rate limit.
+pub const GEMINI_SERVICE_CODE: &str = "gemini_service";
+
 pub type CommandResult<T> = Result<T, CommandError>;
 
 /// What kind of failure a command hit.
@@ -135,6 +138,13 @@ impl From<GeminiError> for CommandError {
         let kind = match &error {
             GeminiError::Auth(_) => ErrorKind::Unauthorized,
             GeminiError::Network(_) => ErrorKind::Network,
+            GeminiError::Http { .. } => {
+                return CommandError::coded(
+                    ErrorKind::Network,
+                    GEMINI_SERVICE_CODE,
+                    error.to_string(),
+                )
+            }
             GeminiError::Invalid(_) => ErrorKind::InvalidInput,
             GeminiError::Setting(setting) => return (*setting).into(),
         };

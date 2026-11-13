@@ -468,7 +468,8 @@
       "path_not_chosen": "Escolha novamente o ficheiro ou a pasta, com o botão ou arrastando-o para a janela.",
       "file_too_large": "O ficheiro tem mais de 50 MB.",
       "unrecognized_file": "O ficheiro não é um ficheiro PDF, PNG ou JPEG.",
-      "pdf_output_too_large": "O PDF tem mais texto do que o Concilia consegue ler."
+      "pdf_output_too_large": "O PDF tem mais texto do que o Concilia consegue ler.",
+      "gemini_service": "O Gemini não conseguiu responder: o limite de pedidos pode estar esgotado, o serviço pode estar em baixo ou o nome do modelo pode estar errado. Aguarde um momento e tente de novo, ou verifique o modelo nas Definições."
     }
   },
   "menu": {

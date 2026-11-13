@@ -19,7 +19,7 @@ use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::bank::Bank;
-use crate::error::ErrorKind;
+use crate::error::{ErrorKind, GEMINI_SERVICE_CODE};
 use crate::extract::{ExtractAllError, ExtractOptions, ReceiptExtractor};
 use crate::filecheck::{self, FileCheckError, FileKind};
 use crate::fsutil::FsError;
@@ -77,6 +77,11 @@ impl PipelineError {
         }
     }
 
+    /// A Gemini HTTP error that stopped the run.
+    pub fn service(message: impl Into<String>) -> Self {
+        PipelineError::coded(ErrorKind::Network, GEMINI_SERVICE_CODE, message)
+    }
+
     fn not_reconciled() -> Self {
         PipelineError::coded(
             ErrorKind::NotFound,
@@ -96,6 +101,7 @@ impl From<ExtractAllError> for PipelineError {
     fn from(error: ExtractAllError) -> PipelineError {
         match error {
             ExtractAllError::Fatal(message) => PipelineError::Unauthorized(message),
+            ExtractAllError::Service(message) => PipelineError::service(message),
             ExtractAllError::Cancelled => PipelineError::Cancelled,
         }
     }

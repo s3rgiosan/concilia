@@ -36,6 +36,10 @@ pub enum GeminiError {
     Auth(String),
     #[error("could not reach Google: {0}")]
     Network(String),
+    /// Google answered a request with an HTTP error that retries did not clear: a rate limit,
+    /// a server error, or a request it refuses such as an unknown model.
+    #[error("Gemini answered HTTP {status}: {message}")]
+    Http { status: u16, message: String },
     #[error("{0}")]
     Invalid(String),
     /// A region, project or model that cannot be part of the API address.
@@ -280,6 +284,15 @@ fn retry_after(response: &reqwest::Response) -> Option<Duration> {
     Some(Duration::from_secs(seconds))
 }
 
+/// The first 300 characters of an error body.
+fn shorten(body: &str) -> String {
+    let body = body.trim();
+    match body.char_indices().nth(300) {
+        Some((end, _)) => format!("{}…", &body[..end]),
+        None => body.to_string(),
+    }
+}
+
 pub struct GeminiClient {
     http: reqwest::Client,
     account: ServiceAccount,
@@ -453,24 +466,23 @@ impl GeminiClient {
         Ok(url)
     }
 
-    /// Sends one request. Returns the reply text, or none when the server answered with an
-    /// error other than an authorization failure. A 401 clears the cached token and sends the
-    /// request once more with a new one.
-    async fn call(&self, prompt: &str, payload: &Payload) -> Result<Option<String>, GeminiError> {
+    /// Sends one request and returns the reply text. A 401 clears the cached token and sends
+    /// the request once more with a new one. Any other HTTP error is an error.
+    async fn call(&self, prompt: &str, payload: &Payload) -> Result<String, GeminiError> {
         let url = self.generate_url()?;
         let request = request_body(prompt, payload, &self.config.model);
         let mut refreshed = false;
         let response = loop {
             let token = self.access_token().await?;
             let response = self
-                .http
-                .post(url.clone())
-                .timeout(GENERATE_TIMEOUT)
-                .bearer_auth(&token)
-                .json(&request)
-                .send()
-                .await
-                .map_err(|e| GeminiError::Network(e.to_string()))?;
+                .send_retrying(|| {
+                    self.http
+                        .post(url.clone())
+                        .timeout(GENERATE_TIMEOUT)
+                        .bearer_auth(&token)
+                        .json(&request)
+                })
+                .await?;
             if response.status() == reqwest::StatusCode::UNAUTHORIZED && !refreshed {
                 refreshed = true;
                 self.forget_token(&token).await;
@@ -488,7 +500,10 @@ impl GeminiClient {
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             log::warn!("gemini HTTP {status}: {body}");
-            return Ok(None);
+            return Err(GeminiError::Http {
+                status: status.as_u16(),
+                message: shorten(&body),
+            });
         }
         let body: Value = response
             .json()
@@ -505,21 +520,17 @@ impl GeminiClient {
                 .unwrap_or("none");
             log::warn!("gemini returned no text (finishReason: {reason})");
         }
-        Ok(Some(text.to_string()))
+        Ok(text.to_string())
     }
 
     /// Reads a receipt. A reply without usable JSON gets one more try with a shorter prompt.
     pub async fn extract(&self, payload: &Payload) -> Result<Option<Extracted>, GeminiError> {
-        let Some(text) = self.call(RECEIPT_PROMPT, payload).await? else {
-            return Ok(None);
-        };
+        let text = self.call(RECEIPT_PROMPT, payload).await?;
         if let Some(found) = parse_json_from_text(&text) {
             return Ok(Some(found));
         }
         log::debug!("gemini reply had no usable JSON, retrying: {text}");
-        let Some(retry) = self.call(RETRY_PROMPT, payload).await? else {
-            return Ok(None);
-        };
+        let retry = self.call(RETRY_PROMPT, payload).await?;
         let found = parse_json_from_text(&retry);
         if found.is_none() {
             log::debug!("gemini retry had no usable JSON either: {retry}");

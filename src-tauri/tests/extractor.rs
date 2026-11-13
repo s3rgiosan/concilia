@@ -6,7 +6,7 @@ mod common;
 use std::sync::Arc;
 
 use concilia_lib::extract::{ExtractError, GeminiExtractor, ReceiptExtractor};
-use concilia_lib::gemini::client::{GeminiClient, GeminiConfig};
+use concilia_lib::gemini::client::{GeminiClient, GeminiConfig, RetryPolicy};
 use concilia_lib::poppler::Poppler;
 use serde_json::{json, Value};
 use wiremock::matchers::{method, path, path_regex};
@@ -41,7 +41,8 @@ fn extractor(server: &MockServer, poppler: Poppler) -> GeminiExtractor {
         format!("{}/token", server.uri()),
         server.uri(),
     )
-    .unwrap();
+    .unwrap()
+    .with_retry_policy(RetryPolicy::immediate());
     GeminiExtractor {
         client: Arc::new(client),
         poppler,
@@ -198,6 +199,57 @@ async fn stops_on_authorization_failures() {
         .await
         .unwrap_err();
     assert!(matches!(error, ExtractError::Fatal(_)), "{error:?}");
+}
+
+#[tokio::test]
+async fn stops_on_a_rate_limit_that_retries_do_not_clear() {
+    let server = server().await;
+    Mock::given(path_regex(":generateContent$"))
+        .respond_with(ResponseTemplate::new(429).set_body_string("quota used up"))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("acme.png");
+    std::fs::write(&file, b"\x89PNG\r\n\x1a\npng bytes").unwrap();
+
+    let error = extractor(&server, no_poppler())
+        .extract(&file)
+        .await
+        .unwrap_err();
+    match error {
+        ExtractError::Service(message) => assert!(message.contains("429"), "{message}"),
+        other => panic!("expected Service, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn does_not_send_the_page_image_after_an_http_error() {
+    let Some(poppler) = common::poppler_on_path() else {
+        return;
+    };
+    let server = server().await;
+    Mock::given(path_regex(":generateContent$"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("unavailable"))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("acme.pdf");
+    std::fs::write(
+        &file,
+        common::pdf_with_lines(&["ACME CORP", "TOTAL 10,00 EUR"]),
+    )
+    .unwrap();
+
+    let error = extractor(&server, poppler)
+        .extract(&file)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ExtractError::Service(_)), "{error:?}");
+    let requests = generate_requests(&server).await;
+    assert_eq!(requests.len(), 4);
+    for request in &requests {
+        assert_eq!(request["contents"][0]["parts"].as_array().unwrap().len(), 1);
+    }
 }
 
 #[tokio::test]

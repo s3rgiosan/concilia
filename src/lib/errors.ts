@@ -40,6 +40,7 @@ export const ERROR_CODES = [
   "file_too_large",
   "unrecognized_file",
   "pdf_output_too_large",
+  "gemini_service",
 ] as const;
 
 function isKnownCode(code: string | undefined): code is (typeof ERROR_CODES)[number] {
