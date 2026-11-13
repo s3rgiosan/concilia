@@ -11,6 +11,9 @@ show these differences are kept out of the fixtures.
 - **Receipt dates other than `YYYY-MM-DD`.** Node's `Date.parse` accepts other formats when
   comparing dates; Rust treats them as undated. Stored receipt dates are always
   `YYYY-MM-DD`.
+- **Impossible calendar dates.** Node's `Date.parse` rolls a day past the end of the month
+  into the next month, so it keeps a receipt date such as `2030-02-30`. Rust reads it as no
+  date. `scripts/golden/dump.mjs` clears such dates in the Gemini reply fixture.
 - **A receipt with no `amount_cents` key.** Node tells a missing key from `null` in the
   filename pass; Rust reads both as no amount. Stored receipts always carry the key.
 - **Sorting receipt paths.** Node compares UTF-16 code units, Rust compares bytes; they only
@@ -42,7 +45,8 @@ show these differences are kept out of the fixtures.
   both lists from the review screen.
 - **Report labels.** The Rust report words some sheet names and labels differently. The
   Excel fixture holds the current wording, with the width of each column that changed
-  recomputed from its longest cell, and `tests/excel.rs` compares it as it is. English: sheet
+  recomputed from its longest cell. `scripts/golden/dump.mjs` applies this to the Node output,
+  and `tests/excel.rs` compares it as it is. English: sheet
   `Validated` is `All Transactions`, sheet `Review` is `Needs Review`, the totals header
   `Label` is `Category`, and "FX" in notes reads "Foreign-currency". Portuguese: sheet
   `Validados` is `Todas as transações`, `Revisão` is `Por rever`, `Sem Associação` is

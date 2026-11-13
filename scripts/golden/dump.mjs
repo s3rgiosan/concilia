@@ -159,7 +159,19 @@ const replies = [
   '{"error": false, "amount": 3}', 'text {"amount": 1} and {"amount": 2} more', '{"amount": 1e2}', '{"amount": 19.999}',
   '[{"amount": 1}]', '{"amount": null}', '{"amount": 7.005, "currency": "jpy", "vendor": "Example Café", "date": " 2030-03-01 "}',
 ];
-write('gemini_parse', replies.map((input) => ({ input, expected: parseJsonFromText(input) })));
+// The Rust port reads a date that does not exist in its month (2030-02-30) as no date.
+// Node's Date.parse rolls it into the next month, so the dump clears it. See DIFFERENCES.md.
+function isCalendarDate(iso) {
+  const [year, month, day] = iso.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+function parseReply(input) {
+  const parsed = parseJsonFromText(input);
+  if (parsed?.date && !isCalendarDate(parsed.date)) parsed.date = null;
+  return parsed;
+}
+write('gemini_parse', replies.map((input) => ({ input, expected: parseReply(input) })));
 
 // Prompts.
 const geminiSource = (await import('node:fs')).readFileSync(join(root, 'worker', 'lib', 'gemini.mjs'), 'utf8');
@@ -167,6 +179,81 @@ const retryPrompt = geminiSource.match(/const retryPrompt = '(.*?)';\n/s)[1];
 write('prompts', [{ input: 'receipt', expected: RECEIPT_PROMPT }, { input: 'retry', expected: retryPrompt }]);
 
 // Excel report: the cells, styles and column widths of each sheet.
+
+// Cell texts and sheet names that the Rust report words differently. See DIFFERENCES.md.
+const RENAMED = {
+  en: [
+    ['Validated', 'All Transactions'],
+    ['Review', 'Needs Review'],
+    ['Label', 'Category'],
+    ['Bank fee (auto)', 'Bank Fee'],
+    ['No receipt', 'Other'],
+  ],
+  pt: [
+    ['Validados', 'Todas as transações'],
+    ['Revisão', 'Por rever'],
+    ['Sem Associação', 'Sem associação'],
+    ['Comissão bancária (auto)', 'Comissão bancária'],
+    ['Sem recibo', 'Outro'],
+    ['Data da Transação', 'Data da transação'],
+    ['Descrição da Transação', 'Descrição da transação'],
+    ['Valor da Transação', 'Valor da transação'],
+    ['Ficheiro do Recibo', 'Ficheiro do recibo'],
+    ['Valor do Recibo', 'Valor do recibo'],
+    ['Confiança do Recibo', 'Confiança do recibo'],
+    ['Moeda do Recibo', 'Moeda do recibo'],
+  ],
+};
+
+// Phrases in notes that the Rust report words differently.
+const RENAMED_PHRASES = {
+  en: [
+    ['FX match (', 'Foreign-currency match ('],
+    ['FX receipt within', 'foreign-currency receipt within'],
+    ['FX receipts within', 'foreign-currency receipts within'],
+  ],
+  pt: [
+    ['Regra de correspondência (', 'Regra de associação ('],
+    ['Correspondência FX (', 'Correspondência em moeda estrangeira ('],
+    ['recibo FX dentro', 'recibo em moeda estrangeira dentro'],
+    ['recibos FX dentro', 'recibos em moeda estrangeira dentro'],
+  ],
+};
+
+function renameText(text, lang) {
+  const whole = RENAMED[lang].find(([old]) => old === text);
+  if (whole) return whole[1];
+  return RENAMED_PHRASES[lang].reduce((acc, [old, now]) => acc.replaceAll(old, now), text);
+}
+
+// Applies the Rust wording to the sheets. A column with a changed cell gets the width that
+// the Rust report calculates from its longest cell.
+function withCurrentLabels(sheets, lang) {
+  for (const sheet of sheets) {
+    sheet.name = renameText(sheet.name, lang);
+    const changed = sheet.widths.map(() => false);
+    for (const row of sheet.rows) {
+      row.forEach((cell, c) => {
+        if (cell.number) return;
+        const now = renameText(cell.value, lang);
+        if (now !== cell.value) {
+          changed[c] = true;
+          cell.value = now;
+        }
+      });
+    }
+    changed.forEach((isChanged, c) => {
+      if (!isChanged) return;
+      const longest = Math.max(0, ...sheet.rows.map((row) => {
+        const { value } = row[c];
+        return typeof value === 'string' ? value.length : String(Number(value ?? 0)).length;
+      }));
+      sheet.widths[c] = Math.min(Math.max(longest + 2, 10), 50);
+    });
+  }
+  return sheets;
+}
+
 function sheetsOf(result, lang) {
   globalThis.__xlsx = null;
   return writeExcelReport(result, '/dev/null', { lang }).then(() => {
@@ -198,6 +285,6 @@ for (let i = 0; i < 40; i++) {
   }
   const reimbursements = chance(0.5) ? scenario(1000 + i).receipts.slice(0, int(1, 4)) : [];
   const input = { result, reimbursements, lang: i % 2 ? 'pt' : 'en' };
-  excelCases.push({ input, expected: await sheetsOf({ ...result, reimbursements }, input.lang) });
+  excelCases.push({ input, expected: withCurrentLabels(await sheetsOf({ ...result, reimbursements }, input.lang), input.lang) });
 }
 write('excel', excelCases);
