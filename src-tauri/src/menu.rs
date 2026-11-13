@@ -282,12 +282,14 @@ pub fn route(id: &str) -> Route {
     }
 }
 
-/// The window that receives a `menu` event for `id`: Undo, Redo and Delete go to the Settings
-/// window while it has focus, everything else to the main window.
-pub fn event_target(id: &str, settings_focused: bool) -> &'static str {
-    match id {
-        UNDO | REDO | DELETE if settings_focused => windows::SETTINGS_LABEL,
-        _ => windows::MAIN_LABEL,
+/// The window that receives a `menu` event for `id`, or None when the event is dropped. Undo,
+/// Redo and Delete go to the Settings window while it has focus, and every other item is dropped
+/// then, because the main window must not act while Settings has focus.
+pub fn event_target(id: &str, settings_focused: bool) -> Option<&'static str> {
+    match (id, settings_focused) {
+        (UNDO | REDO | DELETE, true) => Some(windows::SETTINGS_LABEL),
+        (_, true) => None,
+        (_, false) => Some(windows::MAIN_LABEL),
     }
 }
 
@@ -759,12 +761,19 @@ mod tests {
 
     #[test]
     fn undo_and_redo_go_to_the_focused_settings_window() {
-        assert_eq!(event_target(UNDO, true), windows::SETTINGS_LABEL);
-        assert_eq!(event_target(REDO, true), windows::SETTINGS_LABEL);
-        assert_eq!(event_target(DELETE, true), windows::SETTINGS_LABEL);
-        assert_eq!(event_target(DELETE, false), windows::MAIN_LABEL);
-        assert_eq!(event_target(UNDO, false), windows::MAIN_LABEL);
-        assert_eq!(event_target(RECONCILE, true), windows::MAIN_LABEL);
+        assert_eq!(event_target(UNDO, true), Some(windows::SETTINGS_LABEL));
+        assert_eq!(event_target(REDO, true), Some(windows::SETTINGS_LABEL));
+        assert_eq!(event_target(DELETE, true), Some(windows::SETTINGS_LABEL));
+        assert_eq!(event_target(DELETE, false), Some(windows::MAIN_LABEL));
+        assert_eq!(event_target(UNDO, false), Some(windows::MAIN_LABEL));
+        assert_eq!(event_target(RECONCILE, false), Some(windows::MAIN_LABEL));
+    }
+
+    #[test]
+    fn main_window_items_are_dropped_while_settings_has_focus() {
+        for id in [RECONCILE, ACCEPT, REJECT, RERUN, FINALIZE, NEW_MONTH, FIND] {
+            assert_eq!(event_target(id, true), None, "{id}");
+        }
     }
 
     #[test]

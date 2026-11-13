@@ -32,6 +32,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Moving or renaming the receipts folder keeps the review decisions and the extraction cache, because the month's files store receipt paths relative to the month folder.
 - A receipt file replaced by another file with the same name is read again, also after Reopen Month, so the new receipt no longer gets the old receipt's amount, vendor and date.
 - The Settings window holds the menu permissions that its pop-up menus need, such as the Language menu.
+- Menu shortcuts for the main window, such as Accept, Reject and Reconcile, do nothing while the Settings window has focus.
 
 ## [2.0.0] - 2026-11-13
 
