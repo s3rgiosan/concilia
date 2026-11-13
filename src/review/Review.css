@@ -456,7 +456,7 @@
   -webkit-appearance: none;
   appearance: none;
   display: flex;
-  flex: 1;
+  flex: 1 1 220px;
   align-items: flex-start;
   gap: 4px;
   min-width: 0;
@@ -498,7 +498,7 @@
 .receipt-row__title {
   flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .receipt-row__amount {
@@ -546,6 +546,7 @@
 .receipt-row__actions {
   display: flex;
   flex: none;
+  margin-left: auto;
   align-items: center;
   gap: 4px;
 }
