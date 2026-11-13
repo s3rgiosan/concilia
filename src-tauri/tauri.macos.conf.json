@@ -25,7 +25,10 @@
     ],
     "macOS": {
       "minimumSystemVersion": "15.0",
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "files": {
+        "Resources/Assets.car": "./icons/Assets.car"
+      }
     }
   }
 }

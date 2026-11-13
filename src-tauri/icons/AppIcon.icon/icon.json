@@ -1,0 +1,107 @@
+{
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "left.svg",
+          "name": "left",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "srgb:0.96078,0.94902,0.92549,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "srgb:0.63922,0.77647,0.87059,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "image-name": "right.svg",
+          "name": "right",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "srgb:0.96078,0.94902,0.92549,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "srgb:0.63922,0.77647,0.87059,1.00000"
+              }
+            }
+          ],
+          "opacity": 0.55
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "ring.svg",
+          "name": "ring",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "srgb:0.96078,0.94902,0.92549,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "srgb:0.63922,0.77647,0.87059,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  },
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "srgb:0.34118,0.54118,0.67451,1.00000",
+          "srgb:0.22353,0.40392,0.54118,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.18039,0.18039,0.20000,1.00000",
+          "srgb:0.10588,0.10588,0.12157,1.00000"
+        ]
+      }
+    }
+  ]
+}

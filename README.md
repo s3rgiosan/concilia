@@ -1,3 +1,5 @@
+<p align="center"><img src="src-tauri/icons/128x128@2x.png" alt="Concilia icon" width="128" height="128"></p>
+
 # Concilia
 
 A bank statement reconciliation desktop app for macOS that matches transactions from bank PDFs against receipts (PDF/JPG/PNG), sorts files into matched/review/unmatched folders, and exports an Excel report.
