@@ -59,7 +59,9 @@ pub fn resolve_period_file(
         RescanKind::Receipt => &paths.receipts,
         RescanKind::Reimbursement => &paths.reimbursements,
     };
-    let stored_path = paths.dir.join(rest_path);
+    let stored_path = rest_path
+        .components()
+        .fold(paths.dir.clone(), |path, part| path.join(part));
     if !stored_path.starts_with(folder) || !is_receipt_name(rest) {
         return Err(outside());
     }

@@ -1668,7 +1668,7 @@ fn creates_no_folders_through_a_symlink_out_of_the_root() {
 fn resolves_files_inside_the_right_folder() {
     let dir = tempfile::tempdir().unwrap();
     let paths = period().paths(dir.path());
-    let acme = paths.receipts.join("sub/acme.pdf");
+    let acme = paths.receipts.join("sub").join("acme.pdf");
     let taxi = paths.reimbursements.join("taxi.jpg");
     write_file(&acme, b"acme");
     write_file(&taxi, b"taxi");
