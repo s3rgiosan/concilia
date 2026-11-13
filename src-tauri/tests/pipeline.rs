@@ -2141,6 +2141,29 @@ async fn exports_the_report_with_pending_decisions() {
 }
 
 #[tokio::test]
+async fn exports_the_receipts_left_unmatched_after_the_draft() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let initech = h.paths.receipts.join("initech.png");
+    let initech = initech.to_string_lossy();
+    let unmatched = report_rows(&h.paths.report(), "Unmatched");
+    assert_eq!(unmatched.len(), 2);
+    assert_eq!(
+        report_rows(&h.paths.report(), "Totals")[2][1],
+        Data::Float(50.0)
+    );
+    pipeline::save_draft(&h.paths, &assigned_to_globex(&initech, 5000, "INITECH")).unwrap();
+
+    let report = pipeline::export_report(&h.paths, Language::En, &default_reasons()).unwrap();
+
+    assert_eq!(report_rows(&report, "Unmatched").len(), 1);
+    assert_eq!(report_rows(&report, "Totals")[2][1], Data::Float(0.0));
+}
+
+#[tokio::test]
 async fn exports_the_plain_result_when_the_draft_does_not_apply() {
     let h = Harness::new();
     let statement = h.standard();

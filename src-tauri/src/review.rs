@@ -6,8 +6,8 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::model::{
-    basename, is_reason_id, Draft, DroppedDecision, MatchResult, ReceiptMeta, Status, Summary,
-    Transaction,
+    basename, is_reason_id, Draft, DroppedDecision, MatchResult, ReceiptMeta, ReceiptsByStatus,
+    Status, Summary, Transaction,
 };
 use crate::text::js_round;
 
@@ -77,6 +77,55 @@ pub fn effective_unmatched(result: &MatchResult, merged: &[Transaction]) -> Vec<
         pool.shift_remove(&file);
     }
     pool.into_values().collect()
+}
+
+/// The receipt files of each status. A file referenced by several transactions or left
+/// unmatched is listed once, under its strongest status: MATCHED, then REVIEW, then UNMATCHED.
+pub fn receipts_by_status(
+    transactions: &[Transaction],
+    unmatched: &[ReceiptMeta],
+) -> ReceiptsByStatus {
+    let mut order: Vec<&str> = Vec::new();
+    let mut best: HashMap<&str, Status> = HashMap::new();
+    let references = transactions
+        .iter()
+        .flat_map(|tx| {
+            tx.receipt_meta
+                .iter()
+                .map(move |m| (m.file.as_str(), tx.status))
+        })
+        .chain(
+            unmatched
+                .iter()
+                .map(|m| (m.file.as_str(), Status::Unmatched)),
+        );
+    for (file, status) in references {
+        let rank = |s: Status| match s {
+            Status::Matched => 0,
+            Status::Review => 1,
+            Status::Unmatched => 2,
+        };
+        match best.get_mut(file) {
+            Some(current) if rank(status) < rank(*current) => *current = status,
+            Some(_) => {}
+            None => {
+                order.push(file);
+                best.insert(file, status);
+            }
+        }
+    }
+    let files_with = |status: Status| {
+        order
+            .iter()
+            .filter(|file| best[**file] == status)
+            .map(|file| file.to_string())
+            .collect()
+    };
+    ReceiptsByStatus {
+        matched: files_with(Status::Matched),
+        review: files_with(Status::Review),
+        unmatched: files_with(Status::Unmatched),
+    }
 }
 
 /// Drops decisions that reference receipt files missing from `present`, reporting each one.
@@ -206,6 +255,28 @@ mod tests {
             unmatched_receipts: vec![receipt("/r/d.pdf", 500)],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn lists_each_receipt_once_under_its_strongest_status() {
+        let a = receipt("/r/a.pdf", 1000);
+        let b = receipt("/r/b.pdf", 1000);
+        let c = receipt("/r/c.pdf", 1000);
+        let transactions = [
+            tx("t1", Status::Review, &[a.clone(), b.clone()], ""),
+            tx(
+                "t2",
+                Status::Matched,
+                std::slice::from_ref(&a),
+                "amount_match",
+            ),
+        ];
+
+        let lists = receipts_by_status(&transactions, &[b, c]);
+
+        assert_eq!(lists.matched, ["/r/a.pdf"]);
+        assert_eq!(lists.review, ["/r/b.pdf"]);
+        assert_eq!(lists.unmatched, ["/r/c.pdf"]);
     }
 
     #[test]

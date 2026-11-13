@@ -14,7 +14,7 @@ use crate::model::{
     Draft, Language, MatchResult, Reason, ReceiptMeta, StatementRecord, Status, Transaction,
 };
 use crate::period::PeriodPaths;
-use crate::review::merge_draft;
+use crate::review::{effective_unmatched, merge_draft, receipts_by_status};
 
 /// Writes the report through a temporary file next to `path`.
 pub(super) fn write_report(
@@ -99,12 +99,15 @@ pub fn export_report(
         .ok_or_else(PipelineError::not_reconciled)?;
     let draft: Draft = read_stored_lenient(&paths.dir, &paths.draft()).unwrap_or_default();
     let shown = match merge_draft(&result, &draft) {
-        Ok(transactions) => MatchResult {
-            transactions,
-            receipts_by_status: result.receipts_by_status,
-            unmatched_receipts: result.unmatched_receipts,
-            original_paths: result.original_paths,
-        },
+        Ok(transactions) => {
+            let unmatched_receipts = effective_unmatched(&result, &transactions);
+            MatchResult {
+                receipts_by_status: receipts_by_status(&transactions, &unmatched_receipts),
+                transactions,
+                unmatched_receipts,
+                original_paths: result.original_paths,
+            }
+        }
         Err(error) => {
             log::warn!("report without the review draft: {error}");
             result
