@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- A busy Google sign-in service (HTTP 429 or 5xx) no longer stops a run with a rejected service account: Concilia tries again a few times, waits as long as Google asks within a limit, and reports a network error when the problem continues.
 - Gemini requests recover after the Mac wakes from sleep: an expired access token is replaced, and a request that Google refuses with 401 is sent again once with a new token.
 - A statement row with a date that does not exist, such as 31/04/2030, is rejected as an invalid date instead of becoming a transaction with a broken date.
 - A receipt date that does not exist in its month, such as 2030-02-31, is discarded instead of kept.

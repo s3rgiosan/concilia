@@ -9,8 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use concilia_lib::gemini::client::{
-    signed_jwt, GeminiClient, GeminiConfig, GeminiError, Payload, ServiceAccount, DEFAULT_LOCATION,
-    DEFAULT_MODEL,
+    signed_jwt, GeminiClient, GeminiConfig, GeminiError, Payload, RetryPolicy, ServiceAccount,
+    DEFAULT_LOCATION, DEFAULT_MODEL,
 };
 use concilia_lib::gemini::parse::Extracted;
 use concilia_lib::gemini::prompt::{RECEIPT_PROMPT, RETRY_PROMPT};
@@ -53,6 +53,7 @@ fn config() -> GeminiConfig {
 fn client_for(token_url: String, api_base: String) -> GeminiClient {
     GeminiClient::with_endpoints(common::service_account(), config(), token_url, api_base)
         .expect("client builds")
+        .with_retry_policy(RetryPolicy::immediate())
 }
 
 fn client(server: &MockServer) -> GeminiClient {
@@ -557,6 +558,41 @@ async fn unauthorized_generate_makes_test_connection_fetch_a_new_token() {
     let client = client(&server);
     let _ = client.extract(&text_payload()).await;
     assert_eq!(client.check().await, Ok(()));
+}
+
+#[tokio::test]
+async fn token_rate_limit_and_server_errors_are_retried_then_network_errors() {
+    for status in [429, 500, 503] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(status).set_body_string("EXAMPLE BUSY"))
+            .expect(4)
+            .mount(&server)
+            .await;
+
+        match client(&server).check().await {
+            Err(GeminiError::Network(message)) => {
+                assert!(message.contains("EXAMPLE BUSY"), "{message}")
+            }
+            other => panic!("HTTP {status}: expected Err(Network), got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_token_error_that_clears_is_not_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(503).insert_header("Retry-After", "2"))
+        .up_to_n_times(2)
+        .expect(2)
+        .mount(&server)
+        .await;
+    mount_token(&server, 1).await;
+
+    assert_eq!(client(&server).check().await, Ok(()));
 }
 
 #[tokio::test]

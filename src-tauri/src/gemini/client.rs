@@ -224,6 +224,62 @@ pub fn signed_jwt(account: &ServiceAccount, now_secs: u64) -> Result<String, Gem
         .map_err(|e| GeminiError::Invalid(format!("signing: {e}")))
 }
 
+/// The waits between the retries of a request that met a rate limit or a server error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryPolicy {
+    /// The wait before each retry. Its length is the number of retries.
+    pub backoff: Vec<Duration>,
+    /// The longest single wait, a `Retry-After` header included.
+    pub max_wait: Duration,
+    /// The longest total wait over all retries of one request.
+    pub max_total: Duration,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> RetryPolicy {
+        RetryPolicy {
+            backoff: vec![
+                Duration::from_secs(1),
+                Duration::from_secs(3),
+                Duration::from_secs(8),
+            ],
+            max_wait: Duration::from_secs(20),
+            max_total: Duration::from_secs(40),
+        }
+    }
+}
+
+impl RetryPolicy {
+    /// Retries without waiting.
+    pub fn immediate() -> RetryPolicy {
+        RetryPolicy {
+            backoff: vec![Duration::ZERO; 3],
+            max_wait: Duration::ZERO,
+            max_total: Duration::ZERO,
+        }
+    }
+
+    /// The wait before retry number `retry` (from 0) after `waited` in total. The server's
+    /// `Retry-After` replaces a shorter backoff. None when no retry is left.
+    fn delay(&self, retry: usize, hint: Option<Duration>, waited: Duration) -> Option<Duration> {
+        let base = *self.backoff.get(retry)?;
+        let wanted = base.max(hint.unwrap_or_default()).min(self.max_wait);
+        Some(wanted.min(self.max_total.saturating_sub(waited)))
+    }
+}
+
+/// Whether a later request can succeed after this status: a rate limit or a server error.
+fn is_transient(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// The `Retry-After` header when it holds a number of seconds.
+fn retry_after(response: &reqwest::Response) -> Option<Duration> {
+    let value = response.headers().get(reqwest::header::RETRY_AFTER)?;
+    let seconds: u64 = value.to_str().ok()?.trim().parse().ok()?;
+    Some(Duration::from_secs(seconds))
+}
+
 pub struct GeminiClient {
     http: reqwest::Client,
     account: ServiceAccount,
@@ -233,6 +289,7 @@ pub struct GeminiClient {
     /// Whether every request must go to Google's API host; off only for test servers.
     google_only: bool,
     token: Mutex<Option<(String, SystemTime)>>,
+    retry: RetryPolicy,
 }
 
 impl GeminiClient {
@@ -268,7 +325,14 @@ impl GeminiClient {
             api_base,
             google_only: false,
             token: Mutex::new(None),
+            retry: RetryPolicy::default(),
         })
+    }
+
+    /// Replaces the waits between retries of a rate-limited or failed request.
+    pub fn with_retry_policy(mut self, retry: RetryPolicy) -> GeminiClient {
+        self.retry = retry;
+        self
     }
 
     /// Fetches an access token without extracting anything, to check the settings work.
@@ -290,22 +354,25 @@ impl GeminiClient {
             .unwrap_or_default();
         let assertion = signed_jwt(&self.account, now)?;
         let response = self
-            .http
-            .post(&self.token_url)
-            .timeout(TOKEN_TIMEOUT)
-            .form(&[
-                ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
-                ("assertion", assertion.as_str()),
-            ])
-            .send()
-            .await
-            .map_err(|e| GeminiError::Network(e.to_string()))?;
+            .send_retrying(|| {
+                self.http
+                    .post(&self.token_url)
+                    .timeout(TOKEN_TIMEOUT)
+                    .form(&[
+                        ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+                        ("assertion", assertion.as_str()),
+                    ])
+            })
+            .await?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(GeminiError::Auth(format!(
-                "token exchange failed ({status}): {body}"
-            )));
+            let message = format!("token exchange failed ({status}): {body}");
+            return Err(if is_transient(status) {
+                GeminiError::Network(message)
+            } else {
+                GeminiError::Auth(message)
+            });
         }
         let body: Value = response
             .json()
@@ -325,6 +392,36 @@ impl GeminiClient {
         let mut cached = self.token.lock().await;
         if cached.as_ref().is_some_and(|(held, _)| held == token) {
             *cached = None;
+        }
+    }
+
+    /// Sends a request, sending it again after a rate limit (429) or a server error (5xx) as
+    /// the retry policy allows. Returns the last response, whatever its status.
+    async fn send_retrying(
+        &self,
+        build: impl Fn() -> reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, GeminiError> {
+        let mut waited = Duration::ZERO;
+        let mut retry = 0;
+        loop {
+            let response = build()
+                .send()
+                .await
+                .map_err(|e| GeminiError::Network(e.to_string()))?;
+            if !is_transient(response.status()) {
+                return Ok(response);
+            }
+            let hint = retry_after(&response);
+            let Some(delay) = self.retry.delay(retry, hint, waited) else {
+                return Ok(response);
+            };
+            log::warn!(
+                "Google answered HTTP {}, trying again in {delay:?}",
+                response.status()
+            );
+            tokio::time::sleep(delay).await;
+            waited += delay;
+            retry += 1;
         }
     }
 
@@ -534,6 +631,31 @@ fn request_body<'a>(prompt: &'a str, payload: &'a Payload, model: &str) -> Gener
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_delay_follows_the_backoff_and_the_server_hint() {
+        let policy = RetryPolicy {
+            backoff: vec![Duration::from_secs(1), Duration::from_secs(3)],
+            max_wait: Duration::from_secs(10),
+            max_total: Duration::from_secs(12),
+        };
+        let secs = Duration::from_secs;
+        assert_eq!(policy.delay(0, None, secs(0)), Some(secs(1)));
+        assert_eq!(policy.delay(1, None, secs(1)), Some(secs(3)));
+        assert_eq!(policy.delay(0, Some(secs(5)), secs(0)), Some(secs(5)));
+        assert_eq!(policy.delay(1, Some(secs(2)), secs(1)), Some(secs(3)));
+        assert_eq!(policy.delay(0, Some(secs(60)), secs(0)), Some(secs(10)));
+        assert_eq!(policy.delay(1, Some(secs(60)), secs(5)), Some(secs(7)));
+        assert_eq!(policy.delay(2, None, secs(4)), None);
+    }
+
+    #[test]
+    fn the_immediate_policy_never_waits() {
+        let policy = RetryPolicy::immediate();
+        let hint = Some(Duration::from_secs(60));
+        assert_eq!(policy.delay(2, hint, Duration::ZERO), Some(Duration::ZERO));
+        assert_eq!(policy.delay(3, hint, Duration::ZERO), None);
+    }
 
     #[test]
     fn rejects_files_that_are_not_service_account_keys() {
