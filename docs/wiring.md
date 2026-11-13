@@ -86,6 +86,7 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 | `appearance-changed` | `appearance::refresh` on window focus and theme change | all windows | `installAppearance` (`src/lib/appearance.ts`) |
 | `zoom-changed` | `zoom::apply` | the zoomed window | `onZoomChanged` in `useFitWindow.ts` |
 | `settings-changed` | `commands.rs` after a settings or reasons change | all windows | `onSettingsChanged` |
+| `rules-changed` | `save_rules` and `save_reasons` in `commands.rs` | all windows | `onRulesChanged` in `RulesTab.tsx` |
 | `busy-changed` | the lock watcher set up in `lib.rs` | all windows | `onBusyChanged` |
 | `update-progress` | `install_update` in `commands.rs` | all windows | `onUpdateProgress` |
 | `update-check-result` | `check_for_updates_from_menu` and the scheduled check (`updates::run_schedule`, started in `lib.rs`, emits only when it finds an update) | main | `onUpdateCheckResult` in `UpdateBanner.tsx` (`manual` is true for the menu check) |

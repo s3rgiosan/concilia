@@ -234,6 +234,7 @@ export interface UpdateCheckResult {
 }
 
 export const SETTINGS_CHANGED_EVENT = "settings-changed";
+export const RULES_CHANGED_EVENT = "rules-changed";
 export const BUSY_CHANGED_EVENT = "busy-changed";
 export const MENU_EVENT = "menu";
 export const UPDATE_PROGRESS_EVENT = "update-progress";
@@ -545,6 +546,11 @@ export function onSettingsChanged(handler: (view: AppStateView) => void): Promis
       console.error("ignoring malformed settings-changed payload");
     }
   });
+}
+
+/** Listens for a change to the match rules made in any window. */
+export function onRulesChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen(RULES_CHANGED_EVENT, () => handler());
 }
 
 export function onBusyChanged(handler: (busy: boolean) => void): Promise<UnlistenFn> {

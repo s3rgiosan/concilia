@@ -4,8 +4,8 @@ import { Icon } from "../components/Icon";
 import { PopUpButton } from "../components/PopUpButton";
 import { Sheet, SheetNote } from "../components/Sheet";
 import { useLatest } from "../lib/hooks/useLatest";
-import { reasonLabel, reasonName } from "../lib/reasons";
-import { getRules, saveRules, type Reason, type Rule } from "../lib/tauri";
+import { OTHER_REASON, reasonLabel, reasonName } from "../lib/reasons";
+import { getRules, onRulesChanged, saveRules, subscribe, type Reason, type Rule } from "../lib/tauri";
 
 /** What a rule does: `RECEIPT_KIND` matches a receipt; a reason id marks the transaction as needing no receipt. */
 type RuleKind = string;
@@ -70,6 +70,8 @@ export function RulesTab({
   }, [onError]);
 
   useEffect(load, [load]);
+
+  useEffect(() => subscribe(onRulesChanged(load)), [load]);
 
   useEffect(() => {
     const index = focusRow.current;
@@ -140,9 +142,10 @@ export function RulesTab({
       return;
     }
     const rule = index === null ? null : rules[index];
+    const reasonKnown = reasons.some((reason) => reason.id === rule?.noReceipt);
     setEditing({
       index,
-      kind: rule?.noReceipt ?? RECEIPT_KIND,
+      kind: rule?.noReceipt ? (reasonKnown ? rule.noReceipt : OTHER_REASON) : RECEIPT_KIND,
       receiptVendor: rule?.receiptVendor ?? "",
       transactionDescription: rule?.transactionDescription ?? "",
       attempted: false,

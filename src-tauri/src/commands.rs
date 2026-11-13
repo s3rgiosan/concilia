@@ -13,7 +13,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::app::{AppState, AppStateView, SETTINGS_CHANGED_EVENT};
+use crate::app::{AppState, AppStateView, RULES_CHANGED_EVENT, SETTINGS_CHANGED_EVENT};
 use crate::bank::Bank;
 use crate::config::Settings;
 use crate::error::{fail, CommandError, CommandResult, ErrorKind};
@@ -82,6 +82,7 @@ pub async fn save_settings(
         .await
         .and_then(|result| result)
         .map_err(fail)?;
+    let _ = app.emit(RULES_CHANGED_EVENT, ());
     Ok(changed(&app, view))
 }
 
@@ -171,14 +172,17 @@ pub fn get_rules(state: State<'_, Arc<AppState>>) -> Vec<Rule> {
 
 #[tauri::command]
 pub async fn save_rules(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
     rules: Vec<Rule>,
 ) -> CommandResult<Vec<Rule>> {
     let state = shared(&state);
-    blocking(move || state.save_rules(rules))
+    let saved = blocking(move || state.save_rules(rules))
         .await
         .and_then(|result| result)
-        .map_err(fail)
+        .map_err(fail)?;
+    let _ = app.emit(RULES_CHANGED_EVENT, ());
+    Ok(saved)
 }
 
 /// Saves the no-receipt reasons; rules that named a removed reason change to Other.

@@ -18,6 +18,8 @@ use crate::secrets::ServiceAccountStore;
 /// Emitted to every window after the settings or the service account change, with an
 /// `AppStateView`.
 pub const SETTINGS_CHANGED_EVENT: &str = "settings-changed";
+/// Sent after the match rules change, so open windows read them again.
+pub const RULES_CHANGED_EVENT: &str = "rules-changed";
 /// Emitted to every window when any job starts or ends, with `{ busy }`.
 pub const BUSY_CHANGED_EVENT: &str = "busy-changed";
 

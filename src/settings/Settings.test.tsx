@@ -11,6 +11,7 @@ import {
   installUpdate,
   onBusyChanged,
   onMenu,
+  onRulesChanged,
   onSettingsChanged,
   onUpdateProgress,
   pickReceiptsRoot,
@@ -41,6 +42,7 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
   installUpdate: vi.fn(),
   onBusyChanged: vi.fn(),
   onMenu: vi.fn(),
+  onRulesChanged: vi.fn(),
   onSettingsChanged: vi.fn(),
   onUpdateProgress: vi.fn(),
   onZoomChanged: vi.fn(() => Promise.resolve(() => undefined)),
@@ -60,6 +62,7 @@ let pushSettings: (view: AppStateView) => void;
 let pushBusy: (busy: boolean) => void;
 let pushMenu: (id: string) => void;
 let pushProgress: (progress: UpdateProgress) => void;
+let pushRules: () => void;
 /** The view the window loaded; saved settings are echoed back on top of it. */
 let current: AppStateView;
 
@@ -75,6 +78,10 @@ beforeEach(() => {
   });
   vi.mocked(onMenu).mockImplementation((handler) => {
     pushMenu = handler;
+    return Promise.resolve(() => undefined);
+  });
+  vi.mocked(onRulesChanged).mockImplementation((handler) => {
+    pushRules = handler;
     return Promise.resolve(() => undefined);
   });
   vi.mocked(onUpdateProgress).mockImplementation((handler) => {
@@ -967,6 +974,24 @@ describe("Rules pane", () => {
     expect((within(sheet).getByLabelText("Rule") as HTMLSelectElement).value).toBe("bank_fee");
     expect(within(sheet).queryByLabelText("Receipt keyword")).toBeNull();
     expect(sheetInput("Transaction keyword").value).toBe("juros");
+  });
+
+  it("reads the rules again when the rules change elsewhere", async () => {
+    await renderRules();
+    expect(rows()).toHaveLength(2);
+    const added = makeRule({ id: "rule-3", receiptVendor: "initech", transactionDescription: "initech llc" });
+    vi.mocked(getRules).mockResolvedValue([...rules, added]);
+    await act(async () => pushRules());
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(rows()[2].textContent).toBe("initechinitech llc");
+  });
+
+  it("opens a rule whose reason was deleted with Other chosen", async () => {
+    await renderRules([makeRule({ id: "rule-3", receiptVendor: "", transactionDescription: "juros", noReceipt: "reason:gone" })]);
+    expect(rows()[0].textContent).toBe("No receipt: Otherjuros");
+    fireEvent.doubleClick(rows()[0]);
+    const sheet = screen.getByRole("dialog", { name: "Edit Rule" });
+    expect((within(sheet).getByLabelText("Rule") as HTMLSelectElement).value).toBe("no_receipt");
   });
 
   it("gives an edited rule without an id a new one", async () => {

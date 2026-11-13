@@ -283,11 +283,13 @@ export function install(): void {
           return rules;
         case "save_rules":
           rules = a.rules as Rule[];
+          emit("rules-changed");
           return delay(200, rules);
         case "save_reasons": {
           reasons = a.reasons as Reason[];
           const other = "no_receipt";
           rules = rules.map((r) => (r.noReceipt && !reasons.some((x) => x.id === r.noReceipt) ? { ...r, noReceipt: other } : r));
+          emit("rules-changed");
           return delay(200, changed());
         }
         case "list_periods":
