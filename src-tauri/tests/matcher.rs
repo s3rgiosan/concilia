@@ -133,6 +133,61 @@ fn does_not_consume_receipts_for_review_items() {
     assert_eq!(result.transactions[1].status, Status::Review);
 }
 
+fn acme_ties() -> (StatementTransaction, ReceiptMeta, ReceiptMeta) {
+    (
+        tx("tx-001", "2030-03-10", "ACME CORP", -1000),
+        receipt("/r/acme-a.pdf", Some(1000), Some("2030-03-05"), Some("EUR")),
+        receipt("/r/acme-b.pdf", Some(1000), Some("2030-03-15"), Some("EUR")),
+    )
+}
+
+#[test]
+fn drops_a_review_candidate_that_a_later_transaction_takes() {
+    let (t1, a, b) = acme_ties();
+    let t2 = tx("tx-002", "2030-03-04", "ACME CORP", -1000);
+
+    let result = run(&[t1, t2], &[a, b]);
+
+    let t1 = &result.transactions[0];
+    assert_eq!(t1.status, Status::Review);
+    assert_eq!(t1.receipt_files, strings(&["/r/acme-b.pdf"]));
+    assert_eq!(t1.receipt_meta.len(), 1);
+    assert_eq!(t1.notes, "1 receipts match name+amount");
+    let t2 = &result.transactions[1];
+    assert_eq!(t2.status, Status::Matched);
+    assert_eq!(t2.receipt_files, strings(&["/r/acme-a.pdf"]));
+    assert_eq!(
+        result.receipts_by_status.matched,
+        strings(&["/r/acme-a.pdf"])
+    );
+    assert_eq!(
+        result.receipts_by_status.review,
+        strings(&["/r/acme-b.pdf"])
+    );
+    assert!(result.receipts_by_status.unmatched.is_empty());
+    assert!(result.unmatched_receipts.is_empty());
+}
+
+#[test]
+fn makes_a_review_transaction_unmatched_when_every_candidate_is_taken() {
+    let (t1, a, b) = acme_ties();
+    let t2 = tx("tx-002", "2030-03-04", "ACME CORP", -1000);
+    let t3 = tx("tx-003", "2030-03-16", "ACME CORP", -1000);
+
+    let result = run(&[t1, t2, t3], &[a, b]);
+
+    let t1 = &result.transactions[0];
+    assert_eq!(t1.status, Status::Unmatched);
+    assert!(t1.receipt_files.is_empty());
+    assert!(t1.receipt_meta.is_empty());
+    assert_eq!(t1.notes, "");
+    assert_eq!(
+        result.receipts_by_status.matched,
+        strings(&["/r/acme-a.pdf", "/r/acme-b.pdf"])
+    );
+    assert!(result.receipts_by_status.review.is_empty());
+}
+
 // matchTransactions > no match
 
 #[test]

@@ -68,6 +68,67 @@ fn has_rule_hit_without_amount(expected: &Value) -> bool {
         })
 }
 
+/// Node's result with the REVIEW candidates removed that a MATCHED transaction took, as the
+/// Rust matcher does at its end (see DIFFERENCES.md).
+fn without_taken_candidates(expected: &Value) -> Value {
+    let mut result = expected.clone();
+    let taken: Vec<String> = result["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|tx| tx["status"] == "MATCHED")
+        .flat_map(|tx| tx["receipt_files"].as_array().unwrap().iter())
+        .map(|f| f.as_str().unwrap().to_string())
+        .collect();
+    let mut changed = false;
+    for tx in result["transactions"].as_array_mut().unwrap() {
+        if tx["status"] != "REVIEW" {
+            continue;
+        }
+        let kept: Vec<Value> = tx["receipt_meta"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| !taken.contains(&r["file"].as_str().unwrap().to_string()))
+            .cloned()
+            .collect();
+        if kept.len() != tx["receipt_meta"].as_array().unwrap().len() {
+            changed = true;
+            tx["receipt_files"] = json!(kept.iter().map(|r| r["file"].clone()).collect::<Vec<_>>());
+            tx["receipt_meta"] = json!(kept);
+            if kept.is_empty() {
+                tx["status"] = json!("UNMATCHED");
+                tx["notes"] = json!("");
+            } else {
+                let notes = tx["notes"].as_str().unwrap();
+                let digits = notes.chars().take_while(char::is_ascii_digit).count();
+                if digits > 0 && notes[digits..].starts_with(' ') {
+                    tx["notes"] = json!(format!("{}{}", kept.len(), &notes[digits..]));
+                }
+            }
+        }
+    }
+    if changed {
+        // Every review file keeps Node's order; files no REVIEW transaction holds drop out.
+        let held: Vec<Value> = result["transactions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|tx| tx["status"] == "REVIEW")
+            .flat_map(|tx| tx["receipt_files"].as_array().unwrap().clone())
+            .collect();
+        let review: Vec<Value> = result["receiptsByStatus"]["review"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| held.contains(f))
+            .cloned()
+            .collect();
+        result["receiptsByStatus"]["review"] = json!(review);
+    }
+    result
+}
+
 #[test]
 fn matcher_matches_the_node_implementation() {
     let cases: Vec<Case<MatcherInput, Value>> = cases("matcher");
@@ -103,7 +164,11 @@ fn matcher_matches_the_node_implementation() {
             }
             continue;
         }
-        assert_eq!(actual, case.expected, "matcher case {i}");
+        assert_eq!(
+            actual,
+            without_taken_candidates(&case.expected),
+            "matcher case {i}"
+        );
         compared += 1;
     }
     assert!(

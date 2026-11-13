@@ -16,7 +16,9 @@
 //!
 //! No-receipt rules come first: a transaction whose description holds the rule's keyword is
 //! MATCHED with the rule's category as its notes. Bank fees are MATCHED next. Only MATCHED
-//! consumes a receipt; REVIEW candidates stay available to later transactions.
+//! consumes a receipt. REVIEW candidates stay available to later transactions during the passes.
+//! At the end, a REVIEW transaction loses each candidate a MATCHED transaction took, and becomes
+//! UNMATCHED when none is left.
 
 use std::collections::{HashMap, HashSet};
 
@@ -438,6 +440,30 @@ fn unique_in_order(files: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Removes from every REVIEW transaction the candidates that a MATCHED transaction took. A
+/// transaction left with no candidate becomes UNMATCHED. A leading candidate count in the notes
+/// follows the new count.
+fn drop_taken_candidates(result: &mut [Transaction], matched_files: &[String]) {
+    let taken: HashSet<&str> = matched_files.iter().map(String::as_str).collect();
+    for out in result.iter_mut().filter(|t| t.status == Status::Review) {
+        if !out.receipt_files.iter().any(|f| taken.contains(f.as_str())) {
+            continue;
+        }
+        out.receipt_meta
+            .retain(|m| !taken.contains(m.file.as_str()));
+        out.receipt_files = out.receipt_meta.iter().map(|m| m.file.clone()).collect();
+        if out.receipt_files.is_empty() {
+            out.status = Status::Unmatched;
+            out.notes = String::new();
+            continue;
+        }
+        let digits = out.notes.chars().take_while(char::is_ascii_digit).count();
+        if digits > 0 && out.notes[digits..].starts_with(' ') {
+            out.notes = format!("{}{}", out.receipt_files.len(), &out.notes[digits..]);
+        }
+    }
+}
+
 /// Matches transactions against receipts, applying `rules` first.
 pub fn match_transactions(
     transactions: &[StatementTransaction],
@@ -616,8 +642,21 @@ pub fn match_transactions(
         m.mark_review(out, &sorted, notes);
     }
 
+    drop_taken_candidates(&mut result, &m.matched_files);
+    let held: HashSet<&str> = result
+        .iter()
+        .filter(|t| t.status == Status::Review)
+        .flat_map(|t| t.receipt_files.iter().map(String::as_str))
+        .collect();
+    let review_files: Vec<String> = m
+        .review_files
+        .iter()
+        .filter(|f| held.contains(f.as_str()))
+        .cloned()
+        .collect();
+
     let matched = unique_in_order(&m.matched_files);
-    let review = unique_in_order(&m.review_files);
+    let review = unique_in_order(&review_files);
     let taken: HashSet<&str> = matched
         .iter()
         .chain(review.iter())

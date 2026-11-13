@@ -22,6 +22,12 @@ show these differences are kept out of the fixtures.
   with one of its candidates, the other candidates return to the unmatched receipts, so the
   review screen can assign them and Finalize moves them to `_unmatched`. Node dropped them
   from the records and left them in `receipts/`.
+- **REVIEW candidates that a later transaction takes.** Node left a receipt in a REVIEW
+  transaction's candidates after a later transaction MATCHED it, so it sat in the matched and
+  review lists at once. Rust removes it from the REVIEW candidates at the end of matching. The
+  transaction stays REVIEW with the rest, or becomes UNMATCHED with empty notes when none is
+  left, and a count at the start of its notes follows. `tests/golden.rs` applies the same change
+  to Node's output before comparing.
 - **Rule matches check the amount.** Node MATCHED a transaction to the one receipt sharing a
   rule's keywords, whatever its amount. Rust MATCHES it only when the receipt's amount fits:
   exactly for EUR or an unknown currency, within ±10% for a foreign currency. Several fitting
