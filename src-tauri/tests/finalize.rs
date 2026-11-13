@@ -521,6 +521,8 @@ fn receipts_outside_the_period_are_dropped_and_never_moved() {
     write_file(&april, b"april");
     let docs_file = f.paths.docs.join("secret.pdf");
     write_file(&docs_file, b"docs");
+    let outside = f.dir.path().join("outside.pdf");
+    write_file(&outside, b"outside");
     let escaping = format!("{}/../docs/secret.pdf", f.paths.receipts.display());
     f.write_result(
         vec![tx(
@@ -529,7 +531,7 @@ fn receipts_outside_the_period_are_dropped_and_never_moved() {
             Status::Matched,
             &[
                 acme,
-                receipt_meta("/etc/hosts", 1000, "ACME"),
+                receipt_meta(&outside.to_string_lossy(), 1000, "ACME"),
                 receipt_meta(&escaping, 1000, "ACME"),
             ],
             "amount_match",
@@ -549,7 +551,7 @@ fn receipts_outside_the_period_are_dropped_and_never_moved() {
     assert!(result.receipts_by_status.unmatched.is_empty());
     assert_eq!(std::fs::read(&april).unwrap(), b"april");
     assert_eq!(std::fs::read(&docs_file).unwrap(), b"docs");
-    assert!(Path::new("/etc/hosts").is_file());
+    assert_eq!(std::fs::read(&outside).unwrap(), b"outside");
     assert!(f.listing("_unmatched").is_empty());
 }
 
