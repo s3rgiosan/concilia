@@ -59,10 +59,16 @@ impl ProtocolError {
 }
 
 /// Which file a path led to when it was checked, to compare with the file later opened.
+///
+/// A file system can give a new file the inode of a deleted file. The size and the inode
+/// change time tell such a file from the checked one. No system call sets the change time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileIdentity {
     device: u64,
     inode: u64,
+    size: u64,
+    changed_secs: i64,
+    changed_nanos: i64,
 }
 
 impl FileIdentity {
@@ -72,6 +78,9 @@ impl FileIdentity {
         FileIdentity {
             device: metadata.dev(),
             inode: metadata.ino(),
+            size: metadata.size(),
+            changed_secs: metadata.ctime(),
+            changed_nanos: metadata.ctime_nsec(),
         }
     }
 
@@ -81,6 +90,9 @@ impl FileIdentity {
         FileIdentity {
             device: 0,
             inode: 0,
+            size: 0,
+            changed_secs: 0,
+            changed_nanos: 0,
         }
     }
 }
@@ -448,9 +460,25 @@ mod tests {
         let file = dir.join("receipts/acme.pdf");
         fs::write(&file, b"%PDF-1.4").unwrap();
         let resolved = resolve(root.path(), "/2030/03/receipts/acme.pdf").unwrap();
-        fs::remove_file(&file).unwrap();
+        // The new file exists before the rename frees the old inode, so it cannot reuse it.
         fs::write(dir.join("receipts/other.pdf"), b"%PDF-1.4 other").unwrap();
         fs::rename(dir.join("receipts/other.pdf"), &file).unwrap();
+
+        if cfg!(unix) {
+            assert_eq!(serve(&resolved, None), Err(ProtocolError::Forbidden));
+        }
+    }
+
+    #[test]
+    fn refuses_a_file_with_the_checked_inode_but_other_content() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = period(root.path());
+        let file = dir.join("receipts/acme.pdf");
+        fs::write(&file, b"%PDF-1.4").unwrap();
+        let resolved = resolve(root.path(), "/2030/03/receipts/acme.pdf").unwrap();
+        // A file system can give a new file the inode of a deleted file. A rewrite keeps the
+        // inode and changes the content, as such a new file does.
+        fs::write(&file, b"%PDF-1.4 other").unwrap();
 
         if cfg!(unix) {
             assert_eq!(serve(&resolved, None), Err(ProtocolError::Forbidden));
