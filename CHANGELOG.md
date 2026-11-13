@@ -44,6 +44,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Settings reads the match rules again when the main window adds a rule, so adding a rule in Settings no longer removes it. A rule whose reason was deleted opens with Other chosen.
 - The Add Rule and Edit Rule sheets refuse a rule that has the same keywords as another rule, even when the case differs, and say so.
 - The reimbursements header adds amounts only when they share one currency and shows that currency. With mixed currencies it shows no total.
+- Portuguese text uses the plural form for a count of 0, such as "0 transações".
 
 ### Changed
 

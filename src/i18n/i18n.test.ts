@@ -74,3 +74,14 @@ describe("loading", () => {
     expect(i18n.t("common.cancel")).toBe(en.common.cancel);
   });
 });
+
+describe("plurals", () => {
+  it("use the European Portuguese rules, where 0 is plural", async () => {
+    await applyLanguage("pt");
+    expect(i18n.t("month.summary.transactions", { count: 0 })).toBe("0 transações");
+    expect(i18n.t("month.summary.transactions", { count: 1 })).toBe("1 transação");
+    expect(i18n.t("month.summary.transactions", { count: 2 })).toBe("2 transações");
+    await applyLanguage("en");
+    expect(i18n.t("month.summary.transactions", { count: 0 })).toBe("0 transactions");
+  });
+});

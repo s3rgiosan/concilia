@@ -1,4 +1,4 @@
-import i18n, { type BackendModule } from "i18next";
+import i18n, { type BackendModule, type ThirdPartyModule } from "i18next";
 import { initReactI18next } from "react-i18next";
 
 export type Language = "en" | "pt";
@@ -33,8 +33,22 @@ const localeBackend: BackendModule = {
   },
 };
 
+/**
+ * Resolves the plurals of "pt" with the European Portuguese rules, which call 0 plural. The
+ * locale code stays "pt", the one the rest of the app compares against.
+ */
+const europeanPortuguesePlurals: ThirdPartyModule = {
+  type: "3rdParty",
+  init(instance: typeof i18n) {
+    const resolver = instance.services.pluralResolver;
+    const getRule = resolver.getRule.bind(resolver);
+    resolver.getRule = (code: string, options?: object) => getRule(code === "pt" ? "pt-PT" : code, options);
+  },
+};
+
 i18n
   .use(initReactI18next)
+  .use(europeanPortuguesePlurals)
   .use(localeBackend)
   .init({
     supportedLngs: ["en", "pt"],
