@@ -2,7 +2,7 @@
 // designed and checked in a plain browser. All names and data here are fabricated.
 //
 // Pick a scenario with `?mock=<name>`: first-run (default), configured, resume, applied, busy,
-// update, read-only, load-error, run-error, slow, refused (a month in review with two files Concilia
+// update, read-only, unreadable-files (rules.json does not parse), load-error, run-error, slow, refused (a month in review with two files Concilia
 // can't read). run-error fails every reconcile, scan and added
 // statement; slow reads one receipt every two seconds. `?lang=en|pt` saves that language in the
 // settings. `?accent=<rrggbb>` and `?reduce-transparency=1` stand in for the system settings the
@@ -244,6 +244,7 @@ export function install(): void {
       configured: missing.length === 0,
       busy: scenario === "busy",
       read_only: scenario === "read-only",
+      unreadable_files: scenario === "unreadable-files" ? ["rules.json does not parse: expected value at line 1 column 2"] : [],
       reasons,
     };
   }

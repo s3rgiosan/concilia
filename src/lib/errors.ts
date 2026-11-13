@@ -41,6 +41,7 @@ export const ERROR_CODES = [
   "unrecognized_file",
   "pdf_output_too_large",
   "gemini_service",
+  "stored_file_unreadable",
 ] as const;
 
 function isKnownCode(code: string | undefined): code is (typeof ERROR_CODES)[number] {

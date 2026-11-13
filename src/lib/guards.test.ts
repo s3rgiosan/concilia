@@ -30,6 +30,7 @@ describe("isAppStateView", () => {
     ["configured", { configured: "yes" }],
     ["busy", { busy: 1 }],
     ["read_only", { read_only: null }],
+    ["unreadable_files", { unreadable_files: "rules.json" }],
     ["service_account", { service_account: "reader@acme-test.iam.gserviceaccount.com" }],
     ["service_account (undefined)", { service_account: undefined }],
   ])("rejects a bad %s field", (_field, patch) => {

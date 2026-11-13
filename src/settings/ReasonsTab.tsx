@@ -70,7 +70,7 @@ export function ReasonsTab({
   const { t, i18n } = useTranslation();
   const fieldId = useId();
   const reasons = state.reasons;
-  const readOnly = state.read_only;
+  const readOnly = state.read_only || state.unreadable_files.length > 0;
   const [selected, setSelected] = useState<number | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);

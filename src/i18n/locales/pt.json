@@ -334,6 +334,7 @@
       "reasons": "Motivos"
     },
     "busy": "A pasta e as definições do Gemini não podem ser alteradas enquanto um mês está a ser processado.",
+    "unreadableFiles": "O Concilia não consegue ler o seu ficheiro de regras ou de motivos, por isso não o altera. Corrija ou remova o ficheiro na pasta das definições e reinicie o Concilia.",
     "readOnly": "Estas definições foram guardadas por uma versão mais recente do Concilia e não podem ser alteradas aqui.",
     "general": {
       "language": "Idioma",
@@ -469,7 +470,8 @@
       "file_too_large": "O ficheiro tem mais de 50 MB.",
       "unrecognized_file": "O ficheiro não é um ficheiro PDF, PNG ou JPEG.",
       "pdf_output_too_large": "O PDF tem mais texto do que o Concilia consegue ler.",
-      "gemini_service": "O Gemini não conseguiu responder: o limite de pedidos pode estar esgotado, o serviço pode estar em baixo ou o nome do modelo pode estar errado. Aguarde um momento e tente de novo, ou verifique o modelo nas Definições."
+      "gemini_service": "O Gemini não conseguiu responder: o limite de pedidos pode estar esgotado, o serviço pode estar em baixo ou o nome do modelo pode estar errado. Aguarde um momento e tente de novo, ou verifique o modelo nas Definições.",
+      "stored_file_unreadable": "O Concilia não consegue ler o ficheiro de regras ou de motivos, por isso não o usa nem o altera. Corrija ou remova o ficheiro na pasta das definições e reinicie o Concilia."
     }
   },
   "menu": {

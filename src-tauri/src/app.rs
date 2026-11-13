@@ -59,6 +59,9 @@ pub struct AppStateView {
     pub read_only: bool,
     /// The no-receipt reasons, in menu order.
     pub reasons: Vec<crate::model::Reason>,
+    /// Why `rules.json` or `reasons.json` cannot be read, one message per file. Their stores
+    /// refuse a save and the jobs that use them refuse to run until the file is fixed.
+    pub unreadable_files: Vec<String>,
 }
 
 pub struct AppState {
@@ -150,6 +153,21 @@ impl AppState {
                     "choose the receipts folder in Settings",
                 )
             })
+    }
+
+    /// The messages for the stored files that cannot be read.
+    pub fn unreadable_files(&self) -> Vec<String> {
+        let rules = lock(&self.rules).unreadable().map(str::to_string);
+        let reasons = lock(&self.reasons).unreadable().map(str::to_string);
+        rules.into_iter().chain(reasons).collect()
+    }
+
+    /// Fails when the rules or the reasons cannot be read, so no job runs with a stand-in.
+    pub fn ensure_stores_readable(&self) -> CommandResult<()> {
+        match self.unreadable_files().into_iter().next() {
+            Some(message) => Err(crate::config::ConfigError::Unreadable(message).into()),
+            None => Ok(()),
+        }
     }
 
     pub fn rules(&self) -> Vec<crate::model::Rule> {
@@ -270,6 +288,7 @@ impl AppState {
             busy: self.locks.busy(),
             read_only,
             reasons: self.reasons(),
+            unreadable_files: self.unreadable_files(),
         }
     }
 
@@ -353,6 +372,30 @@ mod tests {
             ServiceAccountStore::new(Box::new(MemoryStore::default())),
             Poppler::resolve(None),
         )
+    }
+
+    #[test]
+    fn reports_stored_files_that_do_not_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = dir.path().join(crate::config::RULES_FILE_NAME);
+        std::fs::write(&rules, "[{").unwrap();
+        let state = AppState::new(
+            ConfigStore::in_memory(Settings::default()),
+            RulesStore::load(&rules).unwrap(),
+            ReasonsStore::in_memory(crate::model::default_reasons()),
+            ServiceAccountStore::new(Box::new(MemoryStore::default())),
+            Poppler::resolve(None),
+        );
+
+        let view = state.view();
+        assert_eq!(view.unreadable_files.len(), 1);
+        assert!(view.unreadable_files[0].starts_with("rules.json"));
+        let error = state.ensure_stores_readable().unwrap_err();
+        assert_eq!(error.code.as_deref(), Some("stored_file_unreadable"));
+        let error = state.save_rules(Vec::new()).unwrap_err();
+        assert_eq!(error.code.as_deref(), Some("stored_file_unreadable"));
+        assert_eq!(std::fs::read_to_string(&rules).unwrap(), "[{");
+        assert!(self::state().ensure_stores_readable().is_ok());
     }
 
     #[test]

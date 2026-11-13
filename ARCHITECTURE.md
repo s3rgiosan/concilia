@@ -73,7 +73,7 @@ worker/, parsers/, tests/worker/   Node reference implementation, kept to compar
 
 - `config.json`: language, receipts folder, Gemini project, location and model, update checks.
 - `rules.json`: receipt rules (`receiptVendor` + `transactionDescription`) and no-receipt rules (`transactionDescription` + `noReceipt` reason id).
-- `reasons.json`: no-receipt reasons with English and Portuguese names. Without the file, the shipped reasons apply.
+- `reasons.json`: no-receipt reasons with English and Portuguese names. Without the file, the shipped reasons apply. A `rules.json` or `reasons.json` that does not parse stays on disk untouched: Settings shows a banner and refuses to save it, and reconcile, scan, finalize, reopen and report refuse to run until the file is fixed.
 
 Debug builds use `config.dev.json`, `rules.dev.json` and `reasons.dev.json`. The service account key is in the Keychain for release builds and in `service-account.dev.json` for debug builds.
 

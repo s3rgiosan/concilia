@@ -334,6 +334,7 @@
       "reasons": "Reasons"
     },
     "busy": "The folder and Gemini settings can't change while a month is being processed.",
+    "unreadableFiles": "Concilia can't read your rules or reasons file, so it won't change it. Fix or remove the file in the settings folder, then restart Concilia.",
     "readOnly": "These settings were saved by a newer version of Concilia and can't be changed here.",
     "general": {
       "language": "Language",
@@ -469,7 +470,8 @@
       "file_too_large": "The file is larger than 50 MB.",
       "unrecognized_file": "The file isn't a PDF, PNG or JPEG file.",
       "pdf_output_too_large": "The PDF holds more text than Concilia can read.",
-      "gemini_service": "Gemini could not answer: the rate limit may be used up, the service may be down, or the model name may be wrong. Wait a moment and try again, or check the model in Settings."
+      "gemini_service": "Gemini could not answer: the rate limit may be used up, the service may be down, or the model name may be wrong. Wait a moment and try again, or check the model in Settings.",
+      "stored_file_unreadable": "Concilia can't read the rules or reasons file, so it won't use or change it. Fix or remove the file in the settings folder, then restart Concilia."
     }
   },
   "menu": {

@@ -38,6 +38,7 @@ export function makeView(patch: Partial<AppStateView> = {}): AppStateView {
     configured: true,
     busy: false,
     read_only: false,
+    unreadable_files: [],
     reasons: makeReasons(),
     ...patch,
   };

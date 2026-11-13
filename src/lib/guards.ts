@@ -16,6 +16,7 @@ export function isAppStateView(value: unknown): value is AppStateView {
     typeof value.configured === "boolean" &&
     typeof value.busy === "boolean" &&
     typeof value.read_only === "boolean" &&
+    Array.isArray(value.unreadable_files) &&
     Array.isArray(value.reasons) &&
     (value.service_account === null || isObject(value.service_account))
   );

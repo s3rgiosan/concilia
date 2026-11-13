@@ -278,6 +278,16 @@ describe("Settings window", () => {
     expect(field("Check for updates automatically").disabled).toBe(true);
   });
 
+  it("shows a banner for a stored file that does not parse and locks the rules", async () => {
+    vi.mocked(getRules).mockResolvedValue([]);
+    await renderSettings(makeView({ unreadable_files: ["rules.json does not parse: expected value"] }), "rules");
+    await screen.findByRole("region", { name: "Match rules" });
+    expect(screen.getByText(/Concilia can't read your rules or reasons file/)).toBeTruthy();
+    expect(screen.getByText(/rules\.json does not parse: expected value/)).toBeTruthy();
+    expect(button("Add Rule…").disabled).toBe(true);
+    expect(saveRules).not.toHaveBeenCalled();
+  });
+
   it("shows the busy banner on the Folder and Gemini panes only", async () => {
     const busyText = "The folder and Gemini settings can't change while a month is being processed.";
     await renderSettings(makeView({ busy: true }), "general");

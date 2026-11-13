@@ -15,6 +15,9 @@ use crate::updates::UpdateError;
 /// The code of a Gemini HTTP error that stopped a run, such as a rate limit.
 pub const GEMINI_SERVICE_CODE: &str = "gemini_service";
 
+/// The code of a failure caused by `rules.json` or `reasons.json` not parsing.
+pub const STORED_FILE_UNREADABLE_CODE: &str = "stored_file_unreadable";
+
 pub type CommandResult<T> = Result<T, CommandError>;
 
 /// What kind of failure a command hit.
@@ -125,9 +128,18 @@ impl From<PipelineError> for CommandError {
 
 impl From<ConfigError> for CommandError {
     fn from(error: ConfigError) -> CommandError {
+        if let ConfigError::Unreadable(message) = &error {
+            return CommandError::coded(
+                ErrorKind::Io,
+                STORED_FILE_UNREADABLE_CODE,
+                message.clone(),
+            );
+        }
         let kind = match &error {
             ConfigError::ReadOnly => ErrorKind::ReadOnly,
-            ConfigError::Io(_) | ConfigError::Parse(..) => ErrorKind::Io,
+            ConfigError::Io(_) | ConfigError::Parse(..) | ConfigError::Unreadable(_) => {
+                ErrorKind::Io
+            }
         };
         CommandError::new(kind, error.to_string())
     }

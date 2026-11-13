@@ -188,6 +188,14 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
               <span>{t("settings.readOnly")}</span>
             </div>
           ) : null}
+          {state.unreadable_files.length > 0 ? (
+            <div className="banner banner--error" role="alert">
+              <Icon name="warning" size={14} />
+              <span>
+                {t("settings.unreadableFiles")} {state.unreadable_files.join(" ")}
+              </span>
+            </div>
+          ) : null}
           {state.busy && (pane === "folder" || pane === "gemini") ? (
             <div className="banner banner--info" role="status">
               <span className="spinner" aria-hidden="true" />
@@ -206,7 +214,7 @@ export function Settings({ initialState = null }: { initialState?: AppStateView 
             {pane === "general" ? <GeneralTab state={state} save={save} onError={report} /> : null}
             {pane === "folder" ? <FolderTab state={state} save={save} onError={report} /> : null}
             {pane === "gemini" ? <GeminiTab state={state} save={save} replace={replace} onError={report} /> : null}
-            {pane === "rules" ? <RulesTab onError={report} readOnly={state.read_only} registerUndo={undoRule} reasons={state.reasons} /> : null}
+            {pane === "rules" ? <RulesTab onError={report} readOnly={state.read_only || state.unreadable_files.length > 0} registerUndo={undoRule} reasons={state.reasons} /> : null}
             {pane === "reasons" ? <ReasonsTab state={state} replace={replace} onError={report} /> : null}
           </div>
         </div>

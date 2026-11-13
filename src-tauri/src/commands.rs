@@ -276,6 +276,7 @@ struct Job {
 }
 
 fn start_job(state: &AppState, period: &Period, kind: RunKind) -> CommandResult<Job> {
+    state.ensure_stores_readable()?;
     let paths = state.period_paths(period)?;
     let client = state.gemini()?;
     let guard = state.locks.try_exclusive(period, kind)?;
@@ -485,6 +486,7 @@ pub async fn finalize(
         .locks
         .try_exclusive(&period, RunKind::Finalize)
         .map_err(fail)?;
+    state.ensure_stores_readable().map_err(fail)?;
     let language = state.settings().report_language();
     let reasons = state.reasons();
     let result = blocking(move || pipeline::finalize(&paths, language, &reasons))
@@ -507,6 +509,7 @@ pub async fn reopen(
         .locks
         .try_exclusive(&period, RunKind::Reopen)
         .map_err(fail)?;
+    state.ensure_stores_readable().map_err(fail)?;
     let rules = state.rules();
     let result = blocking(move || pipeline::reopen(&paths, &rules))
         .await
@@ -564,6 +567,7 @@ pub async fn rescan_reimbursement(
 async fn write_report(state: &AppState, period: &Period) -> CommandResult<PathBuf> {
     let paths = state.period_paths(period)?;
     let guard = state.locks.try_exclusive(period, RunKind::Report)?;
+    state.ensure_stores_readable()?;
     let language = state.settings().report_language();
     let reasons = state.reasons();
     let result = blocking(move || pipeline::export_report(&paths, language, &reasons)).await?;

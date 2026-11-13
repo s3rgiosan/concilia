@@ -125,6 +125,9 @@ pub enum ConfigError {
     Parse(String, String),
     #[error("the settings were saved by a newer Concilia and are read-only")]
     ReadOnly,
+    /// A stored file does not parse. The message names the file and the parse error.
+    #[error("{0}")]
+    Unreadable(String),
 }
 
 /// Reads a JSON file, or none when it does not exist. A file that does not parse is moved
@@ -157,6 +160,24 @@ fn load_or_recover<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, Config
             Ok(None)
         }
     }
+}
+
+/// Reads a JSON file, or none when it does not exist. A file that does not parse stays on
+/// disk and is reported as the error message.
+fn load_strict<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, ConfigError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(ConfigError::Io(format!("{}: {e}", path.display()))),
+    };
+    serde_json::from_slice(&bytes).map(Some).map_err(|error| {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        log::error!("{} does not parse: {error}", path.display());
+        ConfigError::Unreadable(format!("{name} does not parse: {error}"))
+    })
 }
 
 fn save<T: Serialize>(path: &Path, value: &T) -> Result<(), ConfigError> {
@@ -236,6 +257,7 @@ impl ConfigStore {
 pub struct RulesStore {
     path: PathBuf,
     rules: Vec<Rule>,
+    unreadable: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -246,9 +268,14 @@ pub struct InvalidRule {
 
 impl RulesStore {
     /// Loads the rules. A rule without the keywords it needs is left out and logged; the file
-    /// keeps it until the next save.
+    /// keeps it until the next save. A file that does not parse stays as it is: the store is
+    /// empty, `unreadable` says why, and `replace` refuses to save.
     pub fn load(path: &Path) -> Result<RulesStore, ConfigError> {
-        let stored: Vec<Rule> = load_or_recover(path)?.unwrap_or_default();
+        let (stored, unreadable) = match load_strict::<Vec<Rule>>(path) {
+            Ok(stored) => (stored.unwrap_or_default(), None),
+            Err(ConfigError::Unreadable(message)) => (Vec::new(), Some(message)),
+            Err(error) => return Err(error),
+        };
         let rules = stored
             .into_iter()
             .filter(|rule| {
@@ -268,13 +295,20 @@ impl RulesStore {
         Ok(RulesStore {
             path: path.to_path_buf(),
             rules,
+            unreadable,
         })
+    }
+
+    /// Why the file cannot be read, when it cannot.
+    pub fn unreadable(&self) -> Option<&str> {
+        self.unreadable.as_deref()
     }
 
     pub fn in_memory(rules: Vec<Rule>) -> RulesStore {
         RulesStore {
             path: PathBuf::new(),
             rules,
+            unreadable: None,
         }
     }
 
@@ -288,6 +322,9 @@ impl RulesStore {
         rules: Vec<Rule>,
         reasons: &[Reason],
     ) -> Result<Result<(), InvalidRule>, ConfigError> {
+        if let Some(message) = &self.unreadable {
+            return Err(ConfigError::Unreadable(message.clone()));
+        }
         let mut cleaned = Vec::with_capacity(rules.len());
         for (index, rule) in rules.into_iter().enumerate() {
             // A no-receipt rule matches on the description alone, so it keeps no vendor.
@@ -321,6 +358,7 @@ impl RulesStore {
 pub struct ReasonsStore {
     path: PathBuf,
     reasons: Vec<Reason>,
+    unreadable: Option<String>,
 }
 
 /// Why a list of reasons cannot be saved.
@@ -337,17 +375,31 @@ pub enum InvalidReason {
 }
 
 impl ReasonsStore {
+    /// Loads the reasons. A file that does not parse stays as it is: the store holds the
+    /// shipped reasons, `unreadable` says why, and `replace` refuses to save.
     pub fn load(path: &Path) -> Result<ReasonsStore, ConfigError> {
+        let (stored, unreadable) = match load_strict::<Vec<Reason>>(path) {
+            Ok(stored) => (stored, None),
+            Err(ConfigError::Unreadable(message)) => (None, Some(message)),
+            Err(error) => return Err(error),
+        };
         Ok(ReasonsStore {
             path: path.to_path_buf(),
-            reasons: load_or_recover(path)?.unwrap_or_else(default_reasons),
+            reasons: stored.unwrap_or_else(default_reasons),
+            unreadable,
         })
+    }
+
+    /// Why the file cannot be read, when it cannot.
+    pub fn unreadable(&self) -> Option<&str> {
+        self.unreadable.as_deref()
     }
 
     pub fn in_memory(reasons: Vec<Reason>) -> ReasonsStore {
         ReasonsStore {
             path: PathBuf::new(),
             reasons,
+            unreadable: None,
         }
     }
 
@@ -360,6 +412,9 @@ impl ReasonsStore {
         &mut self,
         reasons: Vec<Reason>,
     ) -> Result<Result<(), InvalidReason>, ConfigError> {
+        if let Some(message) = &self.unreadable {
+            return Err(ConfigError::Unreadable(message.clone()));
+        }
         let cleaned: Vec<Reason> = reasons
             .into_iter()
             .map(|reason| Reason {
@@ -542,6 +597,47 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(json[0]["receiptVendor"], "ACME");
+    }
+
+    #[test]
+    fn rules_that_do_not_parse_stay_on_disk_and_refuse_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(RULES_FILE_NAME);
+        let stored =
+            r#"[{"id":"1","receiptVendor":"ACME","transactionDescription":"ACME","extra":}"#;
+        std::fs::write(&path, stored).unwrap();
+
+        let mut store = RulesStore::load(&path).unwrap();
+
+        assert!(store.rules().is_empty());
+        assert!(store.unreadable().is_some_and(|e| e.contains("rules.json")));
+        assert!(matches!(
+            store.replace(vec![rule("ACME", "ACME")], &[]),
+            Err(ConfigError::Unreadable(..))
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), stored);
+        let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(names.len(), 1);
+    }
+
+    #[test]
+    fn reasons_that_do_not_parse_stay_on_disk_and_refuse_a_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(REASONS_FILE_NAME);
+        let stored = r#"[{"id":"no_receipt","names":{"en":"Other","pt":"Outro"}},{"id":"x""#;
+        std::fs::write(&path, stored).unwrap();
+
+        let mut store = ReasonsStore::load(&path).unwrap();
+
+        assert_eq!(store.reasons(), default_reasons());
+        assert!(store
+            .unreadable()
+            .is_some_and(|e| e.contains("reasons.json")));
+        assert!(matches!(
+            store.replace(default_reasons()),
+            Err(ConfigError::Unreadable(..))
+        ));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), stored);
     }
 
     #[test]

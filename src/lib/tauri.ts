@@ -40,6 +40,8 @@ export interface AppStateView {
   configured: boolean;
   busy: boolean;
   read_only: boolean;
+  /** Why rules.json or reasons.json cannot be read, one message per file. */
+  unreadable_files: string[];
   /** The no-receipt reasons, in menu order. */
   reasons: Reason[];
 }
