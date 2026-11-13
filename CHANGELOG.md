@@ -36,6 +36,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Install and Relaunch is disabled while a job runs, and the install command refuses with a busy error, so an update cannot restart the app during a job.
 - The update banner appears when the daily background check finds an update, without a restart or a manual check.
 - Check for Updates in the menu now says when Concilia is up to date or when the check fails, and shows the update banner again for a version you put off with Later.
+- A double click on the main window title bar zooms the window.
 
 ## [2.0.0] - 2026-11-13
 

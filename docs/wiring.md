@@ -96,7 +96,7 @@ App commands are declared in `src-tauri/build.rs` (`COMMANDS`); each window may 
 
 | Capability | File | Window | Grants |
 |---|---|---|---|
-| `main` | `src-tauri/capabilities/main.json` | main | core app version, event listen, menu new and popup, window title, progress bar, attention and dragging; the month, review, report, menu-state, update, `get_appearance` and `show_alert` commands |
+| `main` | `src-tauri/capabilities/main.json` | main | core app version, event listen, menu new and popup, window title, progress bar, attention, dragging and maximize toggle (a double click on the title bar; Settings cannot maximize); the month, review, report, menu-state, update, `get_appearance` and `show_alert` commands |
 | `settings` | `src-tauri/capabilities/settings.json` | settings | core app version, event listen, menu new and popup, resource close, window size, title and dragging; the settings, key, Gemini, rules, `save_reasons`, update, `get_appearance` and `show_alert` commands |
 
 Plugins used from Rust only (no webview permission): `tauri-plugin-window-state` restores the main window's size and position, `tauri-plugin-dialog` shows file pickers and alerts, `tauri-plugin-opener` opens the help and key pages.

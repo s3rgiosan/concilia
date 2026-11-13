@@ -15,6 +15,7 @@
     "core:window:allow-request-user-attention",
     "core:window:allow-set-progress-bar",
     "core:window:allow-set-title",
+    "core:window:allow-internal-toggle-maximize",
     "core:window:allow-start-dragging",
     "allow-get-app-state",
     "allow-save-settings",

@@ -181,3 +181,18 @@ fn each_window_holds_the_menu_permissions_its_code_needs() {
         assert!(missing.is_empty(), "{capability} lacks {missing:?}");
     }
 }
+
+#[test]
+fn only_the_maximizable_window_may_toggle_maximize() {
+    let permission = "core:window:allow-internal-toggle-maximize";
+    assert!(
+        source_uses("../src/components", &["data-tauri-drag-region"]),
+        "the main toolbar has a drag region"
+    );
+    assert!(core_granted("capabilities/main.json").contains(permission));
+    assert!(!core_granted("capabilities/settings.json").contains(permission));
+    assert!(
+        read("src/windows.rs").contains(".maximizable(false)"),
+        "the Settings window is not maximizable"
+    );
+}
