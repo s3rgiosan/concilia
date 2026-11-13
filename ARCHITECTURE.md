@@ -95,6 +95,8 @@ Debug builds use `config.dev.json`, `rules.dev.json` and `reasons.dev.json`. The
     └── .applied              marks the month as finalized
 ```
 
+The JSON files store receipt paths relative to the month folder (`receipts/acme.pdf`), so the receipts folder can move without losing the review. In memory and in the webview, paths are absolute (`pipeline/stored.rs`).
+
 ## Jobs
 
 - **Reconcile**: parse the statements (pdftotext, then the bank parser), find receipts, extract them (cache first), match, write the report.

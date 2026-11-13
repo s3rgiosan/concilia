@@ -2,15 +2,16 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::stored::{read_stored, read_stored_lenient, write_stored};
 use super::{create_dir, io, PipelineError};
-use crate::fsutil::{read_json_lenient, read_json_opt, remove_if_exists, write_json};
+use crate::fsutil::remove_if_exists;
 use crate::matcher::match_transactions;
 use crate::model::{Draft, DroppedDecision, MatchResult, ReceiptMeta, Rule, StatementTransaction};
 use crate::period::PeriodPaths;
 use crate::review::{claimed_files, clean_draft, merge_draft};
 
 pub fn read_draft(paths: &PeriodPaths) -> Result<Draft, PipelineError> {
-    Ok(read_json_opt(&paths.draft())?.unwrap_or_default())
+    Ok(read_stored(&paths.dir, &paths.draft())?.unwrap_or_default())
 }
 
 /// Writes the draft. A finalized period is refused, because Finalize already applied its
@@ -20,7 +21,7 @@ pub fn save_draft(paths: &PeriodPaths, draft: &Draft) -> Result<(), PipelineErro
         return Err(PipelineError::Finalized);
     }
     create_dir(&paths.docs)?;
-    Ok(write_json(&paths.draft(), draft)?)
+    Ok(write_stored(&paths.dir, &paths.draft(), draft)?)
 }
 
 pub fn delete_draft(paths: &PeriodPaths) -> Result<(), PipelineError> {
@@ -38,8 +39,8 @@ pub(super) fn match_keeping_draft(
     receipts: &[ReceiptMeta],
     rules: &[Rule],
 ) -> MatchResult {
-    let previous: Option<MatchResult> = read_json_lenient(&paths.match_result());
-    let draft: Draft = read_json_lenient(&paths.draft()).unwrap_or_default();
+    let previous: Option<MatchResult> = read_stored_lenient(&paths.dir, &paths.match_result());
+    let draft: Draft = read_stored_lenient(&paths.dir, &paths.draft()).unwrap_or_default();
     match_with_draft(previous.as_ref(), &draft, transactions, receipts, rules)
 }
 
@@ -112,11 +113,11 @@ pub(super) fn clean_saved_draft(
     receipts: &[ReceiptMeta],
     result: &MatchResult,
 ) -> Vec<DroppedDecision> {
-    match read_json_opt::<Draft>(&paths.draft()) {
+    match read_stored::<Draft>(&paths.dir, &paths.draft()) {
         Ok(Some(draft)) => {
             let present: HashSet<String> = receipts.iter().map(|r| r.file.clone()).collect();
             let (kept, removed) = clean_draft(&draft, &present, &result.transactions);
-            if let Err(error) = write_json(&paths.draft(), &kept) {
+            if let Err(error) = write_stored(&paths.dir, &paths.draft(), &kept) {
                 log::warn!("could not update the review draft: {error}");
                 Vec::new()
             } else {

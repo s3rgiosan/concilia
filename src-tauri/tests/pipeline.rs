@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use calamine::Data;
 use common::{
-    read_json_file, receipt_meta, report_rows, report_sheet_names, write_file, write_json_file,
+    read_json_file, read_stored_file, receipt_meta, report_rows, report_sheet_names, write_file,
+    write_json_file,
 };
 use concilia_lib::bank::Bank;
 use concilia_lib::extract::{ExtractError, ExtractOptions, ReceiptExtractor};
@@ -260,11 +261,11 @@ impl Harness {
     }
 
     fn match_result(&self) -> MatchResult {
-        read_json_file(&self.paths.match_result())
+        read_stored_file(&self.paths.dir, &self.paths.match_result())
     }
 
     fn receipts_cache(&self) -> Vec<ReceiptMeta> {
-        read_json_file(&self.paths.receipts_cache())
+        read_stored_file(&self.paths.dir, &self.paths.receipts_cache())
     }
 }
 
@@ -715,7 +716,8 @@ async fn extracts_reimbursements_into_their_own_file_and_the_report() {
         .await
         .unwrap();
 
-    let reimbursements: Vec<ReceiptMeta> = read_json_file(&h.paths.reimbursements_cache());
+    let reimbursements: Vec<ReceiptMeta> =
+        read_stored_file(&h.paths.dir, &h.paths.reimbursements_cache());
     assert_eq!(files(&reimbursements), std::slice::from_ref(&taxi));
     assert_eq!(reimbursements[0].amount_cents, Some(1500));
     // Reimbursements never take part in matching.
@@ -750,7 +752,8 @@ async fn extracts_reimbursements_into_their_own_file_and_the_report() {
     std::fs::remove_file(&taxi).unwrap();
     pipeline::reconcile(&h.ctx(), &[], false).await.unwrap();
 
-    let reimbursements: Vec<ReceiptMeta> = read_json_file(&h.paths.reimbursements_cache());
+    let reimbursements: Vec<ReceiptMeta> =
+        read_stored_file(&h.paths.dir, &h.paths.reimbursements_cache());
     assert!(reimbursements.is_empty());
     assert!(!report_sheet_names(&h.paths.report()).contains(&"Reimbursements".to_string()));
 }
@@ -1769,12 +1772,12 @@ fn rescan_fixture(stored_root: &Path) -> (PeriodPaths, String, String) {
 }
 
 fn assert_rescanned(paths: &PeriodPaths, acme: &str, globex: &str) {
-    let cache: Vec<ReceiptMeta> = read_json_file(&paths.receipts_cache());
+    let cache: Vec<ReceiptMeta> = read_stored_file(&paths.dir, &paths.receipts_cache());
     assert_eq!(cache.len(), 2);
     assert_eq!(cache[0], read_now(acme, 1000, "ACME"));
     assert_eq!(cache[1], receipt_meta(globex, 2000, "GLOBEX"));
 
-    let result: MatchResult = read_json_file(&paths.match_result());
+    let result: MatchResult = read_stored_file(&paths.dir, &paths.match_result());
     let tx = &result.transactions[0];
     assert_eq!(tx.receipt_files, [acme, globex]);
     assert_eq!(
@@ -1868,11 +1871,11 @@ async fn rescanning_an_uncached_receipt_appends_it() {
     .await
     .unwrap();
 
-    let cache: Vec<ReceiptMeta> = read_json_file(&paths.receipts_cache());
+    let cache: Vec<ReceiptMeta> = read_stored_file(&paths.dir, &paths.receipts_cache());
     assert_eq!(cache.len(), 3);
     assert_eq!(cache[2], read_now(&hooli.to_string_lossy(), 3000, "HOOLI"));
-    let result_after: Value = read_json_file(&paths.match_result());
-    let result_before: Value = serde_json::from_slice(&result_before).unwrap();
+    let result_after: MatchResult = read_stored_file(&paths.dir, &paths.match_result());
+    let result_before: MatchResult = serde_json::from_slice(&result_before).unwrap();
     assert_eq!(result_after, result_before);
 }
 
@@ -1904,7 +1907,8 @@ async fn rescanning_a_reimbursement_creates_its_file() {
     .await
     .unwrap();
 
-    let reimbursements: Vec<ReceiptMeta> = read_json_file(&paths.reimbursements_cache());
+    let reimbursements: Vec<ReceiptMeta> =
+        read_stored_file(&paths.dir, &paths.reimbursements_cache());
     assert_eq!(
         reimbursements,
         [read_now(&taxi.to_string_lossy(), 1500, "TAXI CO")]
@@ -1990,7 +1994,10 @@ async fn concurrent_rescans_of_one_period_both_land() {
     first.unwrap();
     second.unwrap();
 
-    let mut cached = files(&read_json_file::<Vec<ReceiptMeta>>(&paths.receipts_cache()));
+    let mut cached = files(&read_stored_file::<Vec<ReceiptMeta>>(
+        &paths.dir,
+        &paths.receipts_cache(),
+    ));
     cached.sort();
     assert_eq!(
         cached,
@@ -2558,6 +2565,59 @@ async fn rescanning_a_refused_file_returns_its_code_without_calling_the_reader()
 
     assert_code(&error, "unrecognized_file");
     assert_eq!(h.extractor.call_count(), 0);
+}
+
+#[tokio::test]
+async fn moving_the_receipts_folder_keeps_the_review() {
+    let mut h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let initech = h.paths.receipts.join("initech.png");
+    let initech = initech.to_string_lossy();
+    pipeline::save_draft(&h.paths, &assigned_to_globex(&initech, 5000, "INITECH")).unwrap();
+    h.extractor.take_calls();
+
+    let moved = h.dir.path().join("moved");
+    std::fs::create_dir(&moved).unwrap();
+    std::fs::rename(h.dir.path().join("2030"), moved.join("2030")).unwrap();
+    h.paths = period().paths(&moved);
+    let outcome = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert!(outcome.dropped_decisions.is_empty(), "{outcome:?}");
+    assert!(h.extractor.take_calls().is_empty());
+    let (pool, globex) = pool_and_globex(&h);
+    let initech = h.paths.receipts.join("initech.png");
+    assert_eq!(globex, [initech.to_string_lossy().into_owned()]);
+    assert!(pool.is_empty(), "{pool:?}");
+}
+
+#[tokio::test]
+async fn reopening_after_the_receipts_folder_moved_keeps_the_decisions() {
+    let mut h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let initech = h.paths.receipts.join("initech.png");
+    let initech = initech.to_string_lossy();
+    pipeline::save_draft(&h.paths, &assigned_to_globex(&initech, 5000, "INITECH")).unwrap();
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+    h.extractor.take_calls();
+
+    let moved = h.dir.path().join("moved");
+    std::fs::create_dir(&moved).unwrap();
+    std::fs::rename(h.dir.path().join("2030"), moved.join("2030")).unwrap();
+    h.paths = period().paths(&moved);
+    let report = pipeline::reopen(&h.paths, &[]).unwrap();
+
+    assert_eq!(report.kept_decisions, 1);
+    let (_, globex) = pool_and_globex(&h);
+    let initech = h.paths.receipts.join("initech.png");
+    assert_eq!(globex, [initech.to_string_lossy().into_owned()]);
+    pipeline::scan_receipts(&h.ctx()).await.unwrap();
+    assert!(h.extractor.take_calls().is_empty());
 }
 
 // Reopen.

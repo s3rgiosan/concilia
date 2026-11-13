@@ -166,7 +166,9 @@ async fn reconciles_and_finalizes_a_period() {
     assert!(paths.receipts.join("_matched/acme.pdf").is_file());
     assert!(paths.receipts.join("_matched/globex.pdf").is_file());
     assert!(paths.applied_marker().is_file());
-    let finalized: MatchResult = common::read_json_file(&paths.match_result());
+    let finalized: MatchResult = pipeline::stored::read_stored(&paths.dir, &paths.match_result())
+        .unwrap()
+        .unwrap();
     for file in finalized.receipts_by_status.matched {
         assert!(std::path::Path::new(&file).is_file(), "{file}");
     }

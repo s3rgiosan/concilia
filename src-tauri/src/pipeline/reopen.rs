@@ -11,10 +11,11 @@ use serde_json::{Map, Value};
 use super::apply::{create_target_dirs, pin_moves, Backup};
 use super::draft::match_with_draft;
 use super::periods::restore_moves;
+use super::stored::{read_stored, write_stored};
 use super::{io, read_cache, readable, PipelineError};
 use crate::error::ErrorKind;
 use crate::finalize;
-use crate::fsutil::{read_json_opt, remove_if_exists, write_json};
+use crate::fsutil::{read_json_opt, remove_if_exists};
 use crate::matcher::match_transactions;
 use crate::model::{
     Draft, FileIdentity, MatchResult, ReceiptMeta, ReceiptsByStatus, Rule, StatementTransaction,
@@ -57,11 +58,11 @@ pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, Pipel
             "this period is not finalized",
         ));
     }
-    let finalized: MatchResult =
-        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
+    let finalized: MatchResult = read_stored(&paths.dir, &paths.match_result())?
+        .ok_or_else(PipelineError::not_reconciled)?;
     let transactions: Vec<StatementTransaction> =
         read_json_opt(&paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
-    let cache = read_cache(&paths.receipts_cache());
+    let cache = read_cache(&paths.dir, &paths.receipts_cache());
 
     let mut warnings = Vec::new();
     let moves = restore_moves(paths, &mut warnings);
@@ -171,10 +172,11 @@ impl Staged {
             result: tmp(&paths.match_result()),
             draft: (!reopened.draft.is_empty()).then(|| tmp(&paths.draft())),
         };
-        let written = write_json(&staged.cache, &reopened.cache)
-            .and_then(|_| write_json(&staged.result, &reopened.result))
+        let dir = &paths.dir;
+        let written = write_stored(dir, &staged.cache, &reopened.cache)
+            .and_then(|_| write_stored(dir, &staged.result, &reopened.result))
             .and_then(|_| match &staged.draft {
-                Some(draft) => write_json(draft, &reopened.draft),
+                Some(draft) => write_stored(dir, draft, &reopened.draft),
                 None => Ok(()),
             });
         if let Err(error) = written {

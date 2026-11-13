@@ -9,6 +9,7 @@ mod reopen;
 mod report;
 mod rescan;
 mod run;
+pub mod stored;
 
 use std::path::{Path, PathBuf};
 
@@ -20,7 +21,7 @@ use crate::bank::Bank;
 use crate::error::ErrorKind;
 use crate::extract::{ExtractAllError, ExtractOptions, ReceiptExtractor};
 use crate::filecheck::{self, FileCheckError, FileKind};
-use crate::fsutil::{read_json_lenient, FsError};
+use crate::fsutil::FsError;
 use crate::model::{Language, Reason, ReceiptMeta, Rule};
 use crate::period::PeriodPaths;
 use crate::poppler::{Poppler, PopplerError};
@@ -210,9 +211,10 @@ fn create_dir(dir: &Path) -> Result<(), PipelineError> {
     std::fs::create_dir_all(dir).map_err(|e| io(dir, e))
 }
 
-/// Reads a cache file, treating an unreadable one as empty so extraction starts over.
-fn read_cache(path: &Path) -> Vec<ReceiptMeta> {
-    read_json_lenient(path).unwrap_or_default()
+/// Reads a cache file of the period folder `dir`, treating an unreadable one as empty so
+/// extraction starts over.
+fn read_cache(dir: &Path, path: &Path) -> Vec<ReceiptMeta> {
+    stored::read_stored_lenient(dir, path).unwrap_or_default()
 }
 
 /// The receipts that were read or tried, without those refused before reading.
@@ -222,7 +224,7 @@ fn readable(receipts: Vec<ReceiptMeta>) -> Vec<ReceiptMeta> {
 
 /// The cached reimbursements that were read or tried.
 fn read_reimbursements(paths: &PeriodPaths) -> Vec<ReceiptMeta> {
-    readable(read_cache(&paths.reimbursements_cache()))
+    readable(read_cache(&paths.dir, &paths.reimbursements_cache()))
 }
 
 #[cfg(test)]

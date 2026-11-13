@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use super::draft::{clean_saved_draft, match_keeping_draft, match_with_draft};
 use super::report::write_report;
+use super::stored::{read_stored_lenient, write_stored};
 use super::{
     check_statement, create_dir, not_pdf, off_thread, read_cache, read_statements, readable,
     reset_period, PipelineError, RunContext, RunEvent, StatementFile,
@@ -50,7 +51,7 @@ pub async fn reconcile(
         }
         create_dir(&paths.docs)?;
         create_dir(&paths.receipts)?;
-        let previous: Option<MatchResult> = read_json_lenient(&paths.match_result());
+        let previous: Option<MatchResult> = read_stored_lenient(&paths.dir, &paths.match_result());
         if clear_cache {
             let report = reset_period(&paths)?;
             for warning in &report.warnings {
@@ -128,7 +129,7 @@ pub async fn scan_receipts(ctx: &RunContext<'_>) -> Result<ScanOutcome, Pipeline
         if paths.applied_marker().exists() {
             return Err(PipelineError::Finalized);
         }
-        let known: HashSet<String> = read_cache(&paths.receipts_cache())
+        let known: HashSet<String> = read_cache(&paths.dir, &paths.receipts_cache())
             .into_iter()
             .map(|r| r.file)
             .collect();
@@ -242,7 +243,7 @@ pub async fn add_statements(
     let paths = ctx.paths.clone();
     let (receipts, result, dropped_decisions) = off_thread(move || {
         write_json(&paths.transactions(), &transactions)?;
-        write_json(&paths.match_result(), &result)?;
+        write_stored(&paths.dir, &paths.match_result(), &result)?;
         let mut records = read_statements(&paths);
         records.extend(new_records);
         write_json(&paths.statements(), &records)?;
@@ -281,6 +282,8 @@ pub async fn add_statements(
 /// stops keeps what it read.
 struct CacheWriter {
     path: PathBuf,
+    /// The period folder, which the saved paths are relative to.
+    dir: PathBuf,
     entries: Mutex<CacheEntries>,
     /// The number of the newest snapshot written; older snapshots that finish later are
     /// dropped.
@@ -295,13 +298,14 @@ struct CacheEntries {
 }
 
 impl CacheWriter {
-    fn new(path: PathBuf, files: &[String], previous: &[ReceiptMeta]) -> CacheWriter {
+    fn new(path: PathBuf, dir: PathBuf, files: &[String], previous: &[ReceiptMeta]) -> CacheWriter {
         let entries = files
             .iter()
             .map(|file| previous.iter().find(|r| &r.file == file).cloned())
             .collect();
         CacheWriter {
             path,
+            dir,
             entries: Mutex::new(CacheEntries {
                 entries,
                 unsaved: 0,
@@ -354,13 +358,14 @@ impl CacheWriter {
         entries: Vec<ReceiptMeta>,
     ) -> impl FnOnce() -> Result<(), FsError> + Send + 'static {
         let path = self.path.clone();
+        let dir = self.dir.clone();
         let written = Arc::clone(&self.written);
         move || {
             let mut newest = written.lock().unwrap_or_else(|p| p.into_inner());
             if snapshot <= *newest {
                 return Ok(());
             }
-            write_json(&path, &entries)?;
+            write_stored(&dir, &path, &entries)?;
             *newest = snapshot;
             Ok(())
         }
@@ -400,6 +405,7 @@ async fn extract_to_cache(
     (ctx.progress)(event(0, total));
     let (cache, identities) = {
         let path = cache_path.to_path_buf();
+        let dir = ctx.paths.dir.clone();
         let listed = files.to_vec();
         off_thread(move || {
             let identities: Vec<Option<FileIdentity>> = listed
@@ -409,7 +415,7 @@ async fn extract_to_cache(
             let cache = if force {
                 Vec::new()
             } else {
-                unchanged(read_cache(&path), &listed, &identities)
+                unchanged(read_cache(&dir, &path), &listed, &identities)
             };
             (cache, identities)
         })
@@ -419,7 +425,12 @@ async fn extract_to_cache(
         identity: identities.get(index).copied().flatten(),
         ..meta.clone()
     };
-    let writer = CacheWriter::new(cache_path.to_path_buf(), files, &cache);
+    let writer = CacheWriter::new(
+        cache_path.to_path_buf(),
+        ctx.paths.dir.clone(),
+        files,
+        &cache,
+    );
     let progress = |progress: ExtractProgress<'_>| {
         if let Some((index, meta)) = progress.extracted {
             writer.record(index, &stamped(index, meta));
@@ -506,7 +517,7 @@ async fn match_and_store(
     let (paths, rules) = (ctx.paths.clone(), ctx.rules.clone());
     off_thread(move || {
         let result = match_keeping_draft(&paths, &transactions, &receipts, &rules);
-        write_json(&paths.match_result(), &result)?;
+        write_stored(&paths.dir, &paths.match_result(), &result)?;
         Ok::<_, FsError>((receipts, result))
     })
     .await?
@@ -527,9 +538,9 @@ async fn extract_and_match(
     let paths = ctx.paths.clone();
     let rules: Vec<Rule> = ctx.rules.clone();
     off_thread(move || {
-        let draft: Draft = read_json_lenient(&paths.draft()).unwrap_or_default();
+        let draft: Draft = read_stored_lenient(&paths.dir, &paths.draft()).unwrap_or_default();
         let result = match_with_draft(previous.as_ref(), &draft, &transactions, &receipts, &rules);
-        write_json(&paths.match_result(), &result)?;
+        write_stored(&paths.dir, &paths.match_result(), &result)?;
         Ok::<_, FsError>((receipts.len(), result))
     })
     .await?

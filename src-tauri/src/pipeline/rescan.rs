@@ -3,10 +3,10 @@
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
+use super::stored::{read_stored, write_stored};
 use super::{create_dir, io, off_thread, PipelineError};
 use crate::error::ErrorKind;
 use crate::extract::{ExtractError, ReceiptExtractor};
-use crate::fsutil::{read_json_opt, write_json};
 use crate::model::{FileIdentity, MatchResult, ReceiptMeta};
 use crate::period::PeriodPaths;
 use crate::receipts::is_receipt_name;
@@ -160,24 +160,26 @@ fn store_rescan(
     match kind {
         RescanKind::Receipt => {
             let cache_path = paths.receipts_cache();
-            if let Some(mut cache) = read_json_opt::<Vec<ReceiptMeta>>(&cache_path)? {
+            if let Some(mut cache) = read_stored::<Vec<ReceiptMeta>>(&paths.dir, &cache_path)? {
                 replace(&mut cache, true);
-                write_json(&cache_path, &cache)?;
+                write_stored(&paths.dir, &cache_path, &cache)?;
             }
-            if let Some(mut result) = read_json_opt::<MatchResult>(&paths.match_result())? {
+            if let Some(mut result) = read_stored::<MatchResult>(&paths.dir, &paths.match_result())?
+            {
                 for tx in &mut result.transactions {
                     replace(&mut tx.receipt_meta, false);
                 }
                 replace(&mut result.unmatched_receipts, false);
-                write_json(&paths.match_result(), &result)?;
+                write_stored(&paths.dir, &paths.match_result(), &result)?;
             }
         }
         RescanKind::Reimbursement => {
             create_dir(&paths.docs)?;
             let cache_path = paths.reimbursements_cache();
-            let mut cache = read_json_opt::<Vec<ReceiptMeta>>(&cache_path)?.unwrap_or_default();
+            let mut cache =
+                read_stored::<Vec<ReceiptMeta>>(&paths.dir, &cache_path)?.unwrap_or_default();
             replace(&mut cache, true);
-            write_json(&cache_path, &cache)?;
+            write_stored(&paths.dir, &cache_path, &cache)?;
         }
     }
     Ok(())

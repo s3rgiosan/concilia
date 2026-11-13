@@ -2,11 +2,12 @@
 
 use std::path::{Component, Path};
 
+use super::stored::{read_stored, write_stored};
 use super::{create_dir, io, read_reimbursements, PipelineError};
 use crate::dates::time_now_iso;
 use crate::excel;
 use crate::finalize::{self, Move};
-use crate::fsutil::{read_json_opt, remove_if_exists, write_atomic, write_json};
+use crate::fsutil::{remove_if_exists, write_atomic};
 use crate::model::{Draft, Language, MatchResult, Reason, ReceiptMeta};
 use crate::period::PeriodPaths;
 use crate::receipts::STATUS_FOLDERS;
@@ -33,9 +34,9 @@ pub fn finalize(
     language: Language,
     reasons: &[Reason],
 ) -> Result<(), PipelineError> {
-    let result: MatchResult =
-        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
-    let draft: Draft = read_json_opt(&paths.draft())?.unwrap_or_default();
+    let result: MatchResult = read_stored(&paths.dir, &paths.match_result())?
+        .ok_or_else(PipelineError::not_reconciled)?;
+    let draft: Draft = read_stored(&paths.dir, &paths.draft())?.unwrap_or_default();
     let merged =
         merge_draft(&result, &draft).map_err(|e| PipelineError::InvalidInput(e.to_string()))?;
     let unmatched = effective_unmatched(&result, &merged);
@@ -61,7 +62,7 @@ pub fn finalize(
         let _ = remove_if_exists(&result_tmp);
         let _ = remove_if_exists(&report_tmp);
     };
-    let prepared = write_json(&result_tmp, &final_result)
+    let prepared = write_stored(&paths.dir, &result_tmp, &final_result)
         .map_err(PipelineError::from)
         .and_then(|_| {
             let labels = excel::Labels { language, reasons };

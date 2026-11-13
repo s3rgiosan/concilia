@@ -6,10 +6,10 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::periods::read_statements;
+use super::stored::{read_stored, read_stored_lenient};
 use super::{io, read_cache, read_reimbursements, PipelineError};
 use crate::excel;
 use crate::finalize::TRANSIENT_FIELDS;
-use crate::fsutil::{read_json_lenient, read_json_opt};
 use crate::model::{
     Draft, Language, MatchResult, Reason, ReceiptMeta, StatementRecord, Status, Transaction,
 };
@@ -94,9 +94,9 @@ pub fn export_report(
     language: Language,
     reasons: &[Reason],
 ) -> Result<PathBuf, PipelineError> {
-    let result: MatchResult =
-        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
-    let draft: Draft = read_json_lenient(&paths.draft()).unwrap_or_default();
+    let result: MatchResult = read_stored(&paths.dir, &paths.match_result())?
+        .ok_or_else(PipelineError::not_reconciled)?;
+    let draft: Draft = read_stored_lenient(&paths.dir, &paths.draft()).unwrap_or_default();
     let shown = match merge_draft(&result, &draft) {
         Ok(transactions) => MatchResult {
             transactions,
@@ -117,8 +117,8 @@ pub fn export_report(
 /// The match result and reimbursements, each receipt with its period-relative `rel_path` for
 /// previews, and the statements the period holds.
 pub fn review_data(paths: &PeriodPaths) -> Result<ReviewData, PipelineError> {
-    let result: MatchResult =
-        read_json_opt(&paths.match_result())?.ok_or_else(PipelineError::not_reconciled)?;
+    let result: MatchResult = read_stored(&paths.dir, &paths.match_result())?
+        .ok_or_else(PipelineError::not_reconciled)?;
     let view = |meta| ReceiptView::new(paths, meta);
     let transactions = result
         .transactions
@@ -139,7 +139,7 @@ pub fn review_data(paths: &PeriodPaths) -> Result<ReviewData, PipelineError> {
 fn refused_files(paths: &PeriodPaths) -> Vec<RefusedFile> {
     [paths.receipts_cache(), paths.reimbursements_cache()]
         .iter()
-        .flat_map(|cache| read_cache(cache))
+        .flat_map(|cache| read_cache(&paths.dir, cache))
         .filter_map(|meta| {
             let code = meta.refused.clone()?;
             let exists = Path::new(&meta.file).is_file();

@@ -5,7 +5,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::{read_json_file, receipt_meta, report_sheet_names, write_file, write_json_file};
+use common::{read_stored_file, receipt_meta, report_sheet_names, write_file, write_json_file};
 use concilia_lib::model::{
     default_reasons, Language, MatchResult, ReceiptMeta, ReceiptsByStatus, Status, Transaction,
 };
@@ -75,7 +75,7 @@ impl Fixture {
     }
 
     fn result(&self) -> MatchResult {
-        read_json_file(&self.paths.match_result())
+        read_stored_file(&self.paths.dir, &self.paths.match_result())
     }
 
     fn finalize(&self) -> Result<(), PipelineError> {

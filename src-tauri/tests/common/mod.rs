@@ -94,6 +94,17 @@ pub fn read_json_file<T: serde::de::DeserializeOwned>(path: &std::path::Path) ->
     serde_json::from_slice(&bytes).unwrap()
 }
 
+/// Reads a JSON file of the period folder `dir` with its receipt paths resolved, as the app
+/// reads it.
+pub fn read_stored_file<T>(dir: &std::path::Path, path: &std::path::Path) -> T
+where
+    T: serde::de::DeserializeOwned + concilia_lib::pipeline::stored::StoredPaths,
+{
+    concilia_lib::pipeline::stored::read_stored(dir, path)
+        .unwrap()
+        .unwrap_or_else(|| panic!("{} is missing", path.display()))
+}
+
 /// A high-confidence EUR receipt dated 2030-03-01.
 pub fn receipt_meta(
     file: &str,
