@@ -42,6 +42,10 @@ jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 base64 = "0.23.1"
 rust_xlsxwriter = "0.99.1"
 
+# Dependencies build without debug info to keep target/debug small; the app crate keeps it.
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 codegen-units = 1
 lto = true
