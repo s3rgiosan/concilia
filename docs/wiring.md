@@ -94,9 +94,20 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 
 App commands are declared in `src-tauri/build.rs` (`COMMANDS`); each window may call only the commands its capability allows.
 
-| Capability | File | Window | Grants |
-|---|---|---|---|
-| `main` | `src-tauri/capabilities/main.json` | main | core app version, event listen, menu new and popup, window title, progress bar, attention, dragging and maximize toggle (a double click on the title bar; Settings cannot maximize); the month, review, report, menu-state, update, `get_appearance` and `show_alert` commands |
-| `settings` | `src-tauri/capabilities/settings.json` | settings | core app version, event listen, menu new and popup, resource close, window size, title and dragging; the settings, key, Gemini, rules, `save_reasons`, update, `get_appearance` and `show_alert` commands |
+### `main` (`src-tauri/capabilities/main.json`, window `main`)
 
-Plugins used from Rust only (no webview permission): `tauri-plugin-window-state` restores the main window's size and position, `tauri-plugin-dialog` shows file pickers and alerts, `tauri-plugin-opener` opens the help and key pages.
+Core: `core:app:allow-version`, `core:event:allow-listen`, `core:event:allow-unlisten`, `core:menu:allow-new`, `core:menu:allow-popup`, `core:resources:allow-close`, `core:window:allow-request-user-attention`, `core:window:allow-set-progress-bar`, `core:window:allow-set-title`, `core:window:allow-internal-toggle-maximize`, `core:window:allow-start-dragging`.
+
+App commands: `allow-get-app-state`, `allow-save-settings`, `allow-pick-receipts-root`, `allow-import-service-account`, `allow-open-key-help`, `allow-get-rules`, `allow-save-rules`, `allow-period-status`, `allow-list-periods`, `allow-period-summary`, `allow-create-period`, `allow-pick-statements`, `allow-reconcile`, `allow-scan-receipts`, `allow-add-statements`, `allow-cancel-run`, `allow-get-review`, `allow-get-draft`, `allow-save-draft`, `allow-finalize`, `allow-reopen`, `allow-rescan-receipt`, `allow-rescan-reimbursement`, `allow-export-report`, `allow-open-report`, `allow-open-receipt`, `allow-reveal-period`, `allow-open-settings`, `allow-pending-update`, `allow-install-update`, `allow-set-menu`, `allow-set-menu-state`, `allow-set-menu-item-text`, `allow-get-appearance`, `allow-show-alert`.
+
+A double click on the title bar zooms the window through `core:window:allow-internal-toggle-maximize`.
+
+### `settings` (`src-tauri/capabilities/settings.json`, window `settings`)
+
+Core: `core:app:allow-version`, `core:event:allow-listen`, `core:event:allow-unlisten`, `core:menu:allow-new`, `core:menu:allow-popup`, `core:resources:allow-close`, `core:window:allow-set-size`, `core:window:allow-set-title`, `core:window:allow-start-dragging`.
+
+App commands: `allow-get-app-state`, `allow-save-settings`, `allow-pick-receipts-root`, `allow-import-service-account`, `allow-remove-service-account`, `allow-test-gemini-connection`, `allow-poppler-status`, `allow-get-rules`, `allow-save-rules`, `allow-save-reasons`, `allow-check-for-updates`, `allow-install-update`, `allow-get-appearance`, `allow-show-alert`.
+
+Settings is not maximizable, so it has no maximize permission.
+
+Plugins registered in `lib.rs` and used from Rust only (no webview permission): `tauri-plugin-log` sets up logging, `tauri-plugin-single-instance` focuses the main window when a second instance starts, `tauri-plugin-window-state` restores the main window's size and position, `tauri-plugin-dialog` shows file pickers and alerts, `tauri-plugin-opener` opens the help and key pages, `tauri-plugin-updater` checks for and installs updates.

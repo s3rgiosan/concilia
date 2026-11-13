@@ -196,3 +196,37 @@ fn only_the_maximizable_window_may_toggle_maximize() {
         "the Settings window is not maximizable"
     );
 }
+
+/// Every permission a capability file holds, as written in the file.
+fn all_permissions(capability: &str) -> Vec<String> {
+    let json: Value = serde_json::from_str(&read(capability)).unwrap();
+    json["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn the_wiring_doc_lists_every_permission_and_plugin() {
+    let wiring = read("../docs/wiring.md");
+    for capability in ["capabilities/main.json", "capabilities/settings.json"] {
+        for permission in all_permissions(capability) {
+            assert!(
+                wiring.contains(&format!("`{permission}`")),
+                "{capability}: docs/wiring.md does not list {permission}"
+            );
+        }
+    }
+    let lib = read("src/lib.rs");
+    let plugins = Regex::new(r"tauri_plugin_([a-z_]+)::").unwrap();
+    for plugin in plugins.captures_iter(&lib) {
+        let name = format!("tauri-plugin-{}", plugin[1].replace('_', "-"));
+        assert!(
+            wiring.contains(&format!("`{name}`")),
+            "docs/wiring.md does not mention {name}"
+        );
+    }
+}
