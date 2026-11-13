@@ -717,12 +717,14 @@ pub fn pending_update(updates: State<'_, Arc<UpdateManager>>) -> Option<UpdateIn
 }
 
 /// Downloads and installs the pending update, emitting `update-progress` along the way, then
-/// relaunches the app.
+/// relaunches the app. Refuses with a Busy error while any job runs.
 #[tauri::command]
 pub async fn install_update(
     app: AppHandle,
+    state: State<'_, Arc<AppState>>,
     updates: State<'_, Arc<UpdateManager>>,
 ) -> CommandResult<()> {
+    state.ensure_can_install_update()?;
     let emitter = app.clone();
     let progress = move |progress| {
         let _ = emitter.emit(UPDATE_PROGRESS_EVENT, progress);

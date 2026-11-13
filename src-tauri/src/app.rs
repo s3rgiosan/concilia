@@ -334,6 +334,18 @@ impl AppState {
         Ok(self.view())
     }
 
+    /// Refuses to install an update while any job runs, because the app restarts afterwards.
+    pub fn ensure_can_install_update(&self) -> CommandResult<()> {
+        if self.locks.busy() {
+            Err(CommandError::new(
+                ErrorKind::Busy,
+                "wait for the running job to finish before installing the update",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     fn ensure_idle(&self) -> CommandResult<()> {
         if self.locks.busy() {
             Err(CommandError::new(
@@ -526,6 +538,20 @@ mod tests {
         );
         assert_eq!(
             state.remove_service_account().unwrap_err().kind,
+            ErrorKind::Busy
+        );
+    }
+
+    #[test]
+    fn refuses_to_install_an_update_while_a_job_runs() {
+        let state = state();
+        assert!(state.ensure_can_install_update().is_ok());
+        let _job = state
+            .locks
+            .try_exclusive(&Period::parse("2030", "03").unwrap(), RunKind::Finalize)
+            .unwrap();
+        assert_eq!(
+            state.ensure_can_install_update().unwrap_err().kind,
             ErrorKind::Busy
         );
     }

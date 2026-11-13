@@ -11,7 +11,16 @@ let postponed: string | null = null;
  * Announces an available release and installs it on request, or hides it until the next launch
  * with Later. In the sidebar it is a compact card above the footer; in the detail area, a banner.
  */
-export function UpdateBanner({ placement, onError }: { placement: "sidebar" | "detail"; onError: (e: unknown) => void }) {
+export function UpdateBanner({
+  placement,
+  appBusy,
+  onError,
+}: {
+  placement: "sidebar" | "detail";
+  /** True while a job runs; the install restarts the app, so it waits. */
+  appBusy: boolean;
+  onError: (e: unknown) => void;
+}) {
   const { t } = useTranslation();
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [hidden, setHidden] = useState<string | null>(postponed);
@@ -44,7 +53,7 @@ export function UpdateBanner({ placement, onError }: { placement: "sidebar" | "d
           <span>{text}</span>
         </p>
         <div className="update-card__actions">
-          <button type="button" className="default" onClick={install} disabled={busy}>
+          <button type="button" className="default" onClick={install} disabled={busy || appBusy}>
             {label}
           </button>
           <button type="button" disabled={busy} onClick={later}>
@@ -61,7 +70,7 @@ export function UpdateBanner({ placement, onError }: { placement: "sidebar" | "d
       <button type="button" className="banner__action" disabled={busy} onClick={later}>
         {t("update.later")}
       </button>
-      <button type="button" className="banner__action" onClick={install} disabled={busy}>
+      <button type="button" className="banner__action" onClick={install} disabled={busy || appBusy}>
         {label}
       </button>
     </div>

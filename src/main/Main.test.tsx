@@ -453,6 +453,12 @@ describe("update banner", () => {
     expect(screen.getByRole("status").textContent).toContain("Concilia 9.9.12 is available.");
   });
 
+  it("disables Install while a job runs", async () => {
+    vi.mocked(pendingUpdate).mockResolvedValue({ version: "9.9.9", notes: null });
+    await renderMain(makeView({ busy: true }));
+    expect((await screen.findByRole("button", { name: "Install and Relaunch" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("shows the install progress and reports a failed install", async () => {
     const install = deferred<void>();
     vi.mocked(installUpdate).mockReturnValue(install.promise);

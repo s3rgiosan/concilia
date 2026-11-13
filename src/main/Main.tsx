@@ -637,7 +637,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
                 onRetry={refresh}
                 onNewMonth={() => setSheet("new-month")}
                 menu={monthMenu}
-                accessory={<UpdateBanner placement="sidebar" onError={setMessage} />}
+                accessory={<UpdateBanner placement="sidebar" appBusy={state?.busy === true} onError={setMessage} />}
               />
               {compact ? null : (
                 <ResizeHandle
@@ -656,7 +656,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
           ) : null}
         </Presence>
         <main className={`detail ${configured && reviewable && !runHere ? "detail--review" : ""}`}>
-          {showSidebar ? null : <UpdateBanner placement="detail" onError={setMessage} />}
+          {showSidebar ? null : <UpdateBanner placement="detail" appBusy={state?.busy === true} onError={setMessage} />}
           {setUp ? (
             <Banner tone="success" icon="check" onDismiss={() => setSetUp(false)}>
               {t("welcome.setUp")}

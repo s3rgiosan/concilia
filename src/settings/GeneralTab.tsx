@@ -58,7 +58,7 @@ export function GeneralTab({ state, save, onError }: PaneProps) {
           />
         </FormRow>
         <FormRow label={t("settings.general.versionLabel")} description={version}>
-          <UpdateCheck />
+          <UpdateCheck appBusy={state.busy} />
         </FormRow>
       </FormSection>
 
@@ -80,7 +80,7 @@ type CheckState =
   | { kind: "install_failed" };
 
 /** The Check Now button with its one-line result, or the install button once a release is found. */
-function UpdateCheck() {
+function UpdateCheck({ appBusy }: { appBusy: boolean }) {
   const { t } = useTranslation();
   const [state, setState] = useState<CheckState>({ kind: "idle" });
   const { busy, label, install } = useInstallUpdate(() => setState({ kind: "install_failed" }));
@@ -136,7 +136,7 @@ function UpdateCheck() {
         <span>{text}</span>
       </span>
       {state.kind === "available" ? (
-        <button type="button" onClick={install} disabled={busy}>
+        <button type="button" onClick={install} disabled={busy || appBusy}>
           {label}
         </button>
       ) : (

@@ -33,6 +33,7 @@ All notable changes to this project are documented in this file. Format follows 
 - A receipt file replaced by another file with the same name is read again, also after Reopen Month, so the new receipt no longer gets the old receipt's amount, vendor and date.
 - The Settings window holds the menu permissions that its pop-up menus need, such as the Language menu.
 - Menu shortcuts for the main window, such as Accept, Reject and Reconcile, do nothing while the Settings window has focus.
+- Install and Relaunch is disabled while a job runs, and the install command refuses with a busy error, so an update cannot restart the app during a job.
 
 ## [2.0.0] - 2026-11-13
 
