@@ -103,7 +103,9 @@ async fn renders_large_pages_within_the_pixel_cap_and_small_ones_at_full_resolut
     let small = String::from_utf8_lossy(&small).replace("[0 0 595 842]", "[0 0 216 576]");
     let small = file_in(&dir, "small.pdf", small.as_bytes());
     let (width, height) = png_size(&poppler.render_page(&small, 1, 300).await.unwrap());
-    assert_eq!((width, height), (900, 2400));
+    // Older poppler rounds a size that is exact in theory up by one pixel.
+    assert!((900..=901).contains(&width), "{width}x{height}");
+    assert!((2400..=2401).contains(&height), "{width}x{height}");
 }
 
 #[tokio::test]
