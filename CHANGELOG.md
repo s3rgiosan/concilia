@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- Reconcile Again stops with an error when it cannot delete the finalized marker, the match result or the extraction cache, so the month no longer stays Finalized after a run that looked successful.
 - The message for a finalized month names the Reopen Month action and no longer says Concilia is scanning, because it also shows for a refused review save and a refused rescan.
 - A Gemini rate limit, server error or unknown model name stops the run with an error that names the HTTP status, instead of finishing with every receipt unread. Concilia first tries again with a short wait, and sends no second request for the page image after an HTTP error.
 - A busy Google sign-in service (HTTP 429 or 5xx) no longer stops a run with a rejected service account: Concilia tries again a few times, waits as long as Google asks within a limit, and reports a network error when the problem continues.

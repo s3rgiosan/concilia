@@ -57,9 +57,6 @@ pub async fn reconcile(
         let previous: Option<MatchResult> = read_stored_lenient(&paths.dir, &paths.match_result());
         if clear_cache {
             let report = reset_period(&paths, &rules)?;
-            for warning in &report.warnings {
-                log::warn!("reset {}: {warning}", paths.prefix);
-            }
             // A finalized period's decisions now hold the paths its receipts moved back to.
             if report.finalized.is_some() {
                 return Ok(report.finalized);

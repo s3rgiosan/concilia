@@ -628,7 +628,6 @@ fn resetting_a_period_moves_receipts_back_and_deletes_derived_files() {
     let report = pipeline::reset_period(&paths, &[]).unwrap();
 
     assert_eq!(report.restored, 3);
-    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     let read = |name: &str| std::fs::read(receipts.join(name)).unwrap();
     assert_eq!(read("acme.pdf"), b"original");
     assert_eq!(read("acme-restored.pdf"), b"matched");
@@ -666,7 +665,6 @@ fn resetting_keeps_receipts_whose_names_differ_only_in_case() {
     let report = pipeline::reset_period(&paths, &[]).unwrap();
 
     assert_eq!(report.restored, 2);
-    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
     let read = |name: &str| std::fs::read(receipts.join(name)).unwrap();
     assert_eq!(read("Invoice.pdf"), b"acme");
     assert_eq!(read("invoice-restored.pdf"), b"globex");
@@ -724,6 +722,32 @@ fn resetting_stops_and_undoes_the_moves_when_a_receipt_cannot_move_back() {
     assert_nothing_reset(&paths);
 }
 
+#[test]
+fn resetting_stops_and_undoes_the_moves_when_the_marker_cannot_be_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = finalized_period(dir.path());
+    // A folder with a file in it cannot be deleted as a file.
+    std::fs::remove_file(paths.applied_marker()).unwrap();
+    write_file(&paths.applied_marker().join("blocker"), b"x");
+
+    let outcome = pipeline::reset_period(&paths, &[]);
+
+    assert!(matches!(outcome, Err(PipelineError::Io(_))), "{outcome:?}");
+    assert_nothing_reset(&paths);
+}
+
+#[test]
+fn resetting_reports_a_derived_file_that_cannot_be_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = finalized_period(dir.path());
+    std::fs::remove_file(paths.match_result()).unwrap();
+    write_file(&paths.match_result().join("blocker"), b"x");
+
+    let outcome = pipeline::reset_period(&paths, &[]);
+
+    assert!(matches!(outcome, Err(PipelineError::Io(_))), "{outcome:?}");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn reconciling_again_stops_when_a_sorted_folder_is_not_a_folder() {
@@ -746,7 +770,6 @@ fn resetting_an_empty_period_does_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let report = pipeline::reset_period(&period().paths(dir.path()), &[]).unwrap();
     assert_eq!(report.restored, 0);
-    assert!(report.warnings.is_empty());
 }
 
 #[tokio::test]

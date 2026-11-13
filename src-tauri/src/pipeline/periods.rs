@@ -185,8 +185,6 @@ fn pending_count(result: &MatchResult, paths: &PeriodPaths) -> usize {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ResetReport {
     pub restored: usize,
-    /// Derived files that could not be deleted.
-    pub warnings: Vec<String>,
     /// For a finalized period, its final result with the paths the receipts moved back to.
     pub finalized: Option<MatchResult>,
 }
@@ -284,7 +282,8 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
 /// receipts moved back to.
 ///
 /// A receipt that cannot move back stops the reset with an error. The moves already made are
-/// undone, and nothing is deleted, so no receipt is left behind in a status folder.
+/// undone, and nothing is deleted, so no receipt is left behind in a status folder. A marker,
+/// result or cache file that cannot be deleted also stops the reset with an error.
 pub fn reset_period(paths: &PeriodPaths, rules: &[Rule]) -> Result<ResetReport, PipelineError> {
     let mut warnings = Vec::new();
     let moves = restore_moves(paths, &mut warnings);
@@ -316,23 +315,24 @@ pub fn reset_period(paths: &PeriodPaths, rules: &[Rule]) -> Result<ResetReport, 
             return Err(with_stuck(error, &stuck));
         }
     }
-    let mut report = ResetReport {
-        restored: moves.len(),
-        warnings: Vec::new(),
-        finalized: kept.map(|(result, _)| result),
-    };
-    // The marker goes first: once it is gone, the reset counts as done.
-    for file in [
-        paths.applied_marker(),
-        paths.match_result(),
-        paths.receipts_cache(),
-    ] {
-        if let Err(error) = remove_if_exists(&file) {
-            report.warnings.push(format!("{}: {error}", file.display()));
+    // The marker goes first: once it is gone, the reset counts as done. A marker that stays
+    // puts the receipts back in their status folders.
+    let marker = paths.applied_marker();
+    if let Err(error) = remove_if_exists(&marker) {
+        let stuck = finalize::undo(&pinned);
+        if stuck.is_empty() {
+            journal::clear(paths);
         }
+        return Err(with_stuck(io(&marker, error), &stuck));
+    }
+    for file in [paths.match_result(), paths.receipts_cache()] {
+        remove_if_exists(&file).map_err(|error| io(&file, error))?;
     }
     journal::clear(paths);
-    Ok(report)
+    Ok(ResetReport {
+        restored: moves.len(),
+        finalized: kept.map(|(result, _)| result),
+    })
 }
 
 /// The review decisions of a finalized period as a draft, with the receipt paths that `moves`
