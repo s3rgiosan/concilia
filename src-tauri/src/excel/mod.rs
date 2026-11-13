@@ -143,8 +143,6 @@ fn plural((one, many): (&str, &str), n: usize) -> String {
     }
 }
 
-static PAREN_DETAIL: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\(([^)]+)\)").expect("pattern compiles"));
 static COUNTED: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"^([0-9]+) (receipts match name\+amount \(unknown currency\)|receipts match name\+amount|receipts match amount \(unknown currency\)|receipts match amount|fx receipts within (.+)|receipts match by filename)$",
@@ -152,11 +150,12 @@ static COUNTED: LazyLock<Regex> = LazyLock::new(|| {
     .expect("pattern compiles")
 });
 
+/// The text from the first `(` to the last `)` in a note, empty when there is none.
 fn detail(notes: &str) -> &str {
-    PAREN_DETAIL
-        .captures(notes)
-        .and_then(|c| c.get(1))
-        .map_or("", |m| m.as_str())
+    match (notes.find('('), notes.rfind(')')) {
+        (Some(open), Some(close)) if open < close => &notes[open + 1..close],
+        _ => "",
+    }
 }
 
 /// The report's language and the names of the no-receipt reasons.
@@ -451,6 +450,22 @@ pub fn write(sheets: &[Sheet], path: &Path) -> Result<(), XlsxError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_nested_parentheses_in_a_detail() {
+        let reasons = crate::model::default_reasons();
+        let labels = Labels {
+            language: Language::En,
+            reasons: &reasons,
+        };
+        let en = strings(Language::En);
+        assert_eq!(
+            format_notes("rule_match (ACME (EU))", en, &labels),
+            "Rule match (ACME (EU))"
+        );
+        assert_eq!(detail("rule_match ()"), "");
+        assert_eq!(detail("rule_match"), "");
+    }
 
     #[test]
     fn labels_note_codes() {

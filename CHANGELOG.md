@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- A rule match note with nested parentheses, such as a vendor named `ACME (EU)`, shows the whole vendor name in the report and in the review.
 - A rules or reasons file that does not parse is no longer moved aside and replaced by an empty or default list. Settings shows an error and refuses to save it, and reconcile, scan, finalize, reopen and report stop with an error until you fix or remove the file.
 - A receipt rule with an empty vendor or description keyword, which could come from an edited rules file, no longer matches every receipt or transaction. Concilia ignores such rules when it loads them.
 - Reconcile no longer drops a transaction from a second statement that has the same date and amount as one in the first. Transactions are numbered across all statements, and a row is skipped only when its date, amount and description already occur, as Add Statements does. The IDs of a month with several statements change on the next Reconcile Again, so review decisions on its later statements need to be made again.

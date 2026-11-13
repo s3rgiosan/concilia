@@ -37,7 +37,9 @@ export function matchReason(notes: string, t: TFunction, reasonName: (id: string
   if (isNoReceipt(notes)) {
     return reasonName(notes);
   }
-  const detail = notes.match(/\(([^)]+)\)/)?.[1] ?? "";
+  const open = notes.indexOf("(");
+  const close = notes.lastIndexOf(")");
+  const detail = open !== -1 && open < close ? notes.slice(open + 1, close) : "";
   if (notes.startsWith("fx_match")) {
     return t("review.matchReason.fxMatch", { detail });
   }

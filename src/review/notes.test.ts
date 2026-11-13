@@ -31,6 +31,10 @@ describe("matchReason", () => {
     expect(matchReason("rule_match_amount (acme)", t)).toBe("Rule match, different amount (acme)");
   });
 
+  it("keeps nested parentheses in the vendor of a rule match", () => {
+    expect(matchReason("rule_match (acme (eu))", t)).toBe("Rule match (acme (eu))");
+  });
+
   it("describes a rule or FX match without detail", () => {
     expect(matchReason("rule_match", t)).toBe("Rule match ()");
     expect(matchReason("fx_match", t)).toBe("Foreign-currency match ()");
