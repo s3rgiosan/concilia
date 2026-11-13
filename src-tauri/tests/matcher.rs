@@ -776,6 +776,35 @@ fn no_receipt_rule(id: &str, description: &str, reason: &str) -> Rule {
 }
 
 #[test]
+fn a_receipt_rule_without_a_vendor_keyword_matches_nothing() {
+    let rules = [rule("1", "", "acme")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "ACME CORP", -1000)],
+        &[eur("/r/other.pdf", 1000)],
+        &rules,
+    );
+    let t = &result.transactions[0];
+    assert_eq!(t.notes, "amount_match");
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "ACME CORP", -1000)],
+        &[eur("/r/other.pdf", 5000)],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].status, Status::Unmatched);
+}
+
+#[test]
+fn a_receipt_rule_without_a_description_keyword_matches_nothing() {
+    let rules = [rule("1", "other", " ")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "ACME CORP", -1000)],
+        &[eur("/r/other.pdf", 5000)],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].status, Status::Unmatched);
+}
+
+#[test]
 fn a_no_receipt_rule_matches_the_description_without_a_receipt() {
     let rules = [no_receipt_rule("1", "trf", "transfer")];
     let result = match_transactions(

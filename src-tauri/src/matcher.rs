@@ -111,7 +111,7 @@ impl LoweredReceipt {
     }
 
     fn has_keyword(&self, keyword: &str) -> bool {
-        self.vendor.contains(keyword) || self.filename.contains(keyword)
+        !keyword.is_empty() && (self.vendor.contains(keyword) || self.filename.contains(keyword))
     }
 }
 
@@ -510,9 +510,10 @@ pub fn match_transactions(
             .into_iter()
             .map(|rule| LoweredRule {
                 rule,
-                vendor: rule.receipt_vendor.to_lowercase(),
-                description: rule.transaction_description.to_lowercase(),
+                vendor: rule.receipt_vendor.trim().to_lowercase(),
+                description: rule.transaction_description.trim().to_lowercase(),
             })
+            .filter(|r| !r.vendor.is_empty() && !r.description.is_empty())
             .collect();
         let lowered_receipts: Vec<LoweredReceipt> =
             receipts.iter().map(LoweredReceipt::new).collect();

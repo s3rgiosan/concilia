@@ -245,10 +245,29 @@ pub struct InvalidRule {
 }
 
 impl RulesStore {
+    /// Loads the rules. A rule without the keywords it needs is left out and logged; the file
+    /// keeps it until the next save.
     pub fn load(path: &Path) -> Result<RulesStore, ConfigError> {
+        let stored: Vec<Rule> = load_or_recover(path)?.unwrap_or_default();
+        let rules = stored
+            .into_iter()
+            .filter(|rule| {
+                let has_vendor =
+                    rule.no_receipt.is_some() || !rule.receipt_vendor.trim().is_empty();
+                let valid = has_vendor && !rule.transaction_description.trim().is_empty();
+                if !valid {
+                    log::warn!(
+                        "{}: ignoring rule {:?} without keywords",
+                        path.display(),
+                        rule.id
+                    );
+                }
+                valid
+            })
+            .collect();
         Ok(RulesStore {
             path: path.to_path_buf(),
-            rules: load_or_recover(path)?.unwrap_or_default(),
+            rules,
         })
     }
 
@@ -523,6 +542,28 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(json[0]["receiptVendor"], "ACME");
+    }
+
+    #[test]
+    fn loading_drops_rules_without_keywords() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(RULES_FILE_NAME);
+        std::fs::write(
+            &path,
+            r#"[
+                {"id":"1","receiptVendor":"","transactionDescription":"ACME"},
+                {"id":"2","receiptVendor":"ACME","transactionDescription":" "},
+                {"id":"3","receiptVendor":"ACME","transactionDescription":"ACME CORP"},
+                {"id":"4","transactionDescription":"TRF","noReceipt":"transfer"},
+                {"id":"5","transactionDescription":"","noReceipt":"transfer"}
+            ]"#,
+        )
+        .unwrap();
+
+        let store = RulesStore::load(&path).unwrap();
+
+        let ids: Vec<&str> = store.rules().iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["3", "4"]);
     }
 
     #[test]

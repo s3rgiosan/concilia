@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- A receipt rule with an empty vendor or description keyword, which could come from an edited rules file, no longer matches every receipt or transaction. Concilia ignores such rules when it loads them.
 - Reconcile no longer drops a transaction from a second statement that has the same date and amount as one in the first. Transactions are numbered across all statements, and a row is skipped only when its date, amount and description already occur, as Add Statements does. The IDs of a month with several statements change on the next Reconcile Again, so review decisions on its later statements need to be made again.
 - A receipt that one transaction takes no longer stays offered to a transaction in review. The review transaction keeps its other candidates, or becomes unmatched when none is left, and no receipt counts twice in the summary.
 - Export Report lists a receipt you assigned in the review only on the Matched sheet, and a receipt you removed from a match on the Unmatched sheet. The Unmatched total follows the same decisions.
