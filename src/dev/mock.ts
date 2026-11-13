@@ -13,6 +13,8 @@ import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import type {
   AddStatementsResult,
+  AlertChoice,
+  AlertRequest,
   AppStateView,
   Draft,
   Missing,
@@ -29,6 +31,7 @@ import type {
   Transaction,
   UpdateInfo,
 } from "../lib/tauri";
+import { mergeDraft, relPaths } from "../review/effective";
 
 const AVAILABLE_UPDATE: UpdateInfo = { version: "2.1.0", notes: "Fabricated release notes." };
 
@@ -83,7 +86,19 @@ const REFUSED_FILES: RefusedFile[] = [
   { file: `${ROOT}/2030/03/receipts/notes.pdf`, rel_path: "2030/03/receipts/notes.pdf", code: "unrecognized_file" },
 ];
 
-function reviewData(): ReviewData {
+/** The transactions an Add Statements run brings in: two matched and one that needs a decision. */
+function addedTransactions(): Transaction[] {
+  const globexC = receipt("globex-c.pdf", 1500, "Globex", "2030-03-20");
+  const shop = receipt("example-shop.pdf", 900, "Example Shop", "2030-03-22");
+  return [
+    tx(8, "2030-03-20", "GLOBEX ONLINE", -1500, "MATCHED", [globexC], "name_amount_match"),
+    tx(9, "2030-03-22", "EXAMPLE SHOP", -900, "MATCHED", [shop], "name_amount_match"),
+    tx(10, "2030-03-25", "HOOLI CAFE", -1800, "UNMATCHED", [], ""),
+  ];
+}
+
+/** The review data of the sample month; `withAdded` includes the transactions of an added statement. */
+function reviewData(withAdded = false): ReviewData {
   const acme = receipt("acme-invoice.pdf", 1000, "ACME Corp", "2030-03-01");
   const globexA = receipt("globex-a.pdf", 2500, "Globex", "2030-03-03");
   const globexB = receipt("globex-b.pdf", 2500, "Globex", "2030-03-20");
@@ -101,6 +116,7 @@ function reviewData(): ReviewData {
       tx(5, "2030-03-12", "INITECH", -4800, "REVIEW", [initech], "fx_match (USD ±10%)"),
       tx(6, "2030-03-15", "TRANSFER FROM ACME", 50000, "UNMATCHED", [], ""),
       tx(7, "2030-03-17", "CONTOSO DELIVERY", -2350, "MATCHED", [contosoMeal, contosoDelivery], "manual_match"),
+      ...(withAdded ? addedTransactions() : []),
     ],
     unmatched_receipts: [hooli, unreadable],
     refused_files: [],
@@ -111,8 +127,8 @@ function reviewData(): ReviewData {
 }
 
 /** Transactions still needing a decision once `draft` applies, as the backend counts them. */
-function pendingWith(draft: Draft): number {
-  return reviewData().transactions.filter((t) => (draft[t.id]?.status ?? t.status) !== "MATCHED").length;
+function pendingWith(draft: Draft, withAdded = false): number {
+  return reviewData(withAdded).transactions.filter((t) => (draft[t.id]?.status ?? t.status) !== "MATCHED").length;
 }
 
 /** An SVG page standing in for a receipt file, titled with its file name. */
@@ -137,7 +153,7 @@ function monthKey(now: Date, offset: number): string {
 function initialPeriods(scenario: string, now: Date): Map<string, PeriodSummary> {
   const first: Record<string, PeriodState> = { resume: "in_review", refused: "in_review", applied: "finalized" };
   const rows: [number, PeriodState, number, number, number][] = [
-    [1, first[scenario] ?? "ready", 38, first[scenario] ? 42 : 0, scenario === "resume" ? pendingWith({}) : 0],
+    [1, first[scenario] ?? "ready", 38, first[scenario] ? reviewData().transactions.length : 0, scenario === "resume" ? pendingWith({}) : 0],
     [2, "in_review", 31, 40, 4],
     [3, "finalized", 27, 35, 0],
     [4, "finalized", 22, 30, 0],
@@ -153,10 +169,19 @@ function initialPeriods(scenario: string, now: Date): Map<string, PeriodSummary>
   return periods;
 }
 
-/** Replays a run's progress over a few seconds, stopping when `cancelled` turns true. */
-async function replay(channel: Channel<RunEvent>, kind: "reconcile" | "scan" | "add", cancelled: () => boolean, slow = false): Promise<void> {
+/**
+ * Replays a run's progress over a few seconds, stopping when `cancelled` turns true. With
+ * `failsAt` the run throws `error` as soon as that step is reported.
+ */
+async function replay(
+  channel: Channel<RunEvent>,
+  kind: "reconcile" | "scan" | "add",
+  cancelled: () => boolean,
+  options: { slow?: boolean; statements?: number; failsAt?: RunEvent["step"]; error?: unknown } = {},
+): Promise<void> {
+  const { slow = false, statements = 1, failsAt, error } = options;
   const send = (event: RunEvent) => channel.onmessage(event);
-  const steps: RunEvent[] = kind === "scan" ? [] : [{ step: "parsing", count: kind === "add" ? 1 : 2 }];
+  const steps: RunEvent[] = kind === "scan" ? [] : [{ step: "parsing", count: statements }];
   steps.push({ step: "receipts_found", count: 38 });
   const stride = slow ? 1 : 2;
   for (let current = 0; current <= 38; current += stride) {
@@ -172,9 +197,57 @@ async function replay(channel: Channel<RunEvent>, kind: "reconcile" | "scan" | "
       throw { kind: "cancelled", message: "cancelled" };
     }
     send(event);
+    if (event.step === failsAt) {
+      throw error;
+    }
     const extractDelay = slow ? 2000 : 120;
     await delay(event.step === "extracting" ? extractDelay : 400, null);
   }
+}
+
+/**
+ * Stands in for the native alert sheet: a modal dialog with the default button, the optional
+ * alternate button and Cancel. Resolves with the button chosen.
+ */
+function inPageAlert(request: AlertRequest): Promise<AlertChoice> {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("role", "alertdialog");
+    dialog.style.cssText = "max-width:340px;padding:20px;border:0.5px solid rgb(128 128 128 / 40%);border-radius:12px;font:13px -apple-system,sans-serif;";
+    const title = document.createElement("strong");
+    title.textContent = request.title;
+    const message = document.createElement("p");
+    message.textContent = request.message;
+    message.style.cssText = "white-space:pre-wrap;margin:8px 0 16px;";
+    const buttons = document.createElement("div");
+    buttons.style.cssText = "display:flex;flex-direction:column;gap:6px;";
+    const finish = (choice: AlertChoice) => {
+      dialog.close();
+      dialog.remove();
+      resolve(choice);
+    };
+    const choices: [string | undefined, AlertChoice][] = [
+      [request.confirm, "confirm"],
+      [request.alternate ?? undefined, "alternate"],
+      [request.cancel, "cancel"],
+    ];
+    for (const [label, choice] of choices) {
+      if (label) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", () => finish(choice));
+        buttons.append(button);
+      }
+    }
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      finish(request.cancel ? "cancel" : "confirm");
+    });
+    dialog.append(title, message, buttons);
+    document.body.append(dialog);
+    dialog.showModal();
+  });
 }
 
 export function install(): void {
@@ -211,7 +284,19 @@ export function install(): void {
 
   let cancelRequested = false;
   let draft: Draft = {};
+  /** Whether Add Statements ran, so the review holds the added statement's transactions. */
+  let withAdded = false;
+  /** The transactions as finalized, with the decisions applied; null while the month is open. */
+  let settled: Transaction[] | null = null;
+  /** The decisions finalize applied, which reopen puts back. */
+  let kept: Draft = {};
   const periods = initialPeriods(scenario, new Date());
+
+  /** The review data as it stands: the original, or the finalized result. */
+  function currentReview(): ReviewData {
+    const data = reviewData(withAdded);
+    return settled ? { ...data, transactions: settled } : data;
+  }
 
   /** Sets the status of the month named by `args`, creating its entry when it has none. */
   function setPeriod(a: Record<string, unknown>, patch: Partial<PeriodSummary>) {
@@ -301,27 +386,38 @@ export function install(): void {
         }
         case "get_review":
           return {
-            ...reviewData(),
-            statements: [{ file: "extrato-2030-03.pdf", bank: "cgd", transactions: 6, added_at: "2030-04-01T09:00:00Z" }],
+            ...currentReview(),
+            statements: [
+              { file: "extrato-2030-03.pdf", bank: "cgd", transactions: 7, added_at: "2030-04-01T09:00:00Z" },
+              ...(withAdded ? [{ file: "extrato-2030-03-b.pdf", bank: "cgd" as const, transactions: addedTransactions().length, added_at: "2030-04-02T09:00:00Z" }] : []),
+            ],
             refused_files: scenario === "refused" ? REFUSED_FILES : [],
           };
         case "get_draft":
           return draft;
         case "save_draft":
           draft = a.draft as Draft;
-          setPeriod(a, { pending: pendingWith(draft) });
+          setPeriod(a, { pending: pendingWith(draft, withAdded) });
           return delay(150, null);
-        case "finalize":
+        case "finalize": {
+          const data = reviewData(withAdded);
+          settled = mergeDraft(data.transactions, draft, relPaths(data));
+          kept = draft;
           draft = {};
           setPeriod(a, { status: "finalized", pending: 0 });
           return delay(600, null);
+        }
         case "reopen":
-          setPeriod(a, { status: "in_review", pending: pendingWith(draft) });
-          return delay(400, { restored: 27, keptDecisions: 3 });
+          draft = kept;
+          kept = {};
+          settled = null;
+          setPeriod(a, { status: "in_review", pending: pendingWith(draft, withAdded) });
+          return delay(400, { restored: 27, keptDecisions: Object.keys(draft).length });
         case "rescan_receipt":
         case "rescan_reimbursement": {
           const relPath = String(a.relPath);
-          const all = [...reviewData().transactions.flatMap((t) => t.receipt_meta), ...reviewData().unmatched_receipts, ...reviewData().reimbursements];
+          const data = reviewData(withAdded);
+          const all = [...data.transactions.flatMap((t) => t.receipt_meta), ...data.unmatched_receipts, ...data.reimbursements];
           const found = all.find((r) => r.rel_path === relPath);
           return delay(900, found ? { ...found, amount_cents: found.amount_cents ?? 1500, confidence: "high", currency: found.currency ?? "EUR" } : null);
         }
@@ -333,35 +429,42 @@ export function install(): void {
         case "scan_receipts":
           cancelRequested = false;
           return (async () => {
-            await replay(a.onEvent as Channel<RunEvent>, cmd === "scan_receipts" ? "scan" : "reconcile", () => cancelRequested, scenario === "slow");
-            if (scenario === "run-error") {
-              throw { kind: "unauthorized", message: "token exchange failed (400)" };
-            }
+            const runError = scenario === "run-error";
+            await replay(a.onEvent as Channel<RunEvent>, cmd === "scan_receipts" ? "scan" : "reconcile", () => cancelRequested, {
+              slow: scenario === "slow",
+              statements: Array.isArray(a.statements) ? a.statements.length : 1,
+              failsAt: runError ? "extracting" : undefined,
+              error: { kind: "unauthorized", message: "token exchange failed (400)" },
+            });
+            const summary = { ...SUMMARY, totalTransactions: reviewData(withAdded).transactions.length };
             setPeriod(a, {
               status: "in_review",
               receipts: SUMMARY.totalReceipts,
-              transactions: SUMMARY.totalTransactions,
-              pending: pendingWith(draft),
+              transactions: summary.totalTransactions,
+              pending: pendingWith(draft, withAdded),
             });
             return cmd === "scan_receipts"
               ? {
-                  summary: SUMMARY,
+                  summary,
                   dropped_decisions: [{ txId: "tx-003-2030-03-04--2500", description: "GLOBEX ONLINE", removedReceiptFiles: ["globex.pdf"] }],
                   new_receipts: 3,
                   newly_matched: 1,
                 }
-              : SUMMARY;
+              : summary;
           })();
         case "add_statements":
           cancelRequested = false;
           return (async (): Promise<AddStatementsResult> => {
-            await replay(a.onEvent as Channel<RunEvent>, "add", () => cancelRequested);
-            if (scenario === "run-error") {
-              throw { kind: "parse", message: "no rows match the CGD layout" };
-            }
-            setPeriod(a, { transactions: SUMMARY.totalTransactions + 3, pending: pendingWith(draft) + 1 });
+            await replay(a.onEvent as Channel<RunEvent>, "add", () => cancelRequested, {
+              statements: Array.isArray(a.statements) ? a.statements.length : 1,
+              failsAt: scenario === "run-error" ? "parsing" : undefined,
+              error: { kind: "parse", message: "no rows match the CGD layout" },
+            });
+            withAdded = true;
+            const total = reviewData(true).transactions.length;
+            setPeriod(a, { transactions: total, pending: pendingWith(draft, true) });
             return {
-              summary: { ...SUMMARY, totalTransactions: SUMMARY.totalTransactions + 3, matched: SUMMARY.matched + 2, unmatched: SUMMARY.unmatched + 1 },
+              summary: { ...SUMMARY, totalTransactions: total, matched: SUMMARY.matched + 2, unmatched: SUMMARY.unmatched + 1 },
               added: 3,
               duplicates_skipped: 1,
               newly_matched: 2,
@@ -396,8 +499,7 @@ export function install(): void {
             reduce_transparency: params.get("reduce-transparency") === "1",
           };
         case "show_alert": {
-          const request = a.request as { title: string; message: string };
-          return window.confirm(`${request.title}\n\n${request.message}`) ? "confirm" : "cancel";
+          return inPageAlert(a.request as AlertRequest);
         }
         case "plugin:app|version":
           return "2.0.0";
@@ -421,4 +523,11 @@ export function install(): void {
     },
     { shouldMockEvents: true },
   );
+
+  // The mock event bus looks a listener up by `id`, but unlisten sends `eventId`, so a removed
+  // listener would stay registered and its callback would be missing when the next event fires.
+  const ipc = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args?: Record<string, unknown>, options?: unknown) => Promise<unknown> } }).__TAURI_INTERNALS__;
+  const invokeMock = ipc.invoke;
+  ipc.invoke = (cmd, args, options) =>
+    invokeMock(cmd, cmd === "plugin:event|unlisten" && args ? { ...args, id: args.eventId } : args, options);
 }
