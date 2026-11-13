@@ -286,6 +286,14 @@ mod tests {
 
     const DIR: &str = "/p/receipts";
 
+    /// `rel` below `DIR`, joined with the separator of the platform.
+    fn at(rel: &str) -> String {
+        let path = rel
+            .split('/')
+            .fold(PathBuf::from(DIR), |path, part| path.join(part));
+        path.to_string_lossy().into_owned()
+    }
+
     fn plan_with(txs: &[Transaction], unmatched: &[ReceiptMeta], on_disk: &[&str]) -> FinalizePlan {
         let on_disk: HashSet<PathBuf> = on_disk.iter().map(PathBuf::from).collect();
         plan(
@@ -329,21 +337,12 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(
-            p.transactions[0].receipt_files,
-            ["/p/receipts/_matched/a.pdf"]
-        );
-        assert_eq!(
-            p.transactions[0].receipt_meta[0].file,
-            "/p/receipts/_matched/a.pdf"
-        );
-        assert_eq!(p.unmatched_receipts[0].file, "/p/receipts/_unmatched/c.pdf");
-        assert_eq!(p.receipts_by_status.matched, ["/p/receipts/_matched/a.pdf"]);
-        assert_eq!(p.receipts_by_status.review, ["/p/receipts/_review/b.pdf"]);
-        assert_eq!(
-            p.receipts_by_status.unmatched,
-            ["/p/receipts/_unmatched/c.pdf"]
-        );
+        assert_eq!(p.transactions[0].receipt_files, [at("_matched/a.pdf")]);
+        assert_eq!(p.transactions[0].receipt_meta[0].file, at("_matched/a.pdf"));
+        assert_eq!(p.unmatched_receipts[0].file, at("_unmatched/c.pdf"));
+        assert_eq!(p.receipts_by_status.matched, [at("_matched/a.pdf")]);
+        assert_eq!(p.receipts_by_status.review, [at("_review/b.pdf")]);
+        assert_eq!(p.receipts_by_status.unmatched, [at("_unmatched/c.pdf")]);
     }
 
     #[test]
@@ -380,9 +379,9 @@ mod tests {
             &p.transactions[0].receipt_files,
             &p.transactions[1].receipt_files,
         ] {
-            assert_eq!(files, &["/p/receipts/_matched/a.pdf"]);
+            assert_eq!(files, &[at("_matched/a.pdf")]);
         }
-        assert_eq!(p.unmatched_receipts[0].file, "/p/receipts/_matched/a.pdf");
+        assert_eq!(p.unmatched_receipts[0].file, at("_matched/a.pdf"));
     }
 
     #[test]
@@ -465,10 +464,7 @@ mod tests {
         let txs = [tx("t1", Status::Matched, &["/p/receipts/_matched/a.pdf"])];
         let p = plan_with(&txs, &[], &["/p/receipts/_matched/a.pdf"]);
         assert!(p.moves.is_empty());
-        assert_eq!(
-            p.transactions[0].receipt_files,
-            ["/p/receipts/_matched/a.pdf"]
-        );
+        assert_eq!(p.transactions[0].receipt_files, [at("_matched/a.pdf")]);
     }
 
     #[test]
@@ -493,10 +489,7 @@ mod tests {
             |f| f != "/etc/secret.pdf",
             |p| p == Path::new("/p/receipts/a.pdf"),
         );
-        assert_eq!(
-            p.transactions[0].receipt_files,
-            ["/p/receipts/_matched/a.pdf"]
-        );
+        assert_eq!(p.transactions[0].receipt_files, [at("_matched/a.pdf")]);
         assert_eq!(p.moves.len(), 1);
     }
 

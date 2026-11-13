@@ -108,9 +108,8 @@ mod tests {
         let found: Vec<String> = walk(r)
             .into_iter()
             .map(|p| {
-                p.strip_prefix(&format!("{}/", r.display()))
-                    .unwrap()
-                    .to_string()
+                let relative = Path::new(&p).strip_prefix(r).unwrap();
+                relative.to_string_lossy().replace('\\', "/")
             })
             .collect();
         assert_eq!(

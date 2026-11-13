@@ -76,12 +76,16 @@ pub fn stored_path(dir: &Path, file: &str) -> String {
 }
 
 /// The absolute path of a stored `file` in the period folder `dir`. An empty or absolute path
-/// stays as it is.
+/// stays as it is. Each part of the stored path joins with the separator of the platform, so
+/// the result equals the paths that a folder walk returns.
 pub fn resolved_path(dir: &Path, file: &str) -> String {
     if file.is_empty() || Path::new(file).is_absolute() {
         return file.to_string();
     }
-    dir.join(file).to_string_lossy().into_owned()
+    let path = file
+        .split('/')
+        .fold(dir.to_path_buf(), |path, part| path.join(part));
+    path.to_string_lossy().into_owned()
 }
 
 /// `value` with its paths resolved in the period folder `dir`.
@@ -124,6 +128,7 @@ pub fn write_stored<T: Serialize + StoredPaths + Clone>(
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
 
     #[test]
     fn stores_paths_inside_the_period_relative_to_it() {
@@ -134,9 +139,12 @@ mod tests {
         );
         assert_eq!(stored_path(dir, "/other/acme.pdf"), "/other/acme.pdf");
         assert_eq!(stored_path(dir, ""), "");
+        let expected: PathBuf = ["/moved/2030/03", "receipts", "sub", "acme.pdf"]
+            .iter()
+            .collect();
         assert_eq!(
             resolved_path(Path::new("/moved/2030/03"), "receipts/sub/acme.pdf"),
-            "/moved/2030/03/receipts/sub/acme.pdf"
+            expected.to_string_lossy()
         );
         assert_eq!(resolved_path(dir, "/other/acme.pdf"), "/other/acme.pdf");
         assert_eq!(resolved_path(dir, ""), "");
