@@ -35,7 +35,8 @@ const CACHE_SAVE_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Parses the statements (or reuses `transactions.json` when there are none), extracts and
 /// matches the receipts, extracts reimbursements and writes the report. `clear_cache` first
-/// moves finalized receipts back and extracts everything again.
+/// moves finalized receipts back and extracts everything again. Without `clear_cache`, a
+/// finalized period is refused, because its receipts are in the status folders.
 pub async fn reconcile(
     ctx: &RunContext<'_>,
     statements: &[StatementFile],
@@ -43,6 +44,9 @@ pub async fn reconcile(
 ) -> Result<Summary, PipelineError> {
     let paths = ctx.paths.clone();
     off_thread(move || {
+        if !clear_cache && paths.applied_marker().exists() {
+            return Err(PipelineError::Finalized);
+        }
         create_dir(&paths.docs)?;
         create_dir(&paths.receipts)?;
         if clear_cache {

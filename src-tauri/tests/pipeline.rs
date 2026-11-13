@@ -838,6 +838,33 @@ async fn scanning_a_finalized_period_is_refused() {
 }
 
 #[tokio::test]
+async fn reconciling_a_finalized_period_without_clearing_the_cache_is_refused() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    write_file(&h.paths.applied_marker(), b"2030-04-01T00:00:00Z");
+    let cache_before = std::fs::read(h.paths.receipts_cache()).unwrap();
+    let result_before = std::fs::read(h.paths.match_result()).unwrap();
+    h.extractor.take_calls();
+
+    let error = pipeline::reconcile(&h.ctx(), &[], false).await.unwrap_err();
+
+    assert_eq!(error, PipelineError::Finalized);
+    assert_eq!(h.extractor.call_count(), 0);
+    assert_eq!(
+        std::fs::read(h.paths.receipts_cache()).unwrap(),
+        cache_before
+    );
+    assert_eq!(
+        std::fs::read(h.paths.match_result()).unwrap(),
+        result_before
+    );
+    assert!(h.paths.applied_marker().exists());
+}
+
+#[tokio::test]
 async fn scanning_drops_decisions_whose_receipts_disappeared() {
     let h = Harness::new();
     let statement = h.standard();
@@ -1765,6 +1792,43 @@ async fn rescanning_a_reimbursement_creates_its_file() {
         [receipt_meta(&taxi.to_string_lossy(), 1500, "TAXI CO")]
     );
     assert!(!paths.receipts_cache().exists());
+}
+
+#[tokio::test]
+async fn rescanning_in_a_finalized_period_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (paths, _, _) = rescan_fixture(dir.path());
+    let taxi = paths.reimbursements.join("taxi.jpg");
+    write_file(&taxi, b"taxi");
+    write_file(&paths.applied_marker(), b"2030-04-01T00:00:00Z");
+    let cache_before = std::fs::read(paths.receipts_cache()).unwrap();
+    let result_before = std::fs::read(paths.match_result()).unwrap();
+    let extractor = FakeExtractor::new();
+    extractor.knows("acme.pdf", 1000, "ACME");
+    extractor.knows("taxi.jpg", 1500, "TAXI CO");
+    let locks = PeriodLocks::new();
+
+    for (kind, relative) in [
+        (RescanKind::Receipt, "2030/03/receipts/acme.pdf"),
+        (RescanKind::Reimbursement, "2030/03/reimbursements/taxi.jpg"),
+    ] {
+        let file = pipeline::resolve_period_file(&paths, kind, relative).unwrap();
+        let error = pipeline::rescan(
+            &paths,
+            &extractor,
+            kind,
+            &file,
+            &locks.write_lock(&period()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, PipelineError::Finalized, "{relative}");
+    }
+
+    assert_eq!(extractor.call_count(), 0);
+    assert_eq!(std::fs::read(paths.receipts_cache()).unwrap(), cache_before);
+    assert_eq!(std::fs::read(paths.match_result()).unwrap(), result_before);
+    assert!(!paths.reimbursements_cache().exists());
 }
 
 #[tokio::test]

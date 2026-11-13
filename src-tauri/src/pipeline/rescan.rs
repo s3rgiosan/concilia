@@ -95,7 +95,8 @@ fn same_file(stored: &str, target: &PeriodFile) -> bool {
 }
 
 /// Extracts one receipt again and stores the result. The caller holds the file's rescan
-/// lock; `write_lock` serializes the JSON updates with other rescans of the period.
+/// lock; `write_lock` serializes the JSON updates with other rescans of the period. A
+/// finalized period is refused. The rescan lock keeps Finalize and Reopen out until the end.
 pub async fn rescan(
     paths: &PeriodPaths,
     extractor: &dyn ReceiptExtractor,
@@ -103,6 +104,10 @@ pub async fn rescan(
     file: &PeriodFile,
     write_lock: &tokio::sync::Mutex<()>,
 ) -> Result<ReceiptMeta, PipelineError> {
+    let marker = paths.applied_marker();
+    if off_thread(move || marker.exists()).await? {
+        return Err(PipelineError::Finalized);
+    }
     let extracted = tokio::time::timeout(RESCAN_TIMEOUT, extractor.extract(&file.canonical))
         .await
         .map_err(|_| {
