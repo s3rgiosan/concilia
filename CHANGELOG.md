@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. Format follows 
 ### Fixed
 
 - Finalize, Reopen Month and Reconcile Again keep both receipts when two file names differ only in letter case, and a move never replaces a file that already exists.
+- Reconcile and Reconcile Again keep a receipt assigned by hand in the review away from other transactions, so one receipt no longer ends up on two transactions.
 - A review decision cannot be lost to a job that runs on the month at the same time: a save that a running job refuses is tried again until the job ends, Reconcile Again saves pending decisions before it starts, and a finalized month refuses draft saves.
 
 ## [2.0.0] - 2026-11-13

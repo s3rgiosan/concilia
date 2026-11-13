@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use super::draft::{clean_saved_draft, match_keeping_draft};
+use super::draft::{clean_saved_draft, match_keeping_draft, match_with_draft};
 use super::report::write_report;
 use super::{
     check_statement, create_dir, not_pdf, off_thread, read_cache, read_statements, readable,
@@ -19,9 +19,8 @@ use crate::dates::time_now_iso;
 use crate::error::ErrorKind;
 use crate::extract::{extract_all_observed, ExtractProgress};
 use crate::fsutil::{read_json_lenient, read_json_opt, write_json, FsError};
-use crate::matcher::match_transactions;
 use crate::model::{
-    DroppedDecision, MatchResult, RawTransaction, ReceiptMeta, Rule, StatementRecord,
+    Draft, DroppedDecision, MatchResult, RawTransaction, ReceiptMeta, Rule, StatementRecord,
     StatementTransaction, Status, Summary,
 };
 use crate::period::PeriodPaths;
@@ -43,19 +42,22 @@ pub async fn reconcile(
     clear_cache: bool,
 ) -> Result<Summary, PipelineError> {
     let paths = ctx.paths.clone();
-    off_thread(move || {
+    // The previous result is read before the reset deletes it, so the draft's receipt claims
+    // still apply to the new match.
+    let previous = off_thread(move || {
         if !clear_cache && paths.applied_marker().exists() {
             return Err(PipelineError::Finalized);
         }
         create_dir(&paths.docs)?;
         create_dir(&paths.receipts)?;
+        let previous: Option<MatchResult> = read_json_lenient(&paths.match_result());
         if clear_cache {
             let report = reset_period(&paths);
             for warning in &report.warnings {
                 log::warn!("reset {}: {warning}", paths.prefix);
             }
         }
-        Ok::<_, PipelineError>(())
+        Ok::<_, PipelineError>(previous)
     })
     .await??;
 
@@ -89,7 +91,8 @@ pub async fn reconcile(
         .await??
     };
 
-    let (receipt_count, result) = extract_and_match(ctx, transactions, clear_cache).await?;
+    let (receipt_count, result) =
+        extract_and_match(ctx, transactions, previous, clear_cache).await?;
     let reimbursements = extract_reimbursements(ctx, clear_cache).await?;
     ctx.check_cancelled()?;
 
@@ -468,20 +471,23 @@ async fn match_and_store(
     .map_err(PipelineError::from)
 }
 
-/// Extracts the period's receipts, matches them and writes `match-result.json`. Returns the
-/// number of receipts and the result.
+/// Extracts the period's receipts, matches them and writes `match-result.json`. A receipt that
+/// the saved draft claims through the `previous` result goes to no other transaction. Returns
+/// the number of receipts and the result.
 async fn extract_and_match(
     ctx: &RunContext<'_>,
     transactions: Vec<StatementTransaction>,
+    previous: Option<MatchResult>,
     force: bool,
 ) -> Result<(usize, MatchResult), PipelineError> {
     let receipts = extract_receipts(ctx, force).await?;
     (ctx.progress)(RunEvent::Matching);
-    let path = ctx.paths.match_result();
+    let paths = ctx.paths.clone();
     let rules: Vec<Rule> = ctx.rules.clone();
     off_thread(move || {
-        let result = match_transactions(&transactions, &receipts, &rules);
-        write_json(&path, &result)?;
+        let draft: Draft = read_json_lenient(&paths.draft()).unwrap_or_default();
+        let result = match_with_draft(previous.as_ref(), &draft, &transactions, &receipts, &rules);
+        write_json(&paths.match_result(), &result)?;
         Ok::<_, FsError>((receipts.len(), result))
     })
     .await?

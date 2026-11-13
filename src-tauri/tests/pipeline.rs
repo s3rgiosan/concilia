@@ -1175,6 +1175,53 @@ async fn scanning_keeps_a_hand_assigned_receipt_from_other_transactions() {
     assert_eq!(pool, [scan]);
 }
 
+/// Reconciles with a receipt assigned by hand to GLOBEX that the matcher would now give to
+/// HOOLI, and checks that HOOLI does not take it.
+async fn reconciling_keeps_a_hand_assigned_receipt(clear_cache: bool) {
+    let h = Harness::new();
+    h.extractor.knows("acme.pdf", 1000, "ACME");
+    h.receipt("acme.pdf");
+    // Unreadable at first, so the matcher leaves it alone and the user assigns it.
+    let scan = h.receipt("scan.png");
+    let mut lines = STATEMENT.to_vec();
+    lines.push("  2030-03-08 2030-03-08 HOOLI                  -50,00      19,00");
+    let statement = h.statement("statement.pdf", &lines);
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let decisions = assigned_to_globex(&scan, 5000, "HOOLI");
+    pipeline::save_draft(&h.paths, &decisions).unwrap();
+    // Read again, it now has the HOOLI transaction's amount.
+    h.extractor.knows("scan.png", 5000, "HOOLI");
+
+    pipeline::reconcile(&h.ctx(), &[], clear_cache)
+        .await
+        .unwrap();
+
+    assert_eq!(pipeline::read_draft(&h.paths).unwrap(), decisions);
+    let result = h.match_result();
+    let hooli = result
+        .transactions
+        .iter()
+        .find(|t| t.description == "HOOLI")
+        .unwrap();
+    assert_eq!(hooli.status, Status::Unmatched);
+    assert!(hooli.receipt_files.is_empty());
+    let (pool, globex) = pool_and_globex(&h);
+    assert!(pool.is_empty(), "{pool:?}");
+    assert_eq!(globex, [scan]);
+}
+
+#[tokio::test]
+async fn reconciling_keeps_a_hand_assigned_receipt_from_other_transactions() {
+    reconciling_keeps_a_hand_assigned_receipt(false).await;
+}
+
+#[tokio::test]
+async fn reconciling_again_keeps_a_hand_assigned_receipt_from_other_transactions() {
+    reconciling_keeps_a_hand_assigned_receipt(true).await;
+}
+
 #[tokio::test]
 async fn added_transactions_leave_a_hand_assigned_receipt_alone() {
     let h = Harness::new();
