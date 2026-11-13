@@ -494,24 +494,69 @@ async fn rate_limit_and_server_errors_return_none_without_retrying() {
 }
 
 #[tokio::test]
-async fn unauthorized_and_forbidden_generate_are_auth_errors() {
-    for status in [401, 403] {
-        let server = MockServer::start().await;
-        mount_token(&server, 1).await;
-        mount_generate(
-            &server,
-            ResponseTemplate::new(status).set_body_string("EXAMPLE DENIED"),
-            1,
-        )
-        .await;
+async fn forbidden_generate_is_an_auth_error() {
+    let server = MockServer::start().await;
+    mount_token(&server, 1).await;
+    mount_generate(
+        &server,
+        ResponseTemplate::new(403).set_body_string("EXAMPLE DENIED"),
+        1,
+    )
+    .await;
 
-        match client(&server).extract(&text_payload()).await {
-            Err(GeminiError::Auth(message)) => {
-                assert!(message.contains("EXAMPLE DENIED"), "{message}")
-            }
-            other => panic!("HTTP {status}: expected Err(Auth), got {other:?}"),
+    match client(&server).extract(&text_payload()).await {
+        Err(GeminiError::Auth(message)) => {
+            assert!(message.contains("EXAMPLE DENIED"), "{message}")
         }
+        other => panic!("expected Err(Auth), got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn unauthorized_generate_gets_a_new_token_and_one_more_try() {
+    let server = MockServer::start().await;
+    mount_token(&server, 2).await;
+    Mock::given(method("POST"))
+        .and(path(GENERATE_PATH))
+        .respond_with(ResponseTemplate::new(401))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_generate(&server, reply(r#"{"amount": 12.5}"#), 1).await;
+
+    let found = client(&server).extract(&text_payload()).await;
+    assert_eq!(found.map(|e| e.map(|e| e.amount_cents)), Ok(Some(1250)));
+}
+
+#[tokio::test]
+async fn a_second_unauthorized_generate_is_an_auth_error() {
+    let server = MockServer::start().await;
+    mount_token(&server, 2).await;
+    mount_generate(
+        &server,
+        ResponseTemplate::new(401).set_body_string("EXAMPLE DENIED"),
+        2,
+    )
+    .await;
+
+    match client(&server).extract(&text_payload()).await {
+        Err(GeminiError::Auth(message)) => {
+            assert!(message.contains("EXAMPLE DENIED"), "{message}")
+        }
+        other => panic!("expected Err(Auth), got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn unauthorized_generate_makes_test_connection_fetch_a_new_token() {
+    let server = MockServer::start().await;
+    mount_token(&server, 2).await;
+    mount_generate(&server, ResponseTemplate::new(401), 2).await;
+
+    let client = client(&server);
+    let _ = client.extract(&text_payload()).await;
+    assert_eq!(client.check().await, Ok(()));
 }
 
 #[tokio::test]

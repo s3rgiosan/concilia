@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 use std::sync::LazyLock;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use regex::Regex;
@@ -232,7 +232,7 @@ pub struct GeminiClient {
     api_base: Url,
     /// Whether every request must go to Google's API host; off only for test servers.
     google_only: bool,
-    token: Mutex<Option<(String, Instant)>>,
+    token: Mutex<Option<(String, SystemTime)>>,
 }
 
 impl GeminiClient {
@@ -279,8 +279,8 @@ impl GeminiClient {
     async fn access_token(&self) -> Result<String, GeminiError> {
         let mut cached = self.token.lock().await;
         if let Some((token, expires)) = cached.as_ref() {
-            let refresh_from = Instant::now() + TOKEN_MARGIN;
-            if refresh_from < *expires {
+            // Wall-clock time keeps counting while the Mac sleeps.
+            if SystemTime::now() + TOKEN_MARGIN < *expires {
                 return Ok(token.clone());
             }
         }
@@ -316,8 +316,16 @@ impl GeminiClient {
             .and_then(Value::as_str)
             .ok_or_else(|| GeminiError::Auth("token response has no access_token".into()))?
             .to_string();
-        *cached = Some((token.clone(), Instant::now() + TOKEN_LIFETIME));
+        *cached = Some((token.clone(), SystemTime::now() + TOKEN_LIFETIME));
         Ok(token)
+    }
+
+    /// Drops the cached token when it is `token`, so the next request fetches a new one.
+    async fn forget_token(&self, token: &str) {
+        let mut cached = self.token.lock().await;
+        if cached.as_ref().is_some_and(|(held, _)| held == token) {
+            *cached = None;
+        }
     }
 
     /// The `generateContent` address, with each setting as one path segment.
@@ -349,19 +357,30 @@ impl GeminiClient {
     }
 
     /// Sends one request. Returns the reply text, or none when the server answered with an
-    /// error other than an authorization failure.
+    /// error other than an authorization failure. A 401 clears the cached token and sends the
+    /// request once more with a new one.
     async fn call(&self, prompt: &str, payload: &Payload) -> Result<Option<String>, GeminiError> {
         let url = self.generate_url()?;
-        let token = self.access_token().await?;
-        let response = self
-            .http
-            .post(url)
-            .timeout(GENERATE_TIMEOUT)
-            .bearer_auth(token)
-            .json(&request_body(prompt, payload, &self.config.model))
-            .send()
-            .await
-            .map_err(|e| GeminiError::Network(e.to_string()))?;
+        let request = request_body(prompt, payload, &self.config.model);
+        let mut refreshed = false;
+        let response = loop {
+            let token = self.access_token().await?;
+            let response = self
+                .http
+                .post(url.clone())
+                .timeout(GENERATE_TIMEOUT)
+                .bearer_auth(&token)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| GeminiError::Network(e.to_string()))?;
+            if response.status() == reqwest::StatusCode::UNAUTHORIZED && !refreshed {
+                refreshed = true;
+                self.forget_token(&token).await;
+                continue;
+            }
+            break response;
+        };
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             let body = response.text().await.unwrap_or_default();
