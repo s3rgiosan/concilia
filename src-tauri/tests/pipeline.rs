@@ -2664,6 +2664,57 @@ async fn reopening_after_the_receipts_folder_moved_keeps_the_decisions() {
     assert!(h.extractor.take_calls().is_empty());
 }
 
+#[tokio::test]
+async fn the_next_job_undoes_the_moves_of_a_finalize_that_stopped() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    // Finalize stopped after its first move, before it wrote the results.
+    let receipts = &h.paths.receipts;
+    std::fs::create_dir_all(receipts.join("_matched")).unwrap();
+    std::fs::rename(
+        receipts.join("acme.pdf"),
+        receipts.join("_matched/acme.pdf"),
+    )
+    .unwrap();
+    write_json_file(
+        &h.paths.docs.join("moves.json"),
+        &json!({
+            "finalized": true,
+            "moves": [
+                { "from": "acme.pdf", "to": "_matched/acme.pdf" },
+                { "from": "initech.png", "to": "_unmatched/initech.png" }
+            ]
+        }),
+    );
+    h.extractor.take_calls();
+
+    let outcome = pipeline::scan_receipts(&h.ctx()).await.unwrap();
+
+    assert!(receipts.join("acme.pdf").is_file());
+    assert!(receipts.join("initech.png").is_file());
+    assert!(!receipts.join("_matched/acme.pdf").exists());
+    assert!(!h.paths.docs.join("moves.json").exists());
+    assert!(h.extractor.take_calls().is_empty());
+    assert_eq!(outcome.summary, standard_summary());
+}
+
+#[tokio::test]
+async fn finalize_and_reopen_leave_no_move_journal() {
+    let h = Harness::new();
+    let statement = h.standard();
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+    assert!(!h.paths.docs.join("moves.json").exists());
+    pipeline::reopen(&h.paths, &[]).unwrap();
+    assert!(!h.paths.docs.join("moves.json").exists());
+}
+
 // Reopen.
 
 #[tokio::test]

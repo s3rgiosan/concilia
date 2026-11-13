@@ -94,6 +94,7 @@ pub fn export_report(
     language: Language,
     reasons: &[Reason],
 ) -> Result<PathBuf, PipelineError> {
+    super::journal::recover(paths)?;
     let result: MatchResult = read_stored(&paths.dir, &paths.match_result())?
         .ok_or_else(PipelineError::not_reconciled)?;
     let draft: Draft = read_stored_lenient(&paths.dir, &paths.draft()).unwrap_or_default();

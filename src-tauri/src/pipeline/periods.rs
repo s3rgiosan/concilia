@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::apply::{create_target_dirs, pin_moves};
 use super::reopen::after_moves;
 use super::stored::{read_stored_lenient, write_stored};
-use super::{io, read_cache, PipelineError};
+use super::{io, journal, read_cache, with_stuck, PipelineError};
 use crate::error::ErrorKind;
 use crate::finalize::{self, folded, relative_text, Move};
 use crate::fsutil::{read_json_lenient, remove_if_exists};
@@ -299,12 +299,21 @@ pub fn reset_period(paths: &PeriodPaths, rules: &[Rule]) -> Result<ResetReport, 
     if !moves.is_empty() {
         pinned = pin_moves(paths, &moves)?;
         create_target_dirs(paths, &pinned)?;
-        finalize::execute(&pinned).map_err(|e| io(&paths.receipts, e))?;
+        journal::write(paths, &pinned, false)?;
+        if let Err(failure) = finalize::execute(&pinned) {
+            if failure.stuck.is_empty() {
+                journal::clear(paths);
+            }
+            return Err(io(&paths.receipts, failure));
+        }
     }
     if let Some((_, decisions)) = &kept {
         if let Err(error) = keep_decisions(paths, decisions) {
-            finalize::undo(&pinned);
-            return Err(error);
+            let stuck = finalize::undo(&pinned);
+            if stuck.is_empty() {
+                journal::clear(paths);
+            }
+            return Err(with_stuck(error, &stuck));
         }
     }
     let mut report = ResetReport {
@@ -312,15 +321,17 @@ pub fn reset_period(paths: &PeriodPaths, rules: &[Rule]) -> Result<ResetReport, 
         warnings: Vec::new(),
         finalized: kept.map(|(result, _)| result),
     };
+    // The marker goes first: once it is gone, the reset counts as done.
     for file in [
-        paths.receipts_cache(),
-        paths.match_result(),
         paths.applied_marker(),
+        paths.match_result(),
+        paths.receipts_cache(),
     ] {
         if let Err(error) = remove_if_exists(&file) {
             report.warnings.push(format!("{}: {error}", file.display()));
         }
     }
+    journal::clear(paths);
     Ok(report)
 }
 

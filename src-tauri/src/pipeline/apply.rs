@@ -3,7 +3,7 @@
 use std::path::{Component, Path};
 
 use super::stored::{read_stored, write_stored};
-use super::{create_dir, io, read_reimbursements, PipelineError};
+use super::{create_dir, io, journal, read_reimbursements, with_stuck, PipelineError};
 use crate::dates::time_now_iso;
 use crate::excel;
 use crate::finalize::{self, Move};
@@ -28,12 +28,14 @@ fn inside_receipts(paths: &PeriodPaths, file: &str) -> bool {
 
 /// Applies the review: moves every receipt into its status folder, writes the final match
 /// result and report, marks the period finalized and deletes the draft. Either every file
-/// moves and both files are written, or nothing changes.
+/// moves and both files are written, or nothing changes. A move journal covers the time
+/// between the first move and the marker, so a stopped app can undo the moves.
 pub fn finalize(
     paths: &PeriodPaths,
     language: Language,
     reasons: &[Reason],
 ) -> Result<(), PipelineError> {
+    journal::recover(paths)?;
     let result: MatchResult = read_stored(&paths.dir, &paths.match_result())?
         .ok_or_else(PipelineError::not_reconciled)?;
     let draft: Draft = read_stored(&paths.dir, &paths.draft())?.unwrap_or_default();
@@ -87,15 +89,28 @@ pub fn finalize(
             return Err(error);
         }
     };
-    if let Err(error) = finalize::execute(&moves) {
+    if !moves.is_empty() {
+        if let Err(error) = journal::write(paths, &moves, true) {
+            cleanup();
+            return Err(error);
+        }
+    }
+    if let Err(failure) = finalize::execute(&moves) {
         cleanup();
-        return Err(io(&paths.receipts, error));
+        if failure.stuck.is_empty() {
+            journal::clear(paths);
+        }
+        return Err(io(&paths.receipts, failure));
     }
     if let Err(error) = publish(paths, &result_tmp, &report_tmp) {
-        finalize::undo(&moves);
+        let stuck = finalize::undo(&moves);
         cleanup();
-        return Err(error);
+        if stuck.is_empty() {
+            journal::clear(paths);
+        }
+        return Err(with_stuck(error, &stuck));
     }
+    journal::clear(paths);
     if let Err(error) = remove_if_exists(&paths.draft()) {
         log::warn!("could not delete the review draft: {error}");
     }
@@ -190,14 +205,15 @@ impl<'a> Backup<'a> {
         Ok(Backup { path, bytes })
     }
 
-    pub(super) fn restore(&self) {
+    /// Puts the earlier contents back. Returns the file and the reason when that fails.
+    pub(super) fn restore(&self) -> Option<String> {
         let restored = match &self.bytes {
             Some(bytes) => write_atomic(self.path, bytes).map_err(|e| e.to_string()),
             None => remove_if_exists(self.path).map_err(|e| e.to_string()),
         };
-        if let Err(error) = restored {
-            log::error!("rollback failed for {}: {error}", self.path.display());
-        }
+        let error = restored.err()?;
+        log::error!("rollback failed for {}: {error}", self.path.display());
+        Some(format!("{}: {error}", self.path.display()))
     }
 }
 
@@ -214,12 +230,11 @@ fn publish(paths: &PeriodPaths, result_tmp: &Path, report_tmp: &Path) -> Result<
             write_atomic(&paths.applied_marker(), time_now_iso().as_bytes())
                 .map_err(PipelineError::from)
         });
-    if outcome.is_err() {
-        for backup in &backups {
-            backup.restore();
-        }
+    if let Err(error) = outcome {
+        let stuck: Vec<String> = backups.iter().filter_map(Backup::restore).collect();
+        return Err(with_stuck(error, &stuck));
     }
-    outcome
+    Ok(())
 }
 
 #[cfg(test)]

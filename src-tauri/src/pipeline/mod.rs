@@ -4,6 +4,7 @@
 
 mod apply;
 mod draft;
+mod journal;
 mod periods;
 mod reopen;
 mod report;
@@ -28,6 +29,7 @@ use crate::poppler::{Poppler, PopplerError};
 
 pub use apply::finalize;
 pub use draft::{delete_draft, read_draft, save_draft};
+pub use journal::recover;
 pub use periods::{
     ensure_period_dirs, list_periods, period_status, period_summary, read_statements, reset_period,
     PeriodState, PeriodStatus, PeriodSummary, ResetReport,
@@ -131,6 +133,17 @@ pub(crate) async fn off_thread<T: Send + 'static>(
 
 fn io(path: &Path, error: impl std::fmt::Display) -> PipelineError {
     PipelineError::Io(format!("{}: {error}", path.display()))
+}
+
+/// `error` with the files that a rollback could not put back, so the user sees them.
+fn with_stuck(error: PipelineError, stuck: &[String]) -> PipelineError {
+    if stuck.is_empty() {
+        return error;
+    }
+    PipelineError::Io(format!(
+        "{error}; these files could not move back: {}",
+        stuck.join("; ")
+    ))
 }
 
 /// Progress of a reconcile or scan, in the order the steps run.

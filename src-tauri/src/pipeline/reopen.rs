@@ -12,7 +12,7 @@ use super::apply::{create_target_dirs, pin_moves, Backup};
 use super::draft::match_with_draft;
 use super::periods::restore_moves;
 use super::stored::{read_stored, write_stored};
-use super::{io, read_cache, readable, PipelineError};
+use super::{io, journal, read_cache, readable, with_stuck, PipelineError};
 use crate::error::ErrorKind;
 use crate::finalize::{self, Move};
 use crate::fsutil::{read_json_opt, remove_if_exists};
@@ -52,6 +52,7 @@ pub(super) struct Reopened {
 /// back and the period leaves Finalize, or the files and the period stay as they were. A
 /// receipt that cannot move back refuses the whole reopen.
 pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, PipelineError> {
+    journal::recover(paths)?;
     if !paths.applied_marker().exists() {
         return Err(PipelineError::coded(
             ErrorKind::InvalidInput,
@@ -81,14 +82,27 @@ pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, Pipel
         staged.discard();
         return Err(error);
     }
-    if let Err(error) = finalize::execute(&pinned) {
+    if !pinned.is_empty() {
+        if let Err(error) = journal::write(paths, &pinned, false) {
+            staged.discard();
+            return Err(error);
+        }
+    }
+    if let Err(failure) = finalize::execute(&pinned) {
         staged.discard();
-        return Err(io(&paths.receipts, error));
+        if failure.stuck.is_empty() {
+            journal::clear(paths);
+        }
+        return Err(io(&paths.receipts, failure));
     }
     if let Err(error) = staged.publish(paths) {
-        finalize::undo(&pinned);
-        return Err(error);
+        let stuck = finalize::undo(&pinned);
+        if stuck.is_empty() {
+            journal::clear(paths);
+        }
+        return Err(with_stuck(error, &stuck));
     }
+    journal::clear(paths);
     Ok(ReopenReport {
         restored: moves.len(),
         kept_decisions: reopened.draft.len(),
@@ -226,13 +240,12 @@ impl Staged {
                 None => remove_if_exists(&draft).map_err(|e| io(&draft, e)),
             })
             .and_then(|_| remove_if_exists(&marker).map_err(|e| io(&marker, e)));
-        if outcome.is_err() {
-            for backup in &backups {
-                backup.restore();
-            }
+        if let Err(error) = outcome {
+            let stuck: Vec<String> = backups.iter().filter_map(Backup::restore).collect();
             self.discard();
+            return Err(with_stuck(error, &stuck));
         }
-        outcome
+        Ok(())
     }
 }
 

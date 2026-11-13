@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use super::draft::{clean_saved_draft, match_keeping_draft, match_with_draft};
+use super::journal::recover;
 use super::report::write_report;
 use super::stored::{read_stored_lenient, write_stored};
 use super::{
@@ -47,6 +48,7 @@ pub async fn reconcile(
     // The previous result is read before the reset deletes it, so the draft's receipt claims
     // still apply to the new match.
     let previous = off_thread(move || {
+        recover(&paths)?;
         if !clear_cache && paths.applied_marker().exists() {
             return Err(PipelineError::Finalized);
         }
@@ -129,6 +131,7 @@ pub struct ScanOutcome {
 pub async fn scan_receipts(ctx: &RunContext<'_>) -> Result<ScanOutcome, PipelineError> {
     let paths = ctx.paths.clone();
     let (transactions, known, matched_before) = off_thread(move || {
+        recover(&paths)?;
         let transactions: Vec<StatementTransaction> =
             read_json_opt(&paths.transactions())?.ok_or_else(PipelineError::not_reconciled)?;
         if paths.applied_marker().exists() {
@@ -199,6 +202,7 @@ pub async fn add_statements(
 ) -> Result<AddStatementsResult, PipelineError> {
     let paths = ctx.paths.clone();
     let existing: Vec<StatementTransaction> = off_thread(move || {
+        recover(&paths)?;
         if paths.applied_marker().exists() {
             return Err(PipelineError::Finalized);
         }

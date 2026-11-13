@@ -208,29 +208,51 @@ pub fn plan(
     }
 }
 
+/// A move that failed, with the files that could not move back after it.
+#[derive(Debug)]
+pub struct MoveFailure {
+    pub error: std::io::Error,
+    /// Each file left at its target, with the reason.
+    pub stuck: Vec<String>,
+}
+
+impl std::fmt::Display for MoveFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.error)?;
+        if !self.stuck.is_empty() {
+            write!(f, "; could not move back: {}", self.stuck.join("; "))?;
+        }
+        Ok(())
+    }
+}
+
 /// Performs the moves in order. A move never replaces an existing file. On failure, moves
-/// already made are undone and the error returned.
-pub fn execute(moves: &[Move]) -> std::io::Result<()> {
+/// already made are undone and the error returned with any file that could not move back.
+pub fn execute(moves: &[Move]) -> Result<(), MoveFailure> {
     for (done, step) in moves.iter().enumerate() {
         if let Err(error) = rename_no_replace(&step.from, &step.to) {
-            undo(&moves[..done]);
-            return Err(error);
+            let stuck = undo(&moves[..done]);
+            return Err(MoveFailure { error, stuck });
         }
     }
     Ok(())
 }
 
 /// Moves every file of `moves` back to where it came from, last move first. A file whose
-/// origin is taken again stays at its target.
-pub fn undo(moves: &[Move]) {
+/// origin is taken again stays at its target. Returns each file that could not move back,
+/// with the reason.
+pub fn undo(moves: &[Move]) -> Vec<String> {
+    let mut stuck = Vec::new();
     for step in moves.iter().rev() {
         if let Err(error) = rename_no_replace(&step.to, &step.from) {
             log::error!(
                 "finalize rollback failed for {}: {error}",
                 step.to.display()
             );
+            stuck.push(format!("{}: {error}", step.to.display()));
         }
     }
+    stuck
 }
 
 #[cfg(test)]
@@ -430,7 +452,8 @@ mod tests {
             },
         ];
         let error = execute(&moves).unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(error.error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert!(error.stuck.is_empty());
         assert_eq!(fs::read(d.join("a.pdf")).unwrap(), b"a");
         assert_eq!(fs::read(d.join("b.pdf")).unwrap(), b"b");
         assert_eq!(fs::read(d.join("_matched/b.pdf")).unwrap(), b"earlier");
@@ -490,6 +513,27 @@ mod tests {
         let p = plan_with(&[t], &[], &[]);
         let extra = &p.transactions[0].receipt_meta[0].extra;
         assert_eq!(extra.keys().collect::<Vec<_>>(), ["kept"]);
+    }
+
+    #[test]
+    fn undo_returns_the_files_that_could_not_move_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        fs::write(d.join("a.pdf"), b"new").unwrap();
+        fs::create_dir(d.join("_matched")).unwrap();
+        fs::write(d.join("_matched/a.pdf"), b"a").unwrap();
+        let moves = [Move {
+            from: d.join("a.pdf"),
+            to: d.join("_matched/a.pdf"),
+        }];
+        let stuck = undo(&moves);
+        assert_eq!(stuck.len(), 1);
+        assert!(stuck[0].contains("_matched"), "{stuck:?}");
+        let failure = MoveFailure {
+            error: std::io::Error::other("disk full"),
+            stuck,
+        };
+        assert!(failure.to_string().contains("could not move back"));
     }
 
     #[test]

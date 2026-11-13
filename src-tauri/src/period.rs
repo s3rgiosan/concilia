@@ -127,6 +127,11 @@ impl PeriodPaths {
         self.docs.join("report.xlsx")
     }
 
+    /// The receipt moves of a Finalize, Reopen or reset that is not done yet.
+    pub fn moves_journal(&self) -> PathBuf {
+        self.docs.join("moves.json")
+    }
+
     /// Present once the period has been finalized; holds the ISO timestamp.
     pub fn applied_marker(&self) -> PathBuf {
         self.docs.join(".applied")
