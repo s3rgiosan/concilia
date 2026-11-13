@@ -142,6 +142,9 @@ export function openCandidates(tx: Transaction, claimed: Set<string>): ReceiptMe
   return tx.receipt_meta.filter((m) => !claimed.has(m.file));
 }
 
+/** The FX tolerance in percent. The Rust matcher uses the same band (`fx_bounds`). */
+const FX_TOLERANCE_PERCENT = 10;
+
 /**
  * Whether a receipt's amount looks wrong for its transaction: any difference for euro receipts,
  * more than 10% for other currencies, which the bank converts.
@@ -151,7 +154,7 @@ export function amountMismatch(receipt: ReceiptMeta, txAbsCents: number): boolea
     return false;
   }
   if (receipt.currency && receipt.currency !== "EUR") {
-    return Math.abs(receipt.amount_cents - txAbsCents) > txAbsCents * 0.1;
+    return Math.abs(receipt.amount_cents - txAbsCents) * 100 > txAbsCents * FX_TOLERANCE_PERCENT;
   }
   return receipt.amount_cents !== txAbsCents;
 }

@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- The amount warning in the review uses the same whole-cent 10% band as the matcher for foreign-currency receipts, so the two agree at the band edges.
 - A foreign-currency receipt matches a transaction only when its amount is within 10% of the transaction amount, counted in whole cents. A receipt 11% above the amount no longer matches.
 - Reconcile Again stops with an error when it cannot delete the finalized marker, the match result or the extraction cache, so the month no longer stays Finalized after a run that looked successful.
 - The message for a finalized month names the Reopen Month action and no longer says Concilia is scanning, because it also shows for a refused review save and a refused rescan.

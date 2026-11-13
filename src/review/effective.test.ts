@@ -216,6 +216,16 @@ describe("amountMismatch", () => {
     expect(amountMismatch(usd(899), 1000)).toBe(true);
   });
 
+  it("rounds the band to whole cents on both sides", () => {
+    const usd = (amount: number) => makeReceipt("a.pdf", { amount_cents: amount, currency: "USD" });
+    expect(amountMismatch(usd(905), 1005)).toBe(false);
+    expect(amountMismatch(usd(904), 1005)).toBe(true);
+    expect(amountMismatch(usd(1105), 1005)).toBe(false);
+    expect(amountMismatch(usd(1106), 1005)).toBe(true);
+    expect(amountMismatch(usd(111), 100)).toBe(true);
+    expect(amountMismatch(usd(110), 100)).toBe(false);
+  });
+
   it("never flags a receipt without an amount", () => {
     expect(amountMismatch(makeReceipt("a.pdf", { amount_cents: null }), 1000)).toBe(false);
   });
