@@ -1,277 +1,157 @@
 # Architecture
 
-This document describes the runtime structure, data flow, and design decisions of Concilia.
-
 ## Process model
 
 ```text
-┌──────────────────────────────────────────────────┐
-│  Electron main (electron/main.js)                │
-│  • App lifecycle, BrowserWindow, IPC handlers    │
-│  • electron-store config (~/Library/.../*.json)  │
-│  • forks Express server with PORT=0 → log file   │
-└─────────────────┬────────────────────────────────┘
-                  │ http://127.0.0.1:<random-port>
-┌─────────────────┴────────────────────────────────┐
-│  Renderer (React app in BrowserWindow)           │
-│  • Vite-built into server/public/                │
-│  • SSE client for progress, fetch for everything │
-│  • preload.js exposes window.concilia.* (IPC)    │
-└──────────────────────────────────────────────────┘
-
-                  ┌─────────────────────────────────┐
-                  │  Express server (server/)       │
-                  │  • Listens on 127.0.0.1 only    │
-                  │  • Serves React app + REST API  │
-                  │  • SSE for reconcile progress   │
-                  │  • Spawns worker scripts        │
-                  └─────────────────┬───────────────┘
-                                    │
-                  ┌─────────────────┴───────────────┐
-                  │  Worker scripts (worker/bin)    │
-                  │  • Spawned with NODE_BIN +      │
-                  │    ELECTRON_RUN_AS_NODE=1       │
-                  │  • One process per task         │
-                  └─────────────────────────────────┘
+┌─ Concilia.app (Tauri 2) ──────────────────────────────────────────┐
+│                                                                   │
+│  Webview windows (React, src/)          Rust core (src-tauri/src) │
+│  ┌──────────────────────────┐  invoke   ┌──────────────────────┐  │
+│  │ main     index.html      │ ────────► │ commands.rs          │  │
+│  │          ?view=main      │           │  → pipeline/         │  │
+│  │ settings ?view=settings  │ ◄──────── │  → matcher, excel,   │  │
+│  └──────────────────────────┘  events,  │    gemini, bank      │  │
+│        ▲ receipt:// previews  channels  └─────────┬────────────┘  │
+│        └──────────────── protocol.rs              │               │
+│                                                   ▼               │
+│                      poppler (Resources/poppler/bin), Keychain,   │
+│                      receipts folder, Gemini over HTTPS           │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
-### Why this layout
+- One process. The Rust core owns every file, the Gemini client and the native surfaces (menu bar, alerts, appearance, zoom, updates). The webview draws the UI and calls commands.
+- `App.tsx` picks the window from `?view=`. The main window holds the month sidebar, the month screen and the review. The Settings window opens on demand (`windows.rs`).
+- Long jobs (reconcile, scan, add statements) stream `RunEvent` progress over a Tauri `Channel` and can be cancelled. Settings changes reach every window as the `settings-changed` event.
+- `docs/wiring.md` lists every menu item, alert, event and permission.
 
-- **Electron-as-Node for workers**: There is no separate Node binary in the bundled `.app`. Electron is invoked with `ELECTRON_RUN_AS_NODE=1` (env var `NODE_BIN = process.execPath` of Electron) so worker scripts run in plain V8/Node mode. The server fails fast if `NODE_BIN` is unset — it is only runnable from inside Electron.
-- **Server-as-fork**: The Express server is a `child_process.fork()` of Electron-as-Node. Stdout/stderr go to a rotating log file (`~/Library/Logs/Concilia/server.log`).
-- **Random port**: The server binds `PORT=0` and reports the chosen port back to Electron main via IPC. The BrowserWindow then loads `http://127.0.0.1:<port>`.
-- **127.0.0.1 only**: No LAN exposure, no auth needed, single-user desktop app.
-
-## Filesystem layout
-
-### Source tree
+## Source tree
 
 ```text
-concilia/
-├── electron/              # Electron main + preload (CommonJS)
-│   ├── main.js            # App lifecycle, IPC, server fork, settings
-│   ├── preload.js         # contextBridge → window.concilia.*
-│   ├── config.js          # electron-store wrapper
-│   ├── config-schema.js   # Single source of truth for settings
-│   ├── setup.html         # First-launch wizard (vanilla)
-│   └── setup-css/         # Tailwind+daisyUI build for setup wizard
-├── client/                # React + Vite + Tailwind + daisyUI
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── components/    # ReconcileForm, ProgressCard, ResultsCard,
-│   │   │                  # ReviewScreen, RulesPanel, SettingsModal, ui/*
-│   │   └── i18n/          # i18next + locales/{en,pt}.json
-│   └── vite.config.ts     # outDir → ../server/public
-├── server/                # Express orchestration (ESM)
-│   ├── index.mjs          # Routes, CSP, SSE, multipart upload
-│   ├── reconcile.mjs      # Pipeline: parse → extract → match → export
-│   └── utils.mjs          # writeAtomic, etc.
-├── parsers/               # Bank statement parsers (deterministic, no AI)
-│   ├── parse.mjs          # CLI dispatch by bank key
-│   ├── cgd.mjs            # CGD parser
-│   └── utils.mjs          # extractTextWithPoppler (shell-out to bundled pdftotext) + parseEuropeanDecimal
-├── worker/                # Standalone worker scripts (ESM)
-│   ├── lib/
-│   │   ├── schema.mjs         # Canonical transaction schema
-│   │   ├── gemini.mjs         # Vertex AI client + JWT signer
-│   │   ├── poppler.mjs        # Shared pdftotext / pdftoppm spawn helpers
-│   │   ├── pdf-text.mjs       # extractPdfText: pdftotext -layout wrapper
-│   │   ├── pdf-render.mjs     # renderPdfPageToPng: pdftoppm -png wrapper
-│   │   ├── bank-fees.mjs      # noReceiptPatterns / isBankFee
-│   │   ├── matcher.mjs        # Five-pass matching
-│   │   ├── excel-writer.mjs   # writeExcelReport
-│   │   └── utils.mjs          # writeAtomic, etc.
-│   └── bin/
-│       ├── parse-statement.mjs   # Wraps parsers/parse.mjs → canonical schema
-│       ├── receipt-meta.mjs      # Single-receipt Gemini extraction
-│       ├── extract-receipts.mjs  # Batch wrapper, concurrency 4, retries
-│       ├── match.mjs             # Run matcher, write match-result.json
-│       └── export-xlsx.mjs       # Render Excel report
-├── tests/worker/          # node:test suite
-└── build/                 # electron-builder resources (icon, entitlements)
+src/                         React frontend
+├── main/                    main window: sidebar, month screen, run progress, welcome
+├── review/                  review list, details column, decisions, row menus
+├── settings/                Settings window: Folder, Gemini, Rules, Reasons, General panes
+├── components/              sheets, pop-up buttons, toolbar, icons
+├── lib/                     tauri.ts (typed command wrappers), menus, hooks, reasons
+├── i18n/locales/            en.json, pt.json
+└── dev/mock.ts              browser preview backend (npm run dev outside Tauri)
+
+src-tauri/
+├── src/
+│   ├── lib.rs               app setup, plugins, command registration, menu events
+│   ├── commands.rs          Tauri commands: input checks, locks, then pipeline calls
+│   ├── app.rs               shared state: settings, rules, reasons, key, locks, granted paths
+│   ├── config.rs            config.json, rules.json, reasons.json
+│   ├── pipeline/            reconcile, scan, add statements, rescan, draft, finalize,
+│   │                        reopen, report, month folders
+│   ├── matcher.rs           matching passes
+│   ├── bank/                statement parsers (cgd.rs) and normalization
+│   ├── gemini/              Agent Platform client, prompts, reply parsing
+│   ├── extract.rs           receipt extraction with cache, retries, concurrency
+│   ├── excel/               report layout and labels
+│   ├── finalize.rs          Finalize planning and file moves
+│   ├── review.rs            applying draft decisions, summaries
+│   ├── poppler.rs           pdftotext / pdftoppm
+│   ├── protocol.rs          receipt:// scheme for previews
+│   ├── secrets.rs           Keychain (release) or file (debug) key store
+│   ├── menu.rs, alert.rs, appearance.rs, zoom.rs, windows.rs, updates.rs
+│   └── locks.rs             per-period locks
+├── tests/                   integration tests, golden fixtures from the Node implementation
+├── capabilities/            main.json, settings.json: commands each window may call
+├── tauri.conf.json          app, bundle and updater config
+└── tauri.macos.conf.json    macOS window, DMG target, Assets.car icon
+
+worker/, parsers/, tests/worker/   Node reference implementation, kept to compare against
+                                   (npm run test:legacy); the app does not use it
 ```
 
-### Runtime data layout
+## Data
 
-User settings (electron-store, chmod 600):
+### Settings
+
+`~/Library/Application Support/com.s3rgiosan.concilia/`:
+
+- `config.json`: language, receipts folder, Gemini project, location and model, update checks.
+- `rules.json`: receipt rules (`receiptVendor` + `transactionDescription`) and no-receipt rules (`transactionDescription` + `noReceipt` reason id).
+- `reasons.json`: no-receipt reasons with English and Portuguese names. Without the file, the shipped reasons apply.
+
+Debug builds use `config.dev.json`, `rules.dev.json` and `reasons.dev.json`. The service account key is in the Keychain for release builds and in `service-account.dev.json` for debug builds.
+
+### Months
 
 ```text
-~/Library/Application Support/Concilia/
-├── config.json            # Settings (paths only — no secrets)
-└── match-rules.json       # User-defined Pass 0 rules
-```
-
-Per-period reconciliation state:
-
-```text
-<receiptsRoot>/<year>/<month>/
-├── receipts/                        # Input + output files
-│   ├── <receipt files>              # User-provided
-│   ├── _matched/                    # Created on Finalize
-│   ├── _review/                     # Created on Finalize
-│   └── _unmatched/                  # Created on Finalize
+<receipts folder>/<YYYY>/<MM>/
+├── receipts/                 input receipts; _matched/, _review/, _unmatched/ after Finalize
+├── reimbursements/           receipts paid personally; read, never matched
 └── docs/
-    ├── transactions.json            # Parsed bank transactions
-    ├── receipt-files.txt            # Newline-delimited file list
-    ├── receipts.json                # Gemini extractions (cache)
-    ├── match-result.json            # Matcher output
-    ├── review-draft.json            # In-progress review decisions (auto-saved + explicit Save)
-    └── report.xlsx                  # Excel output
+    ├── statements.json       statements added to the month
+    ├── transactions.json     parsed transactions
+    ├── receipts.json         extraction cache (high-confidence entries are reused)
+    ├── reimbursements.json   reimbursement extraction cache
+    ├── match-result.json     matcher output (after Finalize: the final result)
+    ├── review-draft.json     decisions not yet finalized, laid over match-result.json
+    ├── report.xlsx           Excel report
+    └── .applied              marks the month as finalized
 ```
 
-Logs:
+## Jobs
 
-```text
-~/Library/Logs/Concilia/
-├── server.log               # Fresh on app start, rotated at 5 MB
-└── server.log.1             # Previous rotation
-```
+- **Reconcile**: parse the statements (pdftotext, then the bank parser), find receipts, extract them (cache first), match, write the report.
+- **Scan for New Receipts**: extract only new files, drop cache entries for removed files, match again, keep the draft's decisions whose receipts still exist and receipts assigned by hand.
+- **Add statements**: merge new transactions with stable ids and skip rows already present, then match again keeping decisions.
+- **Rescan**: read one receipt again and patch the cache and the result.
+- **Finalize**: apply the draft, move every receipt into its status folder, write the final result and report, mark the month, delete the draft. All files move or none do.
+- **Reopen**: move the sorted receipts back, rebuild the cache with the new paths, keep the decisions that differ from a fresh match as the draft, remove the marker. All-or-nothing with backups.
+- **Reconcile Again**: reconcile with a reset first: move sorted receipts back, delete the extraction cache, the match result and the finalized marker, then read every receipt again.
 
-## Reconciliation pipeline
-
-`POST /api/reconcile` triggers `server/reconcile.mjs`. Per-period in-flight lock returns 409 on concurrent invocation. Steps emit SSE events to the browser:
-
-```text
-1. parsing            ← For each uploaded PDF: spawn parse-statement.mjs per bank,
-                        merge transactions (dedupe by tx.id)
-2. receipts_found     ← Walk <year>/<month>/receipts/ recursively (excluding
-                        _matched/_review/_unmatched), write receipt-files.txt
-3. extracting (0..N)  ← Spawn extract-receipts.mjs receipt-files.txt
-                        Bounded-concurrency pool (4 workers); each spawn calls
-                        receipt-meta.mjs per file. Cache hits skip Gemini.
-                        Per-file retries: backoff 0 / 1.5s / 4s, 3 attempts.
-4. matching           ← Spawn match.mjs transactions.json receipts.json [rules]
-                        Five passes (see Matching section).
-5. exporting          ← Spawn export-xlsx.mjs match-result.json report.xlsx
-6. done               ← Summary + report URL
-```
-
-SSE event types: `parsing`, `receipts_found`, `extracting`, `matching`, `exporting`, `done`, `error`.
-
-File moves into `receipts/_matched|_review|_unmatched/` happen **later**, when the user clicks **Finalize** on the Review screen (`POST /api/review/:year/:month`). The Finalize button is gated by a client-side confirmation modal (irreversible action). Before Finalize, the user can iterate via **Save** (explicit draft flush), **Scan** (re-walk receipts folder + re-extract + re-match while preserving draft), and **Download Report** (regenerates .xlsx from match-result merged with the current draft).
-
-## Receipt extraction
-
-`worker/bin/receipt-meta.mjs` prepares a payload per file:
-
-| Input | Path | Tooling |
-|---|---|---|
-| PDF with extractable text | text payload | `worker/lib/pdf-text.mjs` → `pdftotext -layout` (poppler) |
-| Scanned PDF (no text or garbage encoding) | base64 PNG (300 DPI) | `worker/lib/pdf-render.mjs` → `pdftoppm -png -r 300` (poppler) |
-| Image (JPG/PNG) | base64 directly | `node:fs` |
-
-If text extraction yields > 10 chars and passes `isLikelyReadableText` (rejects broken-font output like `ddddd dd`), it's sent to Gemini as text. Otherwise, the PDF is rasterized and sent as an image. If a text payload fails Gemini extraction, a vision fallback automatically retries with the rendered image.
-
-### PDF tooling — poppler everywhere
-
-Every PDF operation in the app shells out to bundled poppler binaries. Two binaries cover all uses:
-
-- `pdftotext -layout` — bank-statement parsing (`parsers/cgd.mjs` via `parsers/utils.mjs::extractTextWithPoppler`) and receipt text extraction (`worker/lib/pdf-text.mjs`).
-- `pdftoppm -png -r 300` — Gemini vision-fallback receipt rendering (`worker/lib/pdf-render.mjs`).
-
-The shared spawn helpers live in `worker/lib/poppler.mjs`. Both binaries are resolved via `process.env.PDFTOTEXT_BIN` / `process.env.PDFTOPPM_BIN` (set by Electron main from the bundled `Resources/poppler/bin/` path); they fall back to `pdftotext` / `pdftoppm` on `PATH` for dev installs without a bundled poppler.
-
-**Why poppler instead of pdfjs / `@napi-rs/canvas`?** CGD bank statements embed Type 3 fonts with custom encoding for the Data Mov. column — pdfjs returns `-` placeholders for those glyphs; poppler decodes them correctly. Once we needed poppler for that path, standardising on it for receipt extraction too removed ~10 MB of JS dependencies and unified all PDF behaviour at the cost of a single GPLv2 system tool.
-
-**Bundling.** `scripts/bundle-poppler.sh` copies `pdftotext` + `pdftoppm` from Homebrew's poppler install, recursively walks their dylib chain, copies every non-system dylib into `build/poppler/lib/`, rewrites every load command to `@executable_path/../lib/<name>`, and re-signs ad-hoc. The bundle is ~11 MB. The script runs automatically as a step inside `npm run dist` (and therefore `npm run build`); CI and local builds need `brew install poppler` before invoking the build.
-
-### Gemini auth
-
-Service account → JWT (signed with the SA's RSA private key) → OAuth2 access token (cached for 1 hour, file-cached across child processes). HTTP timeout: 120 s per Gemini call.
-
-The SA key path is stored plaintext in `~/Library/Application Support/Concilia/config.json` (chmod 600). The key file itself stays at the user-chosen path; only the path string is persisted.
+A month runs one exclusive job at a time (`locks.rs`). Rescans of different files can run together; their writes go through one mutex per month.
 
 ## Matching
 
-Five passes with date-window tiebreaker, **exact cents** for EUR↔EUR (no tolerance), **±10% for FX** (non-EUR receipts). Receipts consumed once matched (REVIEW receipts are NOT consumed):
+`matcher.rs`, in order, each pass seeing only transactions still UNMATCHED:
 
-| Pass | Logic | Outcome |
-|---|---|---|
-| 0 | User rules: vendor substring → tx description substring | MATCHED (`rule_match (vendor)`) |
-| 1a | `noReceiptPatterns` (Portuguese + English) | MATCHED (`bank_fee`) |
-| 1b | EUR receipt filename OR vendor matches description AND amount equals tx amount exactly | 1 candidate → MATCHED; >1 → date-window tiebreaker → REVIEW |
-| 2 | EUR receipts whose amount equals tx amount exactly, no name requirement | 1 → MATCHED; >1 → name overlap; ambiguous → REVIEW |
-| 3 | Non-EUR within ±10% | REVIEW (human verifies FX) |
-| 4 | Filename-only match (≥4-char words, stop-words excluded); EUR receipts must still match the exact cents | REVIEW |
-| — | No candidates | UNMATCHED |
+1. No-receipt rules, then bank fees: MATCHED with a reason id as `notes`.
+2. Pass 0, receipt rules: vendor and description keywords, amount must fit.
+3. Pass 1, name and exact amount (EUR); unknown currency is REVIEW.
+4. Pass 2, exact amount (EUR), name overlap breaks ties; unknown currency is REVIEW.
+5. Pass 3, foreign currency within ±10% with a shared name word: REVIEW.
+6. Pass 4, shared name word: REVIEW.
 
-Pass 3 short-circuits when the period contains no non-EUR receipts (avoids an O(N×M) scan of the amount index for the common single-currency case).
+Exact cents for EUR, ±10% for foreign currency, a 45-day date window for ties. Only MATCHED takes a receipt.
 
-## Canonical schema
+A transaction whose `notes` is a reason id (`bank_fee`, `salary`, `transfer`, `refund`, `no_receipt`, or `reason:<id>`) needs no receipt. A deleted reason's id still counts and shows as Other.
 
-```js
-// Transaction (output of parse-statement.mjs)
-{
-  id: "tx-001-2025-01-15--4599",   // index + date + amount, deterministic
-  date: "2025-01-15",               // ISO 8601
-  description: "COMPRA LOJA",
-  amount_cents: -4599,              // signed integer cents
-  abs_cents: 4599,                  // for matching
-  status: "UNMATCHED"
-}
+## Receipt extraction
 
-// Receipt metadata (output of receipt-meta.mjs)
-{
-  file: "<RECEIPTS_PATH>/2025/01/receipts/r.pdf",
-  amount_cents: 4599,               // always positive; null on extraction fail
-  confidence: "high",               // "high" or null
-  currency: "EUR",                  // ISO 4217 or null
-  vendor: "ShopCo",                 // or null
-  date: "2025-01-15",               // ISO 8601 or null
-  provider_used: "gemini"           // "gemini" or "error"
-}
-```
+- Text PDFs go to Gemini as text (`pdftotext -layout`); scanned PDFs as a page image (`pdftoppm`, 300 DPI); JPG and PNG as images.
+- Four receipts at a time; three attempts each, after 0, 1.5 and 4 seconds; 180 seconds per attempt.
+- Files over the size limit, or that are not a real PDF or image, are refused with a reason and stay in the receipts folder.
+- Auth: the service account key signs a JWT, exchanged at `oauth2.googleapis.com` for an access token. Requests go to `aiplatform.googleapis.com` in the configured location (default `europe-west1`, model `gemini-2.5-flash`).
 
-## API surface
+## Poppler
 
-Express server, `127.0.0.1` only, no auth.
+Every PDF operation uses poppler. `poppler.rs` uses `Resources/poppler/bin/` when both tools are there, else `pdftotext` and `pdftoppm` on `PATH`. `scripts/bundle-poppler.sh` copies them and their libraries from Homebrew into `build/poppler/`, rewrites the library paths and ad-hoc signs them; the release adds that folder as a bundle resource.
 
-### Reconciliation
-- `POST /api/reconcile` — multipart (`statements[]`, `banks[]`, `year`, `month`, optional `clearCache=true`) → SSE stream
-- `GET /api/status/:year/:month` — `{ exists, applied }` for resume/badge UX
-- `GET /api/busy` — `{ busy }` (used by Electron main to block server-restart on settings save)
+## Build and release
 
-### Review
-- `GET /api/review/:year/:month` — review data (transactions + unmatched receipts)
-- `POST /api/review/:year/:month` — **Finalize**: apply manual corrections, move files, regenerate the report, clear draft
-- `POST /api/scan-receipts/:year/:month?lang=en|pt` — SSE stream. Re-walks receipts dir, extracts new files (cache-aware), drops entries for removed files, re-runs matcher, reconciles draft (drops decisions whose receipts vanished, keeps rest). `done` event includes `{ summary, droppedDecisions, reportUrl }`.
-- `GET /api/draft/:year/:month` / `PUT` / `DELETE` — pending Accept/Reject/Assign decisions
-- `POST /api/rescan-receipt/:year/:month` — body `{ file }` → re-run Gemini on a single receipt
+- `npm run tauri dev`: debug app with hot reload.
+- `npm run tauri build`: release bundle. The macOS target is a DMG; the release adds `build/poppler` as a resource.
+- CI (`.github/workflows/ci.yml`) runs typecheck, lint, the frontend build and tests, `cargo fmt --check`, clippy and `cargo test` on macOS, Ubuntu and Windows, plus the Node reference tests.
+- Release (`.github/workflows/release.yml`) runs on a semver tag such as `2.0.0`. It checks that the tag matches `package.json`, `tauri.conf.json` and `Cargo.toml`, bundles poppler, builds the DMG and the signed updater archive, and uploads `latest.json` for in-app updates.
 
-### Rules
-- `GET /api/rules` / `PUT /api/rules` — user-defined Pass 0 rules
+## Privacy and security
 
-### Files
-- `GET /api/receipt/:year/:month/*` — stream a receipt (sandboxed via `realpathSync` to `receipts/`)
-- `GET /report/:year/:month/report.xlsx?lang=en|pt` — regenerates the report on every request and streams it with `Cache-Control: no-store`. Source of truth is `match-result.json` **merged with `review-draft.json`** if a draft exists, so the .xlsx reflects the user's current pending decisions before Finalize. After Finalize, draft is gone and behavior collapses to plain match-result. Renaming columns or toggling language in Settings takes effect on the next download.
-
-## IPC surface
-
-`electron/preload.js` exposes `window.concilia.*` (`contextIsolation: true`):
-
-- `getConfig()` / `setConfig(patch)` — read/write electron-store; restarts server when `serverEnv` keys change
-- `pickFolder()` / `pickFile(filters)` — native dialogs
-- `bootLanguage` — language string passed via `additionalArguments` so i18n applies before first paint (avoids English flash)
-
-## Build
-
-- **Local development**: `npm run install:all && npm run build:assets && npm run dev`
-- **CI**: GitHub Actions runs tests + client build on Linux.
-
-## Threat model / privacy
-
-- All data is local. No cloud storage, no telemetry.
-- Server binds `127.0.0.1` only; no LAN exposure.
-- Single-user app, no auth.
-- Receipt content is sent to Google Vertex AI for extraction (text or image). Per Vertex AI terms, customer data is **not used to train Google's models**.
-- SA key path is stored in `config.json` (chmod 600). The key file itself stays at the user-chosen path.
-- Logs (`~/Library/Logs/Concilia/server.log`) record file paths, transaction IDs, and SSE events. Match rules are logged by *count only* (rule contents are PII-ish vendor substrings).
+- Files stay local. Receipts go to Gemini to be read (text or image); statements never leave the machine. Update checks go to GitHub releases.
+- The service account key is in the Keychain, not in a file Concilia keeps.
+- Each window may call only the commands its capability file grants. The Settings window cannot run month jobs.
+- Commands accept only files and folders the user chose in a dialog or dropped on a window.
+- `receipt://` serves only files under a month's `receipts/` or `reimbursements/` whose real path stays inside and whose extension is allowlisted.
+- The webview's content security policy allows only the app, `receipt:` and IPC.
+- Logs are local, in `~/Library/Logs/com.s3rgiosan.concilia/`.
 
 ## Conventions
 
-- **Dates**: ISO 8601 (YYYY-MM-DD) internally; DD/MM/YYYY only inside parser boundary
-- **Amounts**: signed integer cents (`amount_cents`); negative = debit/purchase, positive = credit; receipts always positive
-- **Tolerance**: exact cents (EUR↔EUR matching), ±10% (FX, non-EUR receipts)
-- **Modules**: ESM throughout (`.mjs` extension); Electron main is CommonJS for Electron API compatibility
-- **Timezone**: Europe/Lisbon (configurable via `TZ` env var)
-- **Receipts location**: input lives in `<year>/<month>/receipts/`; 3-way subfolders nested inside `receipts/`
+- **Dates**: ISO 8601 (`YYYY-MM-DD`) everywhere except parser output (`DD/MM/YYYY`).
+- **Amounts**: signed integer cents; negative is a debit. Receipt amounts are positive.
+- **Languages**: English and Portuguese for the UI, the report and reason names.
+- **Commands**: declared in `build.rs`, registered in `lib.rs`, granted in `capabilities/*.json`; `tests/capabilities.rs` checks all three agree.

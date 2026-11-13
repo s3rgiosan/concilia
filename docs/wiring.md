@@ -15,7 +15,7 @@ Routes, from `menu::route` and `handle_menu_event` in `src-tauri/src/lib.rs`:
 
 | Menu | Item | Id | Shortcut | Route | Handler |
 |---|---|---|---|---|---|
-| App | About Concilia | predefined | | AppKit | About panel with version, copyright and credits (`menu.rs` `AboutMetadata`) |
+| App | About Concilia | predefined | | AppKit | About panel with version, copyright and credits (`menu.rs` `AboutMetadata`); debug builds also pass the app icon (`about_icon`) |
 | App | Check for Updates… | `check_updates` | | Rust | `check_for_updates_from_menu` (`lib.rs`), result sent as `update-check-result` to main |
 | App | Settings… | `settings` | ⌘, | Rust | `windows::open_settings` |
 | App | Services, Hide Concilia, Hide Others, Show All, Quit Concilia | predefined | system | AppKit | |
@@ -58,7 +58,8 @@ Native menus built in the webview with `Menu.new` and shown with `menu.popup` (`
 | Sidebar month (right click) | `monthMenu` in `src/main/Main.tsx`, shown by `src/main/Sidebar.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
 | Month toolbar More Actions | `monthActions` in `src/main/Main.tsx` | Open Report, Show in Finder, Reopen Month… (finalized month), Reconcile Again… |
 | Statement row (right click) | `src/main/Statements.tsx` | Remove |
-| Transaction row (right click) | `rowMenu` in `src/review/rowMenu.ts`, shown by `src/review/Review.tsx` | Quick Look, Open in Preview, Read Receipt Again, Assign Receipt, Remove Match, No Receipt Needed, Always Match rule, Always Mark rule |
+| Transaction row (right click) | `rowMenu` in `src/review/rowMenu.ts`, shown by `src/review/Review.tsx` | Assign Receipt, Remove Match, No Receipt Needed › reasons, Always Match or Always Mark rule, Quick Look, Open in Preview |
+| Reimbursement row (right click) | `rowMenu` in `src/review/rowMenu.ts` | Read Receipt Again, Quick Look, Open in Preview |
 | Receipt row (right click) | `src/review/ReceiptRow.tsx` | Read Receipt Again, Open in Preview |
 | Rule sheet Rule pop-up | `src/settings/RulesTab.tsx` | Match a receipt, then No receipt: <reason> for each reason in Settings › Reasons |
 | Toolbar pop-up buttons | `src/components/PopUpButton.tsx` with entries from `ReviewToolbar.tsx` and `Details.tsx` | the entries each pane passes |
