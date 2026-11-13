@@ -170,7 +170,7 @@ Agent Platform is pay-per-use. Gemini 2.5 Flash costs ~$0.10/1M input tokens. ~2
    - **Read Receipt Again** when Gemini misread one.
    Right-click a decided transaction for **Always Match** or **Always Mark**, which add a rule.
 6. Add receipts to the folder at any time and use **Scan for New Receipts**. **Export Report…** saves the report with the decisions so far.
-7. **Finalize…** sorts the receipts and saves the report. To change a finalized month, use **Month › Reopen Month…**. **Reconcile Again…** starts the month over.
+7. **Finalize…** sorts the receipts and saves the report. To change a finalized month, use **Month › Reopen Month…**. **Reconcile Again…** reads every receipt again and keeps your review decisions.
 
 Folder layout after Finalize:
 

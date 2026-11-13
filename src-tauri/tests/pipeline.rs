@@ -560,6 +560,50 @@ async fn clearing_the_cache_restores_finalized_receipts() {
     assert_eq!(h.extractor.take_calls(), ["acme.pdf", "initech.png"]);
 }
 
+#[tokio::test]
+async fn reconciling_a_finalized_month_again_keeps_the_review_decisions() {
+    let h = Harness::new();
+    h.extractor.knows("acme.pdf", 1000, "ACME");
+    h.extractor.knows("initech.png", 5000, "INITECH");
+    h.receipt("acme.pdf");
+    h.receipt("initech.png");
+    let mut lines = STATEMENT.to_vec();
+    lines.push("  2030-03-08 2030-03-08 HOOLI                  -50,00      19,00");
+    let statement = h.statement("statement.pdf", &lines);
+    pipeline::reconcile(&h.ctx(), &[statement], false)
+        .await
+        .unwrap();
+    let hooli = h
+        .match_result()
+        .transactions
+        .into_iter()
+        .find(|t| t.description == "HOOLI")
+        .unwrap()
+        .id;
+    let initech = h.paths.receipts.join("initech.png");
+    let initech = initech.to_string_lossy().into_owned();
+    let mut decisions = assigned_to_globex(&initech, 5000, "INITECH");
+    decisions.extend(draft(json!({
+        ACME_ID: { "status": "UNMATCHED", "receipt_files": [], "receipt_meta": [], "notes": "" },
+        hooli.clone(): { "status": "MATCHED", "receipt_files": [], "receipt_meta": [], "notes": "transfer" }
+    })));
+    pipeline::save_draft(&h.paths, &decisions).unwrap();
+    pipeline::finalize(&h.paths, Language::En, &default_reasons()).unwrap();
+
+    pipeline::reconcile(&h.ctx(), &[], true).await.unwrap();
+
+    let result = h.match_result();
+    let kept = pipeline::read_draft(&h.paths).unwrap();
+    let merged = concilia_lib::review::merge_draft(&result, &kept).unwrap();
+    let by_id = |id: &str| merged.iter().find(|t| t.id == id).unwrap().clone();
+    assert_eq!(by_id(GLOBEX_ID).receipt_files, [initech]);
+    assert_eq!(by_id(GLOBEX_ID).notes, "manual_match");
+    assert_eq!(by_id(ACME_ID).status, Status::Unmatched);
+    assert!(by_id(ACME_ID).receipt_files.is_empty());
+    assert_eq!(by_id(&hooli).notes, "transfer");
+    assert_eq!(by_id(&hooli).status, Status::Matched);
+}
+
 #[test]
 fn resetting_a_period_moves_receipts_back_and_deletes_derived_files() {
     let dir = tempfile::tempdir().unwrap();
@@ -581,7 +625,7 @@ fn resetting_a_period_moves_receipts_back_and_deletes_derived_files() {
         write_file(&file, b"[]");
     }
 
-    let report = pipeline::reset_period(&paths).unwrap();
+    let report = pipeline::reset_period(&paths, &[]).unwrap();
 
     assert_eq!(report.restored, 3);
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
@@ -619,7 +663,7 @@ fn resetting_keeps_receipts_whose_names_differ_only_in_case() {
     write_file(&receipts.join("_matched/Invoice.pdf"), b"acme");
     write_file(&receipts.join("_review/invoice.pdf"), b"globex");
 
-    let report = pipeline::reset_period(&paths).unwrap();
+    let report = pipeline::reset_period(&paths, &[]).unwrap();
 
     assert_eq!(report.restored, 2);
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
@@ -673,7 +717,7 @@ fn resetting_stops_and_undoes_the_moves_when_a_receipt_cannot_move_back() {
     let review = paths.receipts.join("_review");
     std::fs::set_permissions(&review, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-    let outcome = pipeline::reset_period(&paths);
+    let outcome = pipeline::reset_period(&paths, &[]);
 
     std::fs::set_permissions(&review, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(matches!(outcome, Err(PipelineError::Io(_))), "{outcome:?}");
@@ -700,7 +744,7 @@ async fn reconciling_again_stops_when_a_sorted_folder_is_not_a_folder() {
 #[test]
 fn resetting_an_empty_period_does_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let report = pipeline::reset_period(&period().paths(dir.path())).unwrap();
+    let report = pipeline::reset_period(&period().paths(dir.path()), &[]).unwrap();
     assert_eq!(report.restored, 0);
     assert!(report.warnings.is_empty());
 }

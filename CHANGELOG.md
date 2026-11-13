@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Reconcile Again stops with an error when a sorted receipt cannot move back to the receipts folder, and leaves the month as it was, so no receipt is left behind in a sorted folder.
 - A review decision cannot be lost to a job that runs on the month at the same time: a save that a running job refuses is tried again until the job ends, Reconcile Again saves pending decisions before it starts, and a finalized month refuses draft saves.
 - Reopen Month and Reconcile Again put each sorted receipt back in its original subfolder with its original name, without the suffix Finalize added on a name clash.
+- Reconcile Again on a finalized month keeps the review decisions (receipts assigned by hand, no-receipt reasons and rejected matches), as Reopen Month does.
 - Moving or renaming the receipts folder keeps the review decisions and the extraction cache, because the month's files store receipt paths relative to the month folder.
 - A receipt file replaced by another file with the same name is read again, also after Reopen Month, so the new receipt no longer gets the old receipt's amount, vendor and date.
 

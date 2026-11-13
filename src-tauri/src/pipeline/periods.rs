@@ -7,11 +7,13 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::apply::{create_target_dirs, pin_moves};
-use super::{io, PipelineError};
+use super::reopen::after_moves;
+use super::stored::{read_stored_lenient, write_stored};
+use super::{io, read_cache, PipelineError};
 use crate::error::ErrorKind;
 use crate::finalize::{self, folded, relative_text, Move};
 use crate::fsutil::{read_json_lenient, remove_if_exists};
-use crate::model::{Draft, MatchResult, StatementRecord, Status};
+use crate::model::{Draft, MatchResult, Rule, StatementRecord, StatementTransaction, Status};
 use crate::period::{Period, PeriodPaths};
 use crate::receipts::{walk, STATUS_FOLDERS};
 use crate::review::merge_draft;
@@ -180,11 +182,13 @@ fn pending_count(result: &MatchResult, paths: &PeriodPaths) -> usize {
 }
 
 /// What resetting a period did.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ResetReport {
     pub restored: usize,
     /// Derived files that could not be deleted.
     pub warnings: Vec<String>,
+    /// For a finalized period, its final result with the paths the receipts moved back to.
+    pub finalized: Option<MatchResult>,
 }
 
 /// `<base>-restored<ext>`, then `<base>-restored-2<ext>` and so on.
@@ -275,11 +279,13 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
 
 /// Moves finalized receipts back to where Finalize took them from and deletes the extraction
 /// cache, the match result and the finalized marker. Transactions, reimbursements, the draft
-/// and the report stay. Name clashes get a `-restored` suffix.
+/// and the report stay. Name clashes get a `-restored` suffix. A finalized period keeps its
+/// review decisions: the reset adds them to the draft, as Reopen does, with the paths the
+/// receipts moved back to.
 ///
 /// A receipt that cannot move back stops the reset with an error. The moves already made are
 /// undone, and nothing is deleted, so no receipt is left behind in a status folder.
-pub fn reset_period(paths: &PeriodPaths) -> Result<ResetReport, PipelineError> {
+pub fn reset_period(paths: &PeriodPaths, rules: &[Rule]) -> Result<ResetReport, PipelineError> {
     let mut warnings = Vec::new();
     let moves = restore_moves(paths, &mut warnings);
     if !warnings.is_empty() {
@@ -288,14 +294,23 @@ pub fn reset_period(paths: &PeriodPaths) -> Result<ResetReport, PipelineError> {
             warnings.join("; ")
         )));
     }
+    let kept = finalized_decisions(paths, &moves, rules);
+    let mut pinned = Vec::new();
     if !moves.is_empty() {
-        let pinned = pin_moves(paths, &moves)?;
+        pinned = pin_moves(paths, &moves)?;
         create_target_dirs(paths, &pinned)?;
         finalize::execute(&pinned).map_err(|e| io(&paths.receipts, e))?;
+    }
+    if let Some((_, decisions)) = &kept {
+        if let Err(error) = keep_decisions(paths, decisions) {
+            finalize::undo(&pinned);
+            return Err(error);
+        }
     }
     let mut report = ResetReport {
         restored: moves.len(),
         warnings: Vec::new(),
+        finalized: kept.map(|(result, _)| result),
     };
     for file in [
         paths.receipts_cache(),
@@ -307,6 +322,34 @@ pub fn reset_period(paths: &PeriodPaths) -> Result<ResetReport, PipelineError> {
         }
     }
     Ok(report)
+}
+
+/// The review decisions of a finalized period as a draft, with the receipt paths that `moves`
+/// give, and its final result with the same paths. None when the period is not finalized or
+/// its files cannot be read.
+fn finalized_decisions(
+    paths: &PeriodPaths,
+    moves: &[Move],
+    rules: &[Rule],
+) -> Option<(MatchResult, Draft)> {
+    if !paths.applied_marker().exists() {
+        return None;
+    }
+    let finalized: MatchResult = read_stored_lenient(&paths.dir, &paths.match_result())?;
+    let transactions: Vec<StatementTransaction> = read_json_lenient(&paths.transactions())?;
+    let cache = read_cache(&paths.dir, &paths.receipts_cache());
+    let (relocated, reopened) = after_moves(paths, &finalized, &transactions, &cache, moves, rules);
+    Some((relocated, reopened.draft))
+}
+
+/// Lays `decisions` over the saved draft and saves it.
+fn keep_decisions(paths: &PeriodPaths, decisions: &Draft) -> Result<(), PipelineError> {
+    if decisions.is_empty() {
+        return Ok(());
+    }
+    let mut draft: Draft = read_stored_lenient(&paths.dir, &paths.draft()).unwrap_or_default();
+    draft.extend(decisions.clone());
+    Ok(write_stored(&paths.dir, &paths.draft(), &draft)?)
 }
 
 #[cfg(test)]

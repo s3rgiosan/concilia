@@ -14,7 +14,7 @@ use super::periods::restore_moves;
 use super::stored::{read_stored, write_stored};
 use super::{io, read_cache, readable, PipelineError};
 use crate::error::ErrorKind;
-use crate::finalize;
+use crate::finalize::{self, Move};
 use crate::fsutil::{read_json_opt, remove_if_exists};
 use crate::matcher::match_transactions;
 use crate::model::{
@@ -36,10 +36,11 @@ pub struct ReopenReport {
 }
 
 /// The files a reopened period gets, computed before anything moves.
-struct Reopened {
+pub(super) struct Reopened {
     cache: Vec<ReceiptMeta>,
     result: MatchResult,
-    draft: Draft,
+    /// The finalized transactions that the matcher does not repeat, as review decisions.
+    pub(super) draft: Draft,
 }
 
 /// Moves the receipts of a finalized period back into `receipts/` and returns the period to
@@ -73,7 +74,37 @@ pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, Pipel
         )));
     }
     let pinned = pin_moves(paths, &moves)?;
+    let (_, reopened) = after_moves(paths, &finalized, &transactions, &cache, &moves, rules);
 
+    let staged = Staged::write(paths, &reopened)?;
+    if let Err(error) = create_target_dirs(paths, &pinned) {
+        staged.discard();
+        return Err(error);
+    }
+    if let Err(error) = finalize::execute(&pinned) {
+        staged.discard();
+        return Err(io(&paths.receipts, error));
+    }
+    if let Err(error) = staged.publish(paths) {
+        finalize::undo(&pinned);
+        return Err(error);
+    }
+    Ok(ReopenReport {
+        restored: moves.len(),
+        kept_decisions: reopened.draft.len(),
+    })
+}
+
+/// The `finalized` result with the paths that `moves` give its receipts, and the files the
+/// period gets once the receipts are back. It runs before the moves.
+pub(super) fn after_moves(
+    paths: &PeriodPaths,
+    finalized: &MatchResult,
+    transactions: &[StatementTransaction],
+    cache: &[ReceiptMeta],
+    moves: &[Move],
+    rules: &[Rule],
+) -> (MatchResult, Reopened) {
     // The files `receipts/` will hold once the moves are done.
     let mut present: HashSet<String> = walk(&paths.receipts).into_iter().collect();
     present.extend(
@@ -94,32 +125,9 @@ pub fn reopen(paths: &PeriodPaths, rules: &[Rule]) -> Result<ReopenReport, Pipel
         Some(from) => FileIdentity::of(from),
         None => FileIdentity::of(Path::new(file)),
     };
-    let reopened = reopened(
-        &relocated(&finalized, &moved),
-        &transactions,
-        &cache,
-        &present,
-        &identity,
-        rules,
-    );
-
-    let staged = Staged::write(paths, &reopened)?;
-    if let Err(error) = create_target_dirs(paths, &pinned) {
-        staged.discard();
-        return Err(error);
-    }
-    if let Err(error) = finalize::execute(&pinned) {
-        staged.discard();
-        return Err(io(&paths.receipts, error));
-    }
-    if let Err(error) = staged.publish(paths) {
-        finalize::undo(&pinned);
-        return Err(error);
-    }
-    Ok(ReopenReport {
-        restored: moves.len(),
-        kept_decisions: reopened.draft.len(),
-    })
+    let relocated = relocated(finalized, &moved);
+    let reopened = reopened(&relocated, transactions, cache, &present, &identity, rules);
+    (relocated, reopened)
 }
 
 fn text(path: &Path) -> String {
