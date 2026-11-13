@@ -43,10 +43,24 @@ const COMMANDS: &[&str] = &[
     "show_alert",
 ];
 
+/// The Windows application manifest. It asks for Common Controls v6, which the dialogs need.
+const WINDOWS_MANIFEST: &str = "windows-app-manifest.xml";
+
 fn main() {
-    tauri_build::try_build(
-        tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
-    )
-    .expect("tauri build failed");
+    let windows_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
+    let mut attributes = tauri_build::Attributes::new()
+        .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
+    if windows_msvc {
+        // tauri-build links its manifest into the app binary only. Without the manifest, a
+        // test binary loads Common Controls v5 and stops with STATUS_ENTRYPOINT_NOT_FOUND.
+        // The linker embeds the manifest into every binary, the test binaries included.
+        attributes = attributes
+            .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(WINDOWS_MANIFEST);
+        println!("cargo:rerun-if-changed={}", manifest.display());
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+    }
+    tauri_build::try_build(attributes).expect("tauri build failed");
 }
