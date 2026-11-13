@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::fsutil::rename_no_replace;
 use crate::model::{basename, ReceiptMeta, ReceiptsByStatus, Status, Transaction};
 
 /// Fields added for display that never belong in stored metadata.
@@ -50,6 +51,12 @@ fn suffixed(name: &str, n: usize) -> String {
         Some((stem, ext)) if !stem.is_empty() => format!("{stem}-{n}.{ext}"),
         _ => format!("{name}-{n}"),
     }
+}
+
+/// `path` in lowercase. Reserved targets are compared in this form, because a
+/// case-insensitive volume treats names that differ only in case as one file.
+pub(crate) fn folded(path: &Path) -> String {
+    path.to_string_lossy().to_lowercase()
 }
 
 /// `meta` stored at `file`, without the fields added for display.
@@ -113,7 +120,7 @@ pub fn plan(
 
     let mut moves = Vec::new();
     let mut destinations: HashMap<String, String> = HashMap::new();
-    let mut reserved: HashSet<PathBuf> = HashSet::new();
+    let mut reserved: HashSet<String> = HashSet::new();
     for file in &order {
         let source = PathBuf::from(file);
         if !exists(&source) {
@@ -124,11 +131,11 @@ pub fn plan(
         let name = basename(file);
         let mut target = dir.join(name);
         let mut n = 0;
-        while target != source && (reserved.contains(&target) || exists(&target)) {
+        while target != source && (reserved.contains(&folded(&target)) || exists(&target)) {
             n += 1;
             target = dir.join(suffixed(name, n));
         }
-        reserved.insert(target.clone());
+        reserved.insert(folded(&target));
         if target != source {
             moves.push(Move {
                 from: source,
@@ -178,11 +185,11 @@ pub fn plan(
     }
 }
 
-/// Performs the moves in order. On failure, moves already made are undone and the error
-/// returned.
+/// Performs the moves in order. A move never replaces an existing file. On failure, moves
+/// already made are undone and the error returned.
 pub fn execute(moves: &[Move]) -> std::io::Result<()> {
     for (done, step) in moves.iter().enumerate() {
-        if let Err(error) = std::fs::rename(&step.from, &step.to) {
+        if let Err(error) = rename_no_replace(&step.from, &step.to) {
             undo(&moves[..done]);
             return Err(error);
         }
@@ -190,10 +197,11 @@ pub fn execute(moves: &[Move]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Moves every file of `moves` back to where it came from, last move first.
+/// Moves every file of `moves` back to where it came from, last move first. A file whose
+/// origin is taken again stays at its target.
 pub fn undo(moves: &[Move]) {
     for step in moves.iter().rev() {
-        if let Err(error) = std::fs::rename(&step.to, &step.from) {
+        if let Err(error) = rename_no_replace(&step.to, &step.from) {
             log::error!(
                 "finalize rollback failed for {}: {error}",
                 step.to.display()
@@ -339,6 +347,54 @@ mod tests {
                 PathBuf::from("/p/receipts/_matched/a-2.pdf")
             ]
         );
+    }
+
+    #[test]
+    fn names_that_differ_only_in_case_get_distinct_targets() {
+        let txs = [tx(
+            "t1",
+            Status::Matched,
+            &["/p/receipts/a/Invoice.pdf", "/p/receipts/b/invoice.pdf"],
+        )];
+        let p = plan_with(
+            &txs,
+            &[],
+            &["/p/receipts/a/Invoice.pdf", "/p/receipts/b/invoice.pdf"],
+        );
+        let targets: Vec<_> = p.moves.iter().map(|m| m.to.clone()).collect();
+        assert_eq!(
+            targets,
+            [
+                PathBuf::from("/p/receipts/_matched/Invoice.pdf"),
+                PathBuf::from("/p/receipts/_matched/invoice-1.pdf")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_move_never_replaces_an_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        fs::create_dir(d.join("_matched")).unwrap();
+        fs::write(d.join("a.pdf"), b"a").unwrap();
+        fs::write(d.join("b.pdf"), b"b").unwrap();
+        fs::write(d.join("_matched/b.pdf"), b"earlier").unwrap();
+        let moves = vec![
+            Move {
+                from: d.join("a.pdf"),
+                to: d.join("_matched/a.pdf"),
+            },
+            Move {
+                from: d.join("b.pdf"),
+                to: d.join("_matched/b.pdf"),
+            },
+        ];
+        let error = execute(&moves).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(d.join("a.pdf")).unwrap(), b"a");
+        assert_eq!(fs::read(d.join("b.pdf")).unwrap(), b"b");
+        assert_eq!(fs::read(d.join("_matched/b.pdf")).unwrap(), b"earlier");
+        assert!(!d.join("_matched/a.pdf").exists());
     }
 
     #[test]

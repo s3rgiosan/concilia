@@ -428,6 +428,46 @@ fn receipts_with_the_same_name_get_distinct_targets() {
 }
 
 #[test]
+fn receipts_whose_names_differ_only_in_case_keep_both_files() {
+    let f = Fixture::new();
+    let first = receipt_meta(&f.receipt("a/Invoice.pdf"), 1000, "ACME");
+    let second = receipt_meta(&f.receipt("b/invoice.pdf"), 2000, "GLOBEX");
+    f.write_result(
+        vec![
+            tx(
+                ACME_ID,
+                "ACME CORP",
+                Status::Matched,
+                &[first],
+                "amount_match",
+            ),
+            tx(
+                GLOBEX_ID,
+                "GLOBEX",
+                Status::Matched,
+                &[second],
+                "amount_match",
+            ),
+        ],
+        Vec::new(),
+    );
+
+    f.finalize().unwrap();
+
+    assert_eq!(f.listing("_matched"), ["Invoice.pdf", "invoice-1.pdf"]);
+    let result = f.result();
+    for (tx, origin) in result
+        .transactions
+        .iter()
+        .zip(["a/Invoice.pdf", "b/invoice.pdf"])
+    {
+        let stored = &tx.receipt_files[0];
+        assert_eq!(std::fs::read_to_string(stored).unwrap(), origin);
+    }
+    assert_stored_paths_exist(&result);
+}
+
+#[test]
 fn existing_files_in_a_status_folder_are_never_overwritten() {
     let f = Fixture::new();
     write_file(&f.paths.receipts.join("_matched/acme.pdf"), b"earlier");

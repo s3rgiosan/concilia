@@ -603,6 +603,23 @@ fn resetting_a_period_moves_receipts_back_and_deletes_derived_files() {
 }
 
 #[test]
+fn resetting_keeps_receipts_whose_names_differ_only_in_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = period().paths(dir.path());
+    let receipts = &paths.receipts;
+    write_file(&receipts.join("_matched/Invoice.pdf"), b"acme");
+    write_file(&receipts.join("_review/invoice.pdf"), b"globex");
+
+    let report = pipeline::reset_period(&paths);
+
+    assert_eq!(report.restored, 2);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let read = |name: &str| std::fs::read(receipts.join(name)).unwrap();
+    assert_eq!(read("Invoice.pdf"), b"acme");
+    assert_eq!(read("invoice-restored.pdf"), b"globex");
+}
+
+#[test]
 fn resetting_an_empty_period_does_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let report = pipeline::reset_period(&period().paths(dir.path()));

@@ -77,6 +77,19 @@ pub fn read_json_lenient<T: DeserializeOwned>(path: &Path) -> Option<T> {
     }
 }
 
+/// Renames `from` to `to` and fails with `AlreadyExists` when `to` exists. The check runs
+/// right before the rename, so a file that appears after a plan is not replaced. A case-only
+/// match on a case-insensitive volume also counts as existing.
+pub fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    if to.symlink_metadata().is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("{} already exists", to.display()),
+        ));
+    }
+    std::fs::rename(from, to)
+}
+
 /// Deletes a file; one that does not exist counts as deleted.
 pub fn remove_if_exists(path: &Path) -> std::io::Result<()> {
     match std::fs::remove_file(path) {

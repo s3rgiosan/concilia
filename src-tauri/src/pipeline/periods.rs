@@ -8,8 +8,8 @@ use serde_json::Value;
 
 use super::{io, PipelineError};
 use crate::error::ErrorKind;
-use crate::finalize::Move;
-use crate::fsutil::{read_json_lenient, remove_if_exists};
+use crate::finalize::{folded, Move};
+use crate::fsutil::{read_json_lenient, remove_if_exists, rename_no_replace};
 use crate::model::{Draft, MatchResult, StatementRecord, Status};
 use crate::period::{Period, PeriodPaths};
 use crate::receipts::{walk, STATUS_FOLDERS};
@@ -223,14 +223,14 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
         );
     }
     sources.sort();
-    let mut reserved: HashSet<PathBuf> = HashSet::new();
+    let mut reserved: HashSet<String> = HashSet::new();
     let mut moves = Vec::new();
     for from in sources {
         let name = from
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let taken = |path: &Path| path.exists() || reserved.contains(path);
+        let taken = |path: &Path| path.exists() || reserved.contains(&folded(path));
         let mut target = paths.receipts.join(&name);
         let mut n = 1;
         while taken(&target) && n <= 10_000 {
@@ -241,7 +241,7 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
             warnings.push(format!("no free name to restore {name}"));
             continue;
         }
-        reserved.insert(target.clone());
+        reserved.insert(folded(&target));
         moves.push(Move { from, to: target });
     }
     moves
@@ -253,7 +253,7 @@ pub(super) fn restore_moves(paths: &PeriodPaths, warnings: &mut Vec<String>) -> 
 pub fn reset_period(paths: &PeriodPaths) -> ResetReport {
     let mut report = ResetReport::default();
     for step in restore_moves(paths, &mut report.warnings) {
-        match std::fs::rename(&step.from, &step.to) {
+        match rename_no_replace(&step.from, &step.to) {
             Ok(()) => report.restored += 1,
             Err(error) => {
                 let name = step.from.file_name().unwrap_or_default().to_string_lossy();

@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file. Format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- Finalize, Reopen Month and Reconcile Again keep both receipts when two file names differ only in letter case, and a move never replaces a file that already exists.
+
 ## [2.0.0] - 2026-11-13
 
 ### Changed
