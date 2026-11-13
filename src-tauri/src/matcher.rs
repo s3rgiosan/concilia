@@ -478,7 +478,7 @@ pub fn match_transactions(
         .iter()
         .filter_map(|rule| {
             let reason = rule.no_receipt.as_deref()?;
-            Some((rule.transaction_description.to_lowercase(), reason))
+            Some((rule.transaction_description.trim().to_lowercase(), reason))
         })
         .filter(|(keyword, _)| !keyword.is_empty())
         .collect();

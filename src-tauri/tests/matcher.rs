@@ -825,6 +825,28 @@ fn a_receipt_rule_without_a_description_keyword_matches_nothing() {
 }
 
 #[test]
+fn a_no_receipt_rule_with_a_blank_keyword_matches_nothing() {
+    let rules = [no_receipt_rule("1", " ", "transfer")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "ACME CORP", -1000)],
+        &[],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].status, Status::Unmatched);
+}
+
+#[test]
+fn a_no_receipt_rule_ignores_spaces_around_its_keyword() {
+    let rules = [no_receipt_rule("1", " trf ", "transfer")];
+    let result = match_transactions(
+        &[tx("tx-001", "2030-12-15", "TRF P2P ACME", -1100)],
+        &[],
+        &rules,
+    );
+    assert_eq!(result.transactions[0].notes, "transfer");
+}
+
+#[test]
 fn a_no_receipt_rule_matches_the_description_without_a_receipt() {
     let rules = [no_receipt_rule("1", "trf", "transfer")];
     let result = match_transactions(

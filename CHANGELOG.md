@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- A no-receipt rule ignores spaces around its keyword, and a keyword with only spaces matches no transaction, as for receipt rules.
 - A queued Settings save builds on the settings that the previous save stored, so a value that the app normalizes is not overwritten by the next change.
 - A year such as 2030 in a receipt file name and in a transaction description no longer counts as a shared name. Every year from 1900 to 2099 is ignored when Concilia compares names.
 - A rule match note with nested parentheses, such as a vendor named `ACME (EU)`, shows the whole vendor name in the report and in the review.

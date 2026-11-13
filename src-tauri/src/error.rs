@@ -137,9 +137,7 @@ impl From<ConfigError> for CommandError {
         }
         let kind = match &error {
             ConfigError::ReadOnly => ErrorKind::ReadOnly,
-            ConfigError::Io(_) | ConfigError::Parse(..) | ConfigError::Unreadable(_) => {
-                ErrorKind::Io
-            }
+            ConfigError::Io(_) | ConfigError::Unreadable(_) => ErrorKind::Io,
         };
         CommandError::new(kind, error.to_string())
     }

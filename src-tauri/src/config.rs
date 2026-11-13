@@ -121,8 +121,6 @@ fn current_version() -> u32 {
 pub enum ConfigError {
     #[error("could not read or write {0}")]
     Io(String),
-    #[error("{0} is not valid: {1}")]
-    Parse(String, String),
     #[error("the settings were saved by a newer Concilia and are read-only")]
     ReadOnly,
     /// A stored file does not parse. The message names the file and the parse error.

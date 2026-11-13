@@ -143,6 +143,8 @@ export interface ReceiptMeta {
   vendor: string | null;
   date: string | null;
   provider_used: string | null;
+  /** Why the file was not sent to Gemini, such as `file_too_large`. Absent for a file that was read or tried. */
+  refused?: string | null;
   /** The file's size and modification time when it was read. Absent when unknown. */
   identity?: FileIdentity;
   /** The file relative to the receipts root, for previews. Only in review data. */
