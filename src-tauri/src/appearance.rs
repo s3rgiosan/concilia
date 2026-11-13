@@ -37,7 +37,13 @@ fn read() -> Appearance {
 
     let accent = NSColor::controlAccentColor()
         .colorUsingColorSpace(&NSColorSpace::sRGBColorSpace())
-        .map(|color| hex(color.redComponent(), color.greenComponent(), color.blueComponent()));
+        .map(|color| {
+            hex(
+                color.redComponent(),
+                color.greenComponent(),
+                color.blueComponent(),
+            )
+        });
     let reduce_transparency =
         NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceTransparency();
     Appearance {

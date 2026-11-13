@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::WebviewWindow;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
 
 use crate::error::{fail, CommandError, CommandResult};
 
@@ -33,7 +35,9 @@ fn buttons(request: &AlertRequest) -> MessageDialogButtons {
             alternate.clone(),
             request.cancel.clone(),
         ),
-        None => MessageDialogButtons::OkCancelCustom(request.confirm.clone(), request.cancel.clone()),
+        None => {
+            MessageDialogButtons::OkCancelCustom(request.confirm.clone(), request.cancel.clone())
+        }
     }
 }
 
@@ -52,7 +56,10 @@ fn choice(request: &AlertRequest, result: &MessageDialogResult) -> AlertChoice {
 
 /// Shows an alert on the calling window and returns the button chosen.
 #[tauri::command]
-pub async fn show_alert(window: WebviewWindow, request: AlertRequest) -> CommandResult<AlertChoice> {
+pub async fn show_alert(
+    window: WebviewWindow,
+    request: AlertRequest,
+) -> CommandResult<AlertChoice> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     window
         .dialog()
@@ -88,17 +95,38 @@ mod tests {
     fn custom_labels_map_to_choices() {
         let with_alternate = request(Some("Review"));
         let custom = |label: &str| MessageDialogResult::Custom(label.into());
-        assert_eq!(choice(&with_alternate, &custom("Remove")), AlertChoice::Confirm);
-        assert_eq!(choice(&with_alternate, &custom("Review")), AlertChoice::Alternate);
-        assert_eq!(choice(&with_alternate, &custom("Cancel")), AlertChoice::Cancel);
-        assert_eq!(choice(&with_alternate, &MessageDialogResult::Cancel), AlertChoice::Cancel);
+        assert_eq!(
+            choice(&with_alternate, &custom("Remove")),
+            AlertChoice::Confirm
+        );
+        assert_eq!(
+            choice(&with_alternate, &custom("Review")),
+            AlertChoice::Alternate
+        );
+        assert_eq!(
+            choice(&with_alternate, &custom("Cancel")),
+            AlertChoice::Cancel
+        );
+        assert_eq!(
+            choice(&with_alternate, &MessageDialogResult::Cancel),
+            AlertChoice::Cancel
+        );
     }
 
     #[test]
     fn two_button_alerts_have_no_alternate() {
         let plain = request(None);
-        assert_eq!(choice(&plain, &MessageDialogResult::Ok), AlertChoice::Confirm);
-        assert_eq!(choice(&plain, &MessageDialogResult::No), AlertChoice::Cancel);
-        assert!(matches!(buttons(&plain), MessageDialogButtons::OkCancelCustom(..)));
+        assert_eq!(
+            choice(&plain, &MessageDialogResult::Ok),
+            AlertChoice::Confirm
+        );
+        assert_eq!(
+            choice(&plain, &MessageDialogResult::No),
+            AlertChoice::Cancel
+        );
+        assert!(matches!(
+            buttons(&plain),
+            MessageDialogButtons::OkCancelCustom(..)
+        ));
     }
 }
