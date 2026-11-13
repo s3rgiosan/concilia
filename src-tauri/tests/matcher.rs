@@ -766,6 +766,26 @@ fn filename_matches_eur_receipt_when_amount_equals_exactly() {
     assert_eq!(result.transactions[0].notes, "name_amount_match");
 }
 
+#[test]
+fn a_year_in_the_description_and_the_file_name_is_no_name_match() {
+    for year in ["1999", "2030", "2099"] {
+        let result = run(
+            &[tx("tx-001", "2030-12-15", &format!("REF {year}"), -1000)],
+            &[broken(&format!("/r/scan_{year}.pdf"))],
+        );
+        assert_eq!(result.transactions[0].status, Status::Unmatched, "{year}");
+    }
+}
+
+#[test]
+fn a_number_outside_the_year_range_is_a_name_word() {
+    let result = run(
+        &[tx("tx-001", "2030-12-15", "REF 2100", -1000)],
+        &[broken("/r/scan_2100.pdf")],
+    );
+    assert_eq!(result.transactions[0].status, Status::Review);
+}
+
 // matchTransactions > custom rules (Pass 0)
 
 fn no_receipt_rule(id: &str, description: &str, reason: &str) -> Rule {

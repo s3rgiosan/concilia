@@ -49,15 +49,15 @@ const STOP_WORDS: &[&str] = &[
     "para",
     "from",
     "with",
-    "2023",
-    "2024",
-    "2025",
-    "2026",
-    "2027",
 ];
 
+/// Whether a word is a four-digit year from 1900 to 2099, too common to say anything about a match.
+fn is_year(word: &str) -> bool {
+    word.len() == 4 && word.bytes().all(|b| b.is_ascii_digit()) && matches!(&word[..2], "19" | "20")
+}
+
 /// Significant lowercase words: letters, digits and Latin-1 letters, at least four
-/// characters, stop words removed.
+/// characters, stop words and years removed.
 fn extract_words(text: &str) -> Vec<String> {
     let cleaned: String = text
         .chars()
@@ -72,7 +72,9 @@ fn extract_words(text: &str) -> Vec<String> {
         .to_lowercase();
     cleaned
         .split_whitespace()
-        .filter(|w| w.chars().count() >= FILENAME_MIN_WORD_LEN && !STOP_WORDS.contains(w))
+        .filter(|w| {
+            w.chars().count() >= FILENAME_MIN_WORD_LEN && !STOP_WORDS.contains(w) && !is_year(w)
+        })
         .map(str::to_string)
         .collect()
 }
