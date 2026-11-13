@@ -566,7 +566,7 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
             <ActionPopUpButton label={t("toolbar.moreActions")} actions={actions} className="toolbar-group__item" borderless />
           </div>
           {missing !== null && !running ? (
-            <span id="reconcile-missing" className="toolbar-hint">
+            <span id="reconcile-missing" className="toolbar-hint" title={missing}>
               {missing}
             </span>
           ) : null}

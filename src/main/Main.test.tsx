@@ -740,6 +740,7 @@ describe("month without a match", () => {
     expect(screen.getByText("Drop March's bank statements here")).toBeTruthy();
     expect(screen.getByText("Put this month's receipts in /Users/example/Receipts/2030/03/receipts")).toBeTruthy();
     expect(button("Reconcile", toolbar()).disabled).toBe(true);
+    expect(within(toolbar()).getByText("Add receipts and a statement first").getAttribute("title")).toBe("Add receipts and a statement first");
     expect(within(toolbar()).getByText("Add receipts and a statement first").id).toBe(button("Reconcile", toolbar()).getAttribute("aria-describedby"));
     expect(moreActions()).toEqual(["Open Report (disabled)", "Show in Finder"]);
   });
