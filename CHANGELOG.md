@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file. Format follows 
 
 ### Fixed
 
+- A receipt date that does not exist in its month, such as 2030-02-31, is discarded instead of kept.
 - Finalize, Reopen Month and Reconcile Again keep both receipts when two file names differ only in letter case, and a move never replaces a file that already exists.
 - Reconcile and Reconcile Again keep a receipt assigned by hand in the review away from other transactions, so one receipt no longer ends up on two transactions.
 - Reconcile Again stops with an error when a sorted receipt cannot move back to the receipts folder, and leaves the month as it was, so no receipt is left behind in a sorted folder.

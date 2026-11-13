@@ -1,7 +1,7 @@
 //! Calendar arithmetic on ISO dates and the current UTC time.
 
-/// Days since 1970-01-01 for an ISO `YYYY-MM-DD` date. A day past the month's end rolls into
-/// the next month, as JavaScript's date parser does.
+/// Days since 1970-01-01 for an ISO `YYYY-MM-DD` date. Returns none when the day does not
+/// exist in that month, leap years included.
 pub fn epoch_days(date: &str) -> Option<i64> {
     let bytes = date.as_bytes();
     let shape_ok = bytes.len() == 10
@@ -17,7 +17,7 @@ pub fn epoch_days(date: &str) -> Option<i64> {
     let year: i64 = date[0..4].parse().ok()?;
     let month: i64 = date[5..7].parse().ok()?;
     let day: i64 = date[8..10].parse().ok()?;
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    if !(1..=12).contains(&month) || !(1..=days_in_month(year, month)).contains(&day) {
         return None;
     }
     // Days from civil, Howard Hinnant's algorithm, for the first of the month.
@@ -28,6 +28,16 @@ pub fn epoch_days(date: &str) -> Option<i64> {
     let doy = (153 * mp + 2) / 5;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     Some(era * 146_097 + doe - 719_468 + day - 1)
+}
+
+/// Number of days in a month of the proleptic Gregorian calendar. The month is 1 to 12.
+fn days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
 }
 
 /// The current UTC time as `YYYY-MM-DDTHH:MM:SSZ`.
@@ -69,9 +79,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn counts_epoch_days_with_month_rollover() {
+    fn counts_epoch_days() {
         assert_eq!(epoch_days("1970-01-01"), Some(0));
-        assert_eq!(epoch_days("2030-03-01"), epoch_days("2030-02-29"));
         assert_eq!(
             epoch_days("2028-02-29").unwrap() + 1,
             epoch_days("2028-03-01").unwrap()
@@ -80,6 +89,17 @@ mod tests {
         assert_eq!(epoch_days("2030-13-01"), None);
         assert_eq!(epoch_days("2030-01-32"), None);
         assert_eq!(epoch_days("2030-1-01"), None);
+    }
+
+    #[test]
+    fn rejects_days_past_the_end_of_the_month() {
+        assert_eq!(epoch_days("2030-02-29"), None);
+        assert_eq!(epoch_days("2030-02-31"), None);
+        assert_eq!(epoch_days("2030-04-31"), None);
+        assert_eq!(epoch_days("2100-02-29"), None);
+        assert!(epoch_days("2028-02-29").is_some());
+        assert!(epoch_days("2000-02-29").is_some());
+        assert!(epoch_days("2030-12-31").is_some());
     }
 
     #[test]
