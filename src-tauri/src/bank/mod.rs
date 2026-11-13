@@ -2,7 +2,7 @@
 
 pub mod cgd;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -49,23 +49,16 @@ pub struct Normalized {
     pub counts: Vec<usize>,
 }
 
-/// Normalizes the transactions of several statements and drops repeated IDs, keeping the
-/// first. Indexes restart at 1 for each statement.
+/// Normalizes the transactions of several statements as `append_statements` does for a period
+/// without transactions: one index sequence across all statements, and rows already present
+/// in an earlier statement are dropped. The IDs of a single statement are `tx-001`, `tx-002`,
+/// and so on.
 pub fn normalize_statements(statements: &[Vec<RawTransaction>]) -> Result<Normalized, SchemaError> {
-    let mut seen = HashSet::new();
-    let mut out = Normalized::default();
-    for statement in statements {
-        let mut count = 0;
-        for (i, raw) in statement.iter().enumerate() {
-            let tx = normalize_transaction(raw, i + 1)?;
-            if seen.insert(tx.id.clone()) {
-                out.transactions.push(tx);
-                count += 1;
-            }
-        }
-        out.counts.push(count);
-    }
-    Ok(out)
+    let appended = append_statements(&[], statements)?;
+    Ok(Normalized {
+        transactions: appended.transactions,
+        counts: appended.counts.iter().map(|c| c.added).collect(),
+    })
 }
 
 /// What one added statement contributed.
@@ -159,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn indexes_each_statement_from_one_and_drops_repeated_ids() {
+    fn numbers_transactions_across_statements_and_drops_rows_already_present() {
         let first = vec![
             raw("01/03/2030", "ACME CORP", -1000),
             raw("02/03/2030", "EXAMPLE FEE", -100),
@@ -180,7 +173,45 @@ mod tests {
             [
                 "tx-001-2030-03-01--1000",
                 "tx-002-2030-03-02--100",
-                "tx-002-2030-03-05--2000"
+                "tx-003-2030-03-05--2000"
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_rows_of_different_statements_that_share_date_and_amount() {
+        let first = vec![raw("01/03/2030", "ACME CORP", -1000)];
+        let second = vec![raw("01/03/2030", "GLOBEX", -1000)];
+        let normalized = normalize_statements(&[first, second]).unwrap();
+        assert_eq!(normalized.counts, [1, 1]);
+        let descriptions: Vec<_> = normalized
+            .transactions
+            .iter()
+            .map(|t| t.description.as_str())
+            .collect();
+        assert_eq!(descriptions, ["ACME CORP", "GLOBEX"]);
+        assert_ne!(normalized.transactions[0].id, normalized.transactions[1].id);
+    }
+
+    #[test]
+    fn keeps_identical_rows_within_one_statement() {
+        let statement = vec![
+            raw("01/03/2030", "ACME CORP", -1000),
+            raw("03/03/2030", "GLOBEX", -500),
+            raw("01/03/2030", "ACME CORP", -1000),
+        ];
+        let normalized = normalize_statements(&[statement]).unwrap();
+        let ids: Vec<_> = normalized
+            .transactions
+            .iter()
+            .map(|t| t.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "tx-001-2030-03-01--1000",
+                "tx-002-2030-03-03--500",
+                "tx-003-2030-03-01--1000"
             ]
         );
     }

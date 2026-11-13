@@ -394,7 +394,7 @@ async fn reconciles_one_statement() {
 }
 
 #[tokio::test]
-async fn drops_repeated_transaction_ids_across_statements() {
+async fn numbers_transactions_across_statements_and_keeps_rows_with_other_descriptions() {
     let h = Harness::new();
     let first = h.statement(
         "first.pdf",
@@ -403,7 +403,7 @@ async fn drops_repeated_transaction_ids_across_statements() {
             "  2030-03-02 2030-03-02 EXAMPLE FEE             -1,00      89,00",
         ],
     );
-    // Same date and amount as the first statement's first row, so the same ID.
+    // Same date and amount as the first statement's first row, with another description.
     let second = h.statement(
         "second.pdf",
         &[
@@ -426,10 +426,11 @@ async fn drops_repeated_transaction_ids_across_statements() {
         [
             (ACME_ID, "ACME CORP"),
             (FEE_ID, "EXAMPLE FEE"),
-            ("tx-002-2030-03-05--2000", "GLOBEX"),
+            ("tx-003-2030-03-01--1000", "ACME CORP ONLINE"),
+            ("tx-004-2030-03-05--2000", "GLOBEX"),
         ]
     );
-    assert_eq!(summary.total_transactions, 3);
+    assert_eq!(summary.total_transactions, 4);
     assert_eq!(h.take_events()[0], RunEvent::Parsing { count: 2 });
 }
 
