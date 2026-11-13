@@ -53,12 +53,13 @@ npm run tauri build -- --config '{"bundle":{"resources":{"../build/poppler":"pop
   "amount_cents": -1000,
   "abs_cents": 1000,
   "status": "MATCHED",
-  "receipt_files": ["<receipts folder>/2030/03/receipts/acme.pdf"],
-  "receipt_meta": [{ "file": "…", "amount_cents": 1000, "confidence": "high", "currency": "EUR", "vendor": "ACME", "date": "2030-03-01", "provider_used": "gemini" }],
+  "receipt_files": ["receipts/acme.pdf"],
+  "receipt_meta": [{ "file": "receipts/acme.pdf", "amount_cents": 1000, "confidence": "high", "currency": "EUR", "vendor": "ACME", "date": "2030-03-01", "provider_used": "gemini" }],
   "notes": "name_amount_match"
 }
 ```
 
+- Receipt paths are stored relative to the month folder and made absolute on read (`pipeline/stored.rs`). The draft, `receipts.json` and `reimbursements.json` store them the same way.
 - `status`: `MATCHED`, `REVIEW` or `UNMATCHED`.
 - `notes`: the matcher's code (`name_amount_match`, `amount_match`, `fx_match (USD)`, `rule_match (vendor)`, `manual_match`, `N receipts match amount`, …) or a no-receipt reason id.
 - Reason ids: `bank_fee`, `salary`, `transfer`, `refund`, `no_receipt` (Other) or `reason:<uuid>` for user reasons. `model::is_reason_id` and `src/lib/reasons.ts` recognize them, also after the reason is deleted; a deleted reason shows as Other.
