@@ -43,8 +43,8 @@ fn rule_amount_fits(receipt: &Value, abs_cents: i64) -> bool {
     match receipt["currency"].as_str() {
         None | Some("EUR") => cents == abs_cents,
         Some(_) => {
-            let lo = (abs_cents as f64 * 0.9).floor() as i64;
-            let hi = (abs_cents as f64 * 1.1).ceil() as i64;
+            let lo = (abs_cents * 90 + 99) / 100;
+            let hi = abs_cents * 110 / 100;
             (lo..=hi).contains(&cents)
         }
     }

@@ -113,10 +113,11 @@ impl LoweredReceipt {
     }
 }
 
-/// The FX tolerance band around `abs_cents`, inclusive.
+/// The FX tolerance band around `abs_cents`, inclusive. The low bound rounds up and the high
+/// bound rounds down, so every cent in the band is within the tolerance.
 fn fx_bounds(abs_cents: i64) -> (i64, i64) {
-    let lo = (abs_cents as f64 * (1.0 - FX_TOLERANCE_PERCENT as f64 / 100.0)).floor() as i64;
-    let hi = (abs_cents as f64 * (1.0 + FX_TOLERANCE_PERCENT as f64 / 100.0)).ceil() as i64;
+    let lo = (abs_cents * (100 - FX_TOLERANCE_PERCENT) + 99) / 100;
+    let hi = abs_cents * (100 + FX_TOLERANCE_PERCENT) / 100;
     (lo, hi)
 }
 
@@ -651,5 +652,13 @@ mod tests {
             ["acme", "corp", "café"]
         );
         assert!(extract_words("").is_empty());
+    }
+
+    #[test]
+    fn fx_band_uses_exact_integer_bounds() {
+        assert_eq!(fx_bounds(100), (90, 110));
+        assert_eq!(fx_bounds(1005), (905, 1105));
+        assert_eq!(fx_bounds(1000), (900, 1100));
+        assert_eq!(fx_bounds(0), (0, 0));
     }
 }
