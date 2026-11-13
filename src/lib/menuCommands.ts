@@ -65,6 +65,8 @@ export interface ReviewCommands {
   finalize: () => void;
   /** Picks bank statements to add to the month. The app menu runs it as a month item. */
   addStatements: () => void;
+  /** Saves pending decisions. Resolves when the draft is stored and rejects when the save fails. */
+  flush?: () => Promise<void>;
   can: ReviewAvailability;
 }
 

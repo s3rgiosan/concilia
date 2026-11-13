@@ -328,7 +328,7 @@ export function Review({ period, toolbar, status, runSummary, moreActions, onCha
     addStatements: chooseStatements,
   });
 
-  useImperativeHandle(ref, () => commands);
+  useImperativeHandle(ref, () => ({ ...commands, flush: autosave.flush }));
 
   // Runs after the Finalize alert closes, so the list takes focus.
   const focusListAfterSheet = useRef(false);

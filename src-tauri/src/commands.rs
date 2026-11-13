@@ -454,17 +454,8 @@ pub async fn get_draft(
         .map_err(fail)
 }
 
-fn ensure_not_finalizing(state: &AppState, period: &Period) -> CommandResult<()> {
-    let running = state.locks.running(period);
-    if running == Some(RunKind::Finalize) {
-        return Err(CommandError::new(
-            ErrorKind::Busy,
-            "the period is being finalized",
-        ));
-    }
-    Ok(())
-}
-
+/// Saves the review draft. The save is refused while a job runs on the period or when the
+/// period is finalized.
 #[tauri::command]
 pub async fn save_draft(
     state: State<'_, Arc<AppState>>,
@@ -473,10 +464,11 @@ pub async fn save_draft(
     draft: Draft,
 ) -> CommandResult<()> {
     let period = period(&year, &month).map_err(fail)?;
-    ensure_not_finalizing(&state, &period).map_err(fail)?;
     let paths = state.period_paths(&period).map_err(fail)?;
-    blocking(move || pipeline::save_draft(&paths, &draft))
+    let locks = Arc::clone(&state.locks);
+    blocking(move || locks.with_draft_lock(&period, || pipeline::save_draft(&paths, &draft)))
         .await
+        .map_err(fail)?
         .map_err(fail)?
         .map_err(fail)
 }

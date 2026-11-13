@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Draft } from "../lib/tauri";
 import { deferred } from "../test/fixtures";
-import { AUTOSAVE_DELAY_MS, useDraftAutosave } from "./useDraftAutosave";
+import { AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, useDraftAutosave } from "./useDraftAutosave";
 
 const DRAFT_A: Draft = { "tx-1": { status: "MATCHED", notes: "salary" } };
 const DRAFT_B: Draft = { "tx-1": { status: "UNMATCHED", notes: "" } };
@@ -156,6 +156,46 @@ describe("useDraftAutosave", () => {
       flush = result.current.flush();
     });
     await expect(flush).resolves.toBeUndefined();
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a save refused while a job runs, until it is stored", async () => {
+    const busy = { kind: "busy", message: "Scan is already running for this period" };
+    const save = vi.fn().mockRejectedValueOnce(busy).mockRejectedValueOnce(busy).mockResolvedValue(undefined);
+    const { result, rerender } = setup(save);
+    rerender({ draft: DRAFT_A, dirty: true });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS));
+    expect(result.current.state).toEqual({ kind: "failed", error: busy });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_RETRY_MS));
+    expect(save).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_RETRY_MS));
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(save).toHaveBeenLastCalledWith(DRAFT_A);
+    expect(result.current.state).toEqual({ kind: "saved" });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_RETRY_MS * 4));
+    expect(save).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a save that failed for another reason", async () => {
+    const error = { kind: "finalized", message: "this period is finalized" };
+    const save = vi.fn().mockRejectedValue(error);
+    const { result, rerender } = setup(save);
+    rerender({ draft: DRAFT_A, dirty: true });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS + AUTOSAVE_RETRY_MS * 4));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toEqual({ kind: "failed", error });
+  });
+
+  it("stops retrying a refused save after unmount", async () => {
+    const busy = { kind: "busy", message: "Reconcile is already running for this period" };
+    const save = vi.fn().mockRejectedValue(busy);
+    const { rerender, unmount } = setup(save);
+    rerender({ draft: DRAFT_A, dirty: true });
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_DELAY_MS));
+    unmount();
+    await settle();
+    expect(save).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTime(AUTOSAVE_RETRY_MS * 4));
     expect(save).toHaveBeenCalledTimes(2);
   });
 

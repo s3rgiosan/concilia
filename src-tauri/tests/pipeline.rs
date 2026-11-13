@@ -532,12 +532,12 @@ async fn clearing_the_cache_restores_finalized_receipts() {
         receipts.join("_unmatched/initech.png"),
     )
     .unwrap();
-    write_file(&h.paths.applied_marker(), b"2030-04-01T00:00:00Z");
     pipeline::save_draft(
         &h.paths,
         &draft(json!({ GLOBEX_ID: { "notes": "transfer" } })),
     )
     .unwrap();
+    write_file(&h.paths.applied_marker(), b"2030-04-01T00:00:00Z");
     h.extractor.take_calls();
 
     let again = pipeline::reconcile(&h.ctx(), &[], true).await.unwrap();
@@ -2238,6 +2238,24 @@ fn saves_reads_and_deletes_drafts() {
     pipeline::delete_draft(&paths).unwrap();
     assert!(!paths.draft().exists());
     assert!(pipeline::read_draft(&paths).unwrap().is_empty());
+}
+
+#[test]
+fn saving_a_draft_in_a_finalized_period_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = period().paths(dir.path());
+    let kept = draft(json!({ ACME_ID: { "status": "UNMATCHED" } }));
+    pipeline::save_draft(&paths, &kept).unwrap();
+    write_file(&paths.applied_marker(), b"2030-04-01T00:00:00Z");
+
+    let error = pipeline::save_draft(
+        &paths,
+        &draft(json!({ GLOBEX_ID: { "notes": "transfer" } })),
+    )
+    .unwrap_err();
+
+    assert_eq!(error, PipelineError::Finalized);
+    assert_eq!(pipeline::read_draft(&paths).unwrap(), kept);
 }
 
 // Refused files.

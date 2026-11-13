@@ -13,7 +13,12 @@ pub fn read_draft(paths: &PeriodPaths) -> Result<Draft, PipelineError> {
     Ok(read_json_opt(&paths.draft())?.unwrap_or_default())
 }
 
+/// Writes the draft. A finalized period is refused, because Finalize already applied its
+/// decisions.
 pub fn save_draft(paths: &PeriodPaths, draft: &Draft) -> Result<(), PipelineError> {
+    if paths.applied_marker().exists() {
+        return Err(PipelineError::Finalized);
+    }
     create_dir(&paths.docs)?;
     Ok(write_json(&paths.draft(), draft)?)
 }

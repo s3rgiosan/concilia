@@ -50,6 +50,7 @@ import {
   type Reason,
   type PeriodSummary,
   type RunEvent,
+  type StatementInput,
   type Summary,
 } from "../lib/tauri";
 import { NewMonthSheet } from "./NewMonthSheet";
@@ -332,9 +333,22 @@ export function Main({ initialState = null }: { initialState?: AppStateView | nu
       .catch(setMessage);
   });
 
+  /**
+   * Saves the review's pending decisions, then starts the run. The backend refuses a draft save
+   * while a run holds the month.
+   */
   function reconcile(clearCache: boolean) {
     const target = selected;
     const files = (statements[periodKey(target)] ?? []).map(({ path, bank }) => ({ path, bank }));
+    const flush = reviewCommands.current?.flush;
+    if (flush) {
+      flush().then(() => startRun(target, files, clearCache), setMessage);
+    } else {
+      startRun(target, files, clearCache);
+    }
+  }
+
+  function startRun(target: Period, files: StatementInput[], clearCache: boolean) {
     setSheet(null);
     setMessage(null);
     setLastRun(null);

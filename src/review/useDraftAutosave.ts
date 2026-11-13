@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Draft } from "../lib/tauri";
+import { errorKind } from "../lib/errors";
 import { useLatest } from "../lib/hooks/useLatest";
 
 export type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved" } | { kind: "failed"; error: unknown };
@@ -7,10 +8,16 @@ export type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved" 
 /** Delay between the last change and the save. */
 export const AUTOSAVE_DELAY_MS = 500;
 
+/** Delay before a save refused while a job runs on the month is tried again. */
+export const AUTOSAVE_RETRY_MS = 1000;
+
 /**
  * Saves the draft shortly after each change. `flush` saves at once, or again after a failed save,
  * and resolves when the draft is stored, or rejects when the save fails. `forget` clears the save
  * state for a draft loaded afresh. Pending changes are saved when the component unmounts.
+ *
+ * The backend refuses a save while a job runs on the month. The change then stays pending and the
+ * save runs again after a delay, until the job ends or the component unmounts.
  */
 export function useDraftAutosave(
   draft: Draft,
@@ -26,6 +33,7 @@ export function useDraftAutosave(
   const latestSave = useLatest(save);
   /** Saves run one at a time, in order. */
   const queue = useRef<Promise<void>>(Promise.resolve());
+  const mounted = useRef(true);
 
   const write = useCallback(() => {
     if (timer.current) {
@@ -46,6 +54,13 @@ export function useDraftAutosave(
         (error) => {
           failed.current = true;
           setState({ kind: "failed", error });
+          const busy = errorKind(error) === "busy";
+          if (busy && mounted.current && !timer.current) {
+            pending.current = true;
+            timer.current = setTimeout(() => {
+              write().catch(() => undefined);
+            }, AUTOSAVE_RETRY_MS);
+          }
           throw error;
         },
       );
@@ -65,6 +80,13 @@ export function useDraftAutosave(
       write().catch(() => undefined);
     }, AUTOSAVE_DELAY_MS);
   }, [draft, dirty, write]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(
     () => () => {

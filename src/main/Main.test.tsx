@@ -2,8 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Ref } from "react";
 import type { PopUpAction } from "../components/PopUpButton";
 import type { ToolbarSlots } from "../components/Toolbar";
+import type { ReviewCommands } from "../lib/menuCommands";
 import { emptySummary, type Period } from "../lib/period";
 import {
   createPeriod,
@@ -74,11 +76,16 @@ vi.mock("../lib/tauri", async (importOriginal) => ({
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
 
+/** What the mocked review's `flush` returns. */
+let reviewFlush: () => Promise<void> = () => Promise.resolve();
+
 vi.mock("../review/Review", async () => {
+  const { useImperativeHandle } = await import("react");
   const { ActionPopUpButton } = await import("../components/PopUpButton");
   const { ToolbarPortal } = await import("../components/Toolbar");
   return {
     Review: ({
+      ref,
       period,
       toolbar,
       status,
@@ -88,6 +95,7 @@ vi.mock("../review/Review", async () => {
       onSaved,
       onError,
     }: {
+      ref?: Ref<Partial<ReviewCommands>>;
       period: Period;
       toolbar: ToolbarSlots;
       status: string;
@@ -96,24 +104,27 @@ vi.mock("../review/Review", async () => {
       onChanged?: () => void;
       onSaved?: (period: Period) => void;
       onError: (e: unknown) => void;
-    }) => (
-      <section aria-label="Review">
-        <ToolbarPortal target={toolbar.subtitle}>{runSummary ?? status}</ToolbarPortal>
-        <ToolbarPortal target={toolbar.trailing}>
-          <ActionPopUpButton label="More Actions" actions={moreActions} />
-        </ToolbarPortal>
-        <p>{`Review ${period.year}-${period.month}`}</p>
-        <button type="button" onClick={onChanged}>
-          Change Review
-        </button>
-        <button type="button" onClick={() => onSaved?.(period)}>
-          Save Review
-        </button>
-        <button type="button" onClick={() => onError({ kind: "io", message: "draft unreadable" })}>
-          Fail Review
-        </button>
-      </section>
-    ),
+    }) => {
+      useImperativeHandle(ref, () => ({ flush: () => reviewFlush() }));
+      return (
+        <section aria-label="Review">
+          <ToolbarPortal target={toolbar.subtitle}>{runSummary ?? status}</ToolbarPortal>
+          <ToolbarPortal target={toolbar.trailing}>
+            <ActionPopUpButton label="More Actions" actions={moreActions} />
+          </ToolbarPortal>
+          <p>{`Review ${period.year}-${period.month}`}</p>
+          <button type="button" onClick={onChanged}>
+            Change Review
+          </button>
+          <button type="button" onClick={() => onSaved?.(period)}>
+            Save Review
+          </button>
+          <button type="button" onClick={() => onError({ kind: "io", message: "draft unreadable" })}>
+            Fail Review
+          </button>
+        </section>
+      );
+    },
   };
 });
 
@@ -170,6 +181,7 @@ function resizeWindow(width: number) {
 
 beforeEach(() => {
   dropFiles = null;
+  reviewFlush = () => Promise.resolve();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2030, 3, 15));
   localStorage.clear();
@@ -842,6 +854,32 @@ describe("month in review", () => {
     expect(startReconcile).toHaveBeenCalledWith("2030", "02", [], true, expect.any(Function));
     await run.push({ step: "parsing", count: 0 });
     expect(steps()[0]).toBe("running: Reading statements · using the saved transactions");
+  });
+
+  it("saves the review's pending decisions before re-running", async () => {
+    reconcileRun();
+    const saved = deferred<void>();
+    reviewFlush = () => saved.promise;
+    await renderMain();
+    selectMonth(/February/);
+    await screen.findByText("Review 2030-02");
+    vi.mocked(showAlert).mockResolvedValue("confirm");
+    await act(async () => moreAction("Reconcile Again…"));
+    expect(startReconcile).not.toHaveBeenCalled();
+    await act(async () => saved.resolve());
+    expect(startReconcile).toHaveBeenCalledWith("2030", "02", [], true, expect.any(Function));
+  });
+
+  it("shows a failed save and does not re-run", async () => {
+    reconcileRun();
+    reviewFlush = () => Promise.reject({ kind: "io", message: "disk full" });
+    await renderMain();
+    selectMonth(/February/);
+    await screen.findByText("Review 2030-02");
+    vi.mocked(showAlert).mockResolvedValue("confirm");
+    await act(async () => moreAction("Reconcile Again…"));
+    expect(startReconcile).not.toHaveBeenCalled();
+    expect(await screen.findByText(/disk full/)).toBeTruthy();
   });
 });
 

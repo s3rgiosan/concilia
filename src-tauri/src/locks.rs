@@ -3,6 +3,9 @@
 //! A period runs at most one exclusive job at a time (reconcile, scan, adding statements,
 //! Finalize, Reopen or report export), never alongside a receipt rescan. Rescans of different files may run together,
 //! but their writes to the period's JSON files go through one mutex per period.
+//!
+//! A draft save never runs alongside an exclusive job. It is refused while a job runs, and a
+//! job that starts during a save waits for the save to end.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -40,6 +43,7 @@ struct PeriodState {
     exclusive: Option<(RunKind, CancellationToken)>,
     rescans: HashSet<PathBuf>,
     write: Arc<tokio::sync::Mutex<()>>,
+    draft: Arc<Mutex<()>>,
 }
 
 impl PeriodState {
@@ -81,7 +85,7 @@ impl PeriodLocks {
         kind: RunKind,
     ) -> Result<ExclusiveGuard, Busy> {
         let token = CancellationToken::new();
-        {
+        let draft = {
             let mut periods = lock(&self.periods);
             let state = periods.entry(period.clone()).or_default();
             if let Some((running, _)) = &state.exclusive {
@@ -91,7 +95,10 @@ impl PeriodLocks {
                 return Err(Busy::Rescanning);
             }
             state.exclusive = Some((kind, token.clone()));
-        }
+            Arc::clone(&state.draft)
+        };
+        // Waits for a draft save that started before the job.
+        drop(lock(&draft));
         self.notify();
         Ok(ExclusiveGuard {
             locks: Arc::clone(self),
@@ -122,6 +129,17 @@ impl PeriodLocks {
             period: period.clone(),
             file,
         })
+    }
+
+    /// Runs `f`, which saves the period's draft, while no exclusive job runs. Refuses when a job
+    /// runs. A job that starts while `f` runs waits for `f` to end.
+    pub fn with_draft_lock<T>(&self, period: &Period, f: impl FnOnce() -> T) -> Result<T, Busy> {
+        let draft = Arc::clone(&lock(&self.periods).entry(period.clone()).or_default().draft);
+        let _saving = lock(&draft);
+        if let Some(running) = self.running(period) {
+            return Err(Busy::Running(running));
+        }
+        Ok(f())
     }
 
     /// The mutex serializing writes to the period's JSON files.
@@ -161,8 +179,11 @@ impl PeriodLocks {
             let mut periods = lock(&self.periods);
             if let Some(state) = periods.get_mut(period) {
                 release(state);
-                // Keep the entry while someone still holds its write mutex.
-                if state.idle() && Arc::strong_count(&state.write) == 1 {
+                // Keep the entry while someone still holds its write or draft mutex.
+                if state.idle()
+                    && Arc::strong_count(&state.write) == 1
+                    && Arc::strong_count(&state.draft) == 1
+                {
                     periods.remove(period);
                 }
             }
@@ -288,6 +309,43 @@ mod tests {
         drop(guard);
         assert!(!locks.busy());
         assert_eq!(changes.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn draft_saves_refuse_exclusive_jobs_but_not_rescans() {
+        let locks = PeriodLocks::new();
+        let p = period("03");
+        let job = locks.try_exclusive(&p, RunKind::Scan).unwrap();
+        assert_eq!(
+            locks.with_draft_lock(&p, || ()).err(),
+            Some(Busy::Running(RunKind::Scan))
+        );
+        drop(job);
+        let _rescan = locks.try_rescan(&p, "/r/a.pdf".into()).unwrap();
+        assert_eq!(locks.with_draft_lock(&p, || 7), Ok(7));
+        assert_eq!(locks.with_draft_lock(&period("04"), || 8), Ok(8));
+    }
+
+    #[test]
+    fn an_exclusive_job_waits_for_a_draft_save() {
+        let locks = PeriodLocks::new();
+        let p = period("03");
+        let saved = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let saver = {
+            let (locks, p, saved) = (Arc::clone(&locks), p.clone(), Arc::clone(&saved));
+            std::thread::spawn(move || {
+                locks.with_draft_lock(&p, || {
+                    started_tx.send(()).unwrap();
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    saved.store(true, Ordering::SeqCst);
+                })
+            })
+        };
+        started_rx.recv().unwrap();
+        let _job = locks.try_exclusive(&p, RunKind::Finalize).unwrap();
+        assert!(saved.load(Ordering::SeqCst));
+        assert_eq!(saver.join().unwrap(), Ok(()));
     }
 
     #[tokio::test]
