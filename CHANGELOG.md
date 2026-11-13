@@ -31,6 +31,7 @@ All notable changes to this project are documented in this file. Format follows 
 - Reconcile Again on a finalized month keeps the review decisions (receipts assigned by hand, no-receipt reasons and rejected matches), as Reopen Month does.
 - Moving or renaming the receipts folder keeps the review decisions and the extraction cache, because the month's files store receipt paths relative to the month folder.
 - A receipt file replaced by another file with the same name is read again, also after Reopen Month, so the new receipt no longer gets the old receipt's amount, vendor and date.
+- The Settings window holds the menu permissions that its pop-up menus need, such as the Language menu.
 
 ## [2.0.0] - 2026-11-13
 

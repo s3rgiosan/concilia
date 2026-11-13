@@ -108,3 +108,76 @@ fn the_settings_window_cannot_run_jobs_or_open_files() {
         assert!(!settings.contains(command), "{command}");
     }
 }
+
+/// The `core:` permissions a capability file grants.
+fn core_granted(capability: &str) -> BTreeSet<String> {
+    let json: Value = serde_json::from_str(&read(capability)).unwrap();
+    json["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|p| p.starts_with("core:"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Whether any source file under `dir` (relative to the manifest) contains one of `needles`.
+fn source_uses(dir: &str, needles: &[&str]) -> bool {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(dir);
+    let mut pending = vec![root];
+    while let Some(path) = pending.pop() {
+        let entries =
+            std::fs::read_dir(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        for entry in entries {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let name = path.to_string_lossy();
+            let is_source =
+                (name.ends_with(".ts") || name.ends_with(".tsx")) && !name.contains(".test.");
+            if !is_source {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            if needles.iter().any(|needle| text.contains(needle)) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[test]
+fn each_window_holds_the_menu_permissions_its_code_needs() {
+    let needed = [
+        "core:menu:allow-new",
+        "core:menu:allow-popup",
+        "core:resources:allow-close",
+    ];
+    let windows = [
+        ("capabilities/settings.json", vec!["../src/settings"]),
+        (
+            "capabilities/main.json",
+            vec!["../src/main", "../src/review"],
+        ),
+    ];
+    for (capability, dirs) in windows {
+        let uses_menus = dirs
+            .iter()
+            .any(|dir| source_uses(dir, &["PopUpButton", "popUpMenu"]));
+        assert!(
+            uses_menus,
+            "{capability}: expected pop-up menu use in {dirs:?}"
+        );
+        let held = core_granted(capability);
+        let missing: Vec<&str> = needed
+            .iter()
+            .copied()
+            .filter(|permission| !held.contains(*permission))
+            .collect();
+        assert!(missing.is_empty(), "{capability} lacks {missing:?}");
+    }
+}
