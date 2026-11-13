@@ -369,6 +369,8 @@ export function install(): void {
           })();
         case "period_summary":
           return delay(100, periods.get(`${String(a.year)}-${String(a.month)}`) ?? { year: String(a.year), month: String(a.month), status: "empty", receipts: 0, transactions: 0, pending: 0 });
+        case "set_menu":
+        case "set_menu_state":
         case "set_menu_item_text":
           return null;
         case "create_period":
