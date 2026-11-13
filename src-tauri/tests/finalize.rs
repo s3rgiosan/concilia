@@ -42,11 +42,10 @@ impl Fixture {
 
     /// The path a receipt would have under `receipts/`, without creating it.
     fn receipt_path(&self, relative: &str) -> String {
-        self.paths
-            .receipts
-            .join(relative)
-            .to_string_lossy()
-            .into_owned()
+        let path = relative
+            .split('/')
+            .fold(self.paths.receipts.clone(), |path, part| path.join(part));
+        path.to_string_lossy().into_owned()
     }
 
     fn write_result(&self, transactions: Vec<Transaction>, unmatched: Vec<ReceiptMeta>) {
